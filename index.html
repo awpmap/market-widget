@@ -325,7 +325,7 @@ body.native #titlebar .logo *{pointer-events:none}
 .risk span{white-space:nowrap}
 .breadth .bar{min-width:40px}
 .grp-h .muted{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-@media (max-width:300px){ .mk-nq,.mk-sum-idx{display:none} .srow .er,.hrow .er{display:none} .risk{grid-template-columns:1fr} #mk-sum span:first-child{display:none} }
+@media (max-width:300px){ .mk-nq,.mk-sum-idx{display:none} .srow .er,.hrow .er,.wtop .er{display:none} .risk{grid-template-columns:1fr} #mk-sum span:first-child{display:none} }
 @media (prefers-reduced-motion: reduce){ *{animation:none !important;transition:none !important} }
 </style>
 </head>
@@ -423,7 +423,7 @@ body.native #titlebar .logo *{pointer-events:none}
 
 <script>
 "use strict";
-const APP_VERSION = "3.1.0";
+const APP_VERSION = "3.1.1";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -565,13 +565,14 @@ const RL = {times:[], active:0, hi:[], lo:[], timer:null};
 function limited(fn, low){ return new Promise((res, rej)=>{ const j = {fn,res,rej}; if (low === "top") RL.hi.unshift(j); else (low?RL.lo:RL.hi).push(j); pump(); }); }
 function pump(){
   const now = Date.now(); RL.times = RL.times.filter(t => now - t < 60000);
-  while ((RL.hi.length || RL.lo.length) && RL.active < 6 && RL.times.length < 55){
+  // background jobs stop at 40 a minute so prices and clicks always have room
+  while ((RL.hi.length || (RL.lo.length && RL.times.length < 40)) && RL.active < 6 && RL.times.length < 55){
     const j = RL.hi.length ? RL.hi.shift() : RL.lo.shift();
     RL.active++; RL.times.push(Date.now());
     j.fn().then(j.res, j.rej).finally(()=>{ RL.active--; pump(); });
   }
   if ((RL.hi.length || RL.lo.length) && !RL.timer){
-    const wait = RL.times.length >= 55 ? (60000 - (now - RL.times[0]) + 50) : 150;
+    const wait = (RL.times.length >= 55 || (!RL.hi.length && RL.times.length >= 40)) ? (60000 - (now - RL.times[0]) + 50) : 150;
     RL.timer = setTimeout(()=>{ RL.timer = null; pump(); }, wait);
   }
 }
@@ -1154,7 +1155,7 @@ function renderMarkets(){
   const anyPeriod = per==="1D" || sec.some(m => pctFor(m.sym, per) != null);
   const bell = BELLWETHERS.map(sym => ({sym, e:erInfo(sym)})).filter(x => x.e && x.e.days <= 7);
   $("mk-body").innerHTML = `
-    ${rg ? `<div class="regime num" title="${esc(rg.why.length ? rg.label + " because: " + rg.why.join(", ") : "No strong signal either way")}"><span class="muted" style="font-size:10.5px">${esc(rg.why.slice(0,2).join(", ") || "No strong signal")}</span>${rg.chips.map(([n,v,minor,inv])=>`<span class="xa ${minor?"mk-up":""}">${esc(n)} <b class="${cls(inv ? -v : v)}">${fmtPct(v,1)}</b></span>`).join("")}</div>` : ""}
+    ${rg ? `<div class="regime num" title="${esc(rg.why.length ? rg.label + " because: " + rg.why.join(", ") : "No strong signal either way")}"><span class="muted" style="font-size:10.5px">${esc(rg.why.join(", ") || "No strong signal")}</span>${rg.chips.map(([n,v,minor,inv])=>`<span class="xa ${minor?"mk-up":""}">${esc(n)} <b class="${cls(inv ? -v : v)}">${fmtPct(v,1)}</b></span>`).join("")}</div>` : ""}
     ${bell.length ? `<div class="note" style="margin:0 0 8px">Chip earnings this week: ${bell.map(x=>`<b>${x.sym}</b> ${x.e.label.slice(3)}`).join(" · ")}</div>` : ""}
     <div class="seg perseg" id="perSeg">${PERIODS.map(p=>`<button data-per="${p.k}" class="${per===p.k?"on":""}">${p.label}</button>`).join("")}</div>
     <div class="idx num">${idx.map(m=>{ const q = quotes[m.sym], p = pctFor(m.sym, per); return `<button class="c ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" title="Click to refresh just ${m.sym}"><span>${esc(m.name)}</span><b class="${cls(p)}">${fmtPct(p, dec)}</b><em>${q?fmt$(q.c):"—"}</em></button>`; }).join("")}</div>
@@ -1568,15 +1569,18 @@ function showTab(tab){
   }
   else if (tab==="backup"){
     B.innerHTML = `
-      <div class="field"><label>Back up your setup</label><p>Holdings, funds and cash, watchlist and alert rules. Your key is not included. Keep this private.</p></div>
+      <div class="field"><label>Back up or move your setup</label><p>Holdings, funds and cash, watchlist and alert rules. Keep this private: it's your portfolio.</p>
+        <label style="display:flex;gap:7px;align-items:center;font-weight:400;margin-top:6px"><input type="checkbox" id="bKeys"> Include my data keys (to move to the desktop app or another PC)</label></div>
       <textarea class="code" id="bTxt" spellcheck="false">${esc(JSON.stringify(cfg))}</textarea>
       <div style="display:flex;gap:8px;margin:8px 0 18px;flex-wrap:wrap"><button class="btn" id="bCopy">Copy</button><button class="btn" id="bDl">Download file</button></div>
       <div class="field"><label>Restore</label><p>Paste a backup above, then click Restore. This replaces your current list.</p></div>
       <button class="btn primary" id="bRestore">Restore from the box above</button><div class="err" id="bErr"></div>`;
+    $("bKeys").onchange = e=>{ const c = JSON.parse(JSON.stringify(cfg)); if (e.target.checked) c._keys = {key:settings.key, tdKey:settings.tdKey}; $("bTxt").value = JSON.stringify(c); };
     $("bCopy").onclick = async ()=>{ try{ await navigator.clipboard.writeText($("bTxt").value); toast("Copied"); }catch(e){ $("bTxt").select(); document.execCommand("copy"); toast("Copied"); } };
     $("bDl").onclick = ()=>{ const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([$("bTxt").value], {type:"application/json"})); a.download = "market-widget-backup.json"; a.click(); };
     $("bRestore").onclick = ()=>{
       try{ const c = JSON.parse($("bTxt").value); if (!Array.isArray(c.holdings) || !Array.isArray(c.watch)) throw new Error("this doesn't look like a widget backup");
+        if (c._keys){ if (c._keys.key) settings.key = String(c._keys.key); if (c._keys.tdKey) settings.tdKey = String(c._keys.tdKey); saveSettings(); delete c._keys; hist = {}; loadHist.day = null; }
         cfg = normCfg(c); store.set("cfg", cfg); toast("Restored"); closeSheet(); schedule(true);
       }catch(e){ $("bErr").textContent = "Couldn't restore: " + e.message; }
     };

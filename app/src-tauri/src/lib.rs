@@ -299,8 +299,14 @@ fn reload_launcher(app: &AppHandle) {
 /// in the tray and with a toast, then reload through the launcher.
 fn start_watchdog(app: AppHandle) {
     std::thread::spawn(move || loop {
+        let tick = Instant::now();
         std::thread::sleep(Duration::from_secs(30));
         let shell = app.state::<Shell>();
+        // The PC was asleep: give the page a fresh grace period instead of a false alarm.
+        if tick.elapsed() > Duration::from_secs(75) {
+            *shell.heartbeat.lock().unwrap() = Instant::now();
+            continue;
+        }
         let silent = shell.heartbeat.lock().unwrap().elapsed() > Duration::from_secs(WATCHDOG_SECS);
         if !silent {
             continue;

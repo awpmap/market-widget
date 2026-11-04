@@ -1,7 +1,7 @@
 {
   "name": "mw-desktop",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Windows tray app for Market Widget (MW). Info only, never trades.",
   "scripts": {
     "tauri": "tauri",
