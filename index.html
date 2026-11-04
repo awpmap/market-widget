@@ -423,7 +423,7 @@ body.native #titlebar .logo *{pointer-events:none}
 
 <script>
 "use strict";
-const APP_VERSION = "3.2.0";
+const APP_VERSION = "3.3.0";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -593,7 +593,13 @@ let lastUpdate = store.get("lastUpdate", 0);
 const xaOn = ()=> !cfg.hiddenMk.includes("__xa");
 function marketSyms(){ return [...cfg.myMk, ...[...MARKETS.indices, ...MARKETS.sectors, ...MARKETS.other].map(m=>m.sym).filter(s=>!cfg.hiddenMk.includes(s)), ...(xaOn()?XASSET.map(x=>x.sym):[])]; }
 function mySyms(){ const s = new Set(); cfg.watch.forEach(w=>w.sym && s.add(w.sym.toUpperCase())); cfg.holdings.forEach(h=>h.sym && s.add(h.sym.toUpperCase())); return [...s]; }
-const health = {ok:0, total:0, fail:[], backup:[], err:"", at:0};
+const health = {ok:0, total:0, fail:[], backup:[], bad:[], err:"", at:0};
+/* reject obviously bad prints: zero/negative, or a >25% jump from this session's last price */
+function badPrint(sym, q){
+  if (!(q.c > 0)) return true;
+  const prev = quotes[sym];
+  return !!(prev && prev.c > 0 && prev.at && etDateOf(prev.at) === etNow().date && Math.abs(q.c/prev.c - 1) > 0.25);
+}
 /* timestamped prices for today (for the "fast drop" rule); kept for the day */
 let ticks = store.get("ticks", {});
 function pushTick(sym, q){
@@ -795,19 +801,20 @@ async function tick(){
     $("needKey").classList.add("hide");
     const syms = allSyms(), day = etNow().date, ses = session().s;
     if (!spark[day]) spark = {[day]:{}};
-    let ok = 0; const fail = [], backup = [];
+    let ok = 0; const fail = [], backup = [], bad = [];
     await Promise.all(syms.map(sym => limited(async ()=>{
       try{
         let q = null;
         try{ q = await api("quote?symbol=" + encodeURIComponent(sym)); }catch(e){ lastErr = e.message; }
         if (!(q && q.c)){ try{ q = await backupQuote(sym); if (q && q.c) backup.push(sym); }catch(e){} }
+        if (q && q.c && badPrint(sym, q)){ bad.push(sym); q = null; }
         if (!(q && q.c)) fail.push(sym);
         if (q && q.c){ q.at = Date.now(); quotes[sym] = q; pushTick(sym, q); ok++;
           if (ses !== "closed"){ const a = spark[day][sym] || (spark[day][sym] = []); if (!a.length || a[a.length-1] !== q.c){ a.push(q.c); if (a.length > 480) a.shift(); } }
         }
       }catch(e){ lastErr = e.message; }
     })));
-    Object.assign(health, {ok, total:syms.length, fail, backup, err:lastErr, at:Date.now()});
+    Object.assign(health, {ok, total:syms.length, fail, backup, bad, err:lastErr, at:Date.now()});
     if (ok){ lastUpdate = Date.now(); store.set("lastUpdate", lastUpdate); store.set("lastQuotes", quotes); store.set("spark", spark); store.set("ticks", ticks); }
     renderAll(); checkAlerts();
     loadMarketStatus().then(renderFrame);
@@ -846,7 +853,11 @@ function evaluate(w){
   if (w.fastOn!==false && w.fastDrop){
     const mins = w.fastMins || 15, a = (ticks.day === etNow().date && ticks.s[sym]) || [], since = Date.now() - mins*60e3;
     const recent = a.filter(x => x[0] >= since), top = recent.length ? Math.max(...recent.map(x=>x[1])) : null;
-    if (top && recent[0][0] <= since + mins*30e3 && px <= top*(1 - w.fastDrop/100)) dip.push({id:`${sym}-fast-${Math.floor(etNow().mins/60)}`, kind:"fast", sym, msg:`${sym} dropped ${((1-px/top)*100).toFixed(1)}% in the last ${mins} min (from ${fmt$(top)} to ${fmt$(px)})`});
+    // after a fast-drop alert the rule re-arms only once the price bounces half the drop off its low
+    const fs = (ticks.fast = ticks.fast || {})[sym] || (ticks.fast[sym] = {n:0, armed:true, low:null});
+    if (!fs.armed){ fs.low = Math.min(fs.low ?? px, px); if (px >= fs.low*(1 + w.fastDrop/200)) fs.armed = true; }
+    if (fs.armed && top && recent[0][0] <= since + mins*30e3 && px <= top*(1 - w.fastDrop/100)){ fs.armed = false; fs.low = px; fs.n++; }
+    if (!fs.armed && fs.low === px && fs.n) dip.push({id:`${sym}-fast-${fs.n}`, kind:"fast", sym, msg:`${sym} dropped ${((1-px/top)*100).toFixed(1)}% in the last ${mins} min (from ${fmt$(top)} to ${fmt$(px)})`});
   }
   if (w.redOn!==false && w.dayDrop && q.dp <= -w.dayDrop) dip.push({id:`${sym}-red`, kind:"red", sym, msg:`${sym} is down ${Math.abs(q.dp).toFixed(1)}% today at ${fmt$(px)}${erTxt}`});
   const vol = volOf(sym);
@@ -869,11 +880,27 @@ function evaluate(w){
   return out;
 }
 function firedToday(){ const day = etNow().date; let f = store.get("fired", {}); if (f.day !== day) f = {day, ids:{}, log:[], unseen:0}; return f; }
+const SHORT = {level:"level", fast:"fast drop", red:"red day", sig:"unusual drop", hd:"off today's high", off:"off 52w high", near:"near a level"};
+const BUNDLE_MS = 15*60e3;   // one alert per ticker per 15 min, unless a new level breaks or it drops another leg
 function checkAlerts(){
   const f = firedToday(), fresh = [];
-  if (!pausedNow()) cfg.watch.forEach(w => { const sym = (w.sym||"").toUpperCase(); if (snoozed(sym)) return;
-    evaluate(w).forEach(a => { if (!f.ids[a.id]){ f.ids[a.id] = 1; (a.also||[]).forEach(id => f.ids[id] = 1); f.log.unshift({t:Date.now(), msg:a.msg, kind:a.kind, sym:a.sym}); fresh.push(a); } }); });
-  if (fresh.length) f.unseen = (f.unseen||0) + fresh.length;
+  f.lastBy = f.lastBy || {}; f.unseenSyms = f.unseenSyms || [];
+  const rank = {level:0, fast:1, red:1, sig:1, hd:2, off:3, near:5};
+  if (!pausedNow()) cfg.watch.forEach(w => {
+    const sym = (w.sym||"").toUpperCase(); if (snoozed(sym)) return;
+    const news = evaluate(w).filter(a => !f.ids[a.id]); if (!news.length) return;
+    news.forEach(a => { f.ids[a.id] = 1; (a.also||[]).forEach(id => f.ids[id] = 1); });
+    news.sort((a,b)=>(rank[a.kind]??4)-(rank[b.kind]??4));
+    const main = Object.assign({}, news[0]), others = news.slice(1).filter(a => a.kind !== "near").map(a => SHORT[a.kind] || a.kind);
+    if (others.length) main.msg += " · also " + [...new Set(others)].join(", ");
+    const px = quotes[sym] && quotes[sym].c, last = f.lastBy[sym], leg = (w.fastDrop || 2)/100;
+    const loud = main.kind === "level" || !last || Date.now() - last.t > BUNDLE_MS || (px && last.px && px <= last.px*(1-leg));
+    f.log.unshift({t:Date.now(), msg:main.msg, kind:main.kind, sym, quiet:!loud});
+    if (!loud) return;   // logged quietly; no sound, pop-up or badge
+    if (main.kind !== "near"){ f.lastBy[sym] = {t:Date.now(), px}; if (!f.unseenSyms.includes(sym)) f.unseenSyms.push(sym); }
+    fresh.push(main);
+  });
+  f.unseen = f.unseenSyms.length;   // unseen tickers, not alerts
   store.set("fired", f); renderLog(); updateBadge();
   if (fresh.length) notify(fresh);
 }
@@ -883,30 +910,45 @@ function updateBadge(){
   try{ if (navigator.setAppBadge){ n ? navigator.setAppBadge(n) : navigator.clearAppBadge(); } }catch(e){}
   updateTray();
 }
-function markSeen(){ const f = firedToday(); f.unseen = 0; store.set("fired", f); updateBadge(); }
-let bannerSym = "";
+function markSeen(){ const f = firedToday(); f.unseen = 0; f.unseenSyms = []; store.set("fired", f); updateBadge(); }
+let bannerSyms = [], bannerDay = "", lastLoud = 0, lastToast = 0, heldToasts = [];
+const QUIET_MS = 5*60e3;   // in a flush: at most one sound and one pop-up every 5 minutes (new levels always get through)
 function notify(list){
   const rank = {level:0, fast:1, red:1, sig:1, hd:2, off:3, near:5, test:6};
   list = list.slice().sort((a,b)=>(rank[a.kind]??4)-(rank[b.kind]??4));
-  const main = list[0];
-  const b = $("banner"); bannerSym = main.sym || "";
+  const main = list[0], urgent = list.filter(a => a.kind !== "near");
+  const syms = list.map(a=>a.sym).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i);
+  const b = $("banner"); bannerSyms = syms; bannerDay = etNow().date;
   b.className = "k-" + (main.kind==="near" ? "near" : main.kind==="test" ? "test" : "hit");
-  b.innerHTML = esc(main.msg) + (list.length > 1 ? `<small>+${list.length-1} more: ${esc(list.slice(1).map(a=>a.sym).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(", "))}</small>` : "") +
-    `<div class="acts">${bannerSym?`<button data-snz="30">Snooze ${esc(bannerSym)} 30m</button><button data-snz="day">Mute ${esc(bannerSym)} today</button>`:""}<button data-snz="ok">OK</button></div>`;
+  const who = syms.length === 1 ? syms[0] : syms.length > 1 ? "these " + syms.length : "";
+  b.innerHTML = esc(main.msg) + (list.length > 1 ? `<small>+${list.length-1} more: ${esc(syms.filter(x=>x!==main.sym).join(", ") || "same ticker")}</small>` : "") +
+    `<div class="acts">${who?`<button data-snz="30">Snooze ${esc(who)} 30m</button><button data-snz="day">Mute ${esc(who)} today</button>`:""}<button data-snz="ok">OK</button></div>`;
   b.classList.remove("show"); void b.offsetWidth; b.classList.add("show");
-  if (settings.sound === "on") beep(main.kind === "near" ? 1 : 3);
-  const day = etNow().date;
-  // one pop-up per ticker, so a gap through several rules doesn't stack up toasts
-  const bySym = {}; list.forEach(a => { const k = a.sym || a.id; (bySym[k] = bySym[k] || []).push(a); });
-  Object.values(bySym).forEach(as => showToast(as[0].kind==="near" ? "Heads-up" : "Market alert", as.map(a=>a.msg).join("\n"), as[0].id + "@" + day, as[0].kind !== "near"));
-  if (settings.ntfy) fetch("https://ntfy.sh/" + encodeURIComponent(settings.ntfy), {method:"POST", body:list.map(a => a.msg).join("\n"), headers:{"Title":"Market alert","Priority": main.kind==="near"?"default":"high","Tags":"chart_with_downwards_trend"}}).catch(()=>{});
+  const now = Date.now(), hasLevel = list.some(a => a.kind === "level"), isTest = main.kind === "test";
+  // sound: levels always; other alerts at most once per 2 minutes
+  if (!urgent.length) return;   // heads-ups stay in the window: banner only, no sound or pop-up
+  if (settings.sound === "on" && (hasLevel || isTest || now - lastLoud > QUIET_MS)){ beep(main.kind === "near" ? 1 : 3); lastLoud = now; }
+  // one Windows pop-up per batch; heads-ups never ride along with urgent alerts
+  const body = urgent.map(a => a.msg);
+  heldToasts.push(...body);
+  if (hasLevel || isTest || now - lastToast > QUIET_MS){
+    const lines = heldToasts.splice(0); lastToast = now;
+    showToast("Market alert", lines[0] + (lines.length > 1 ? `\n+${lines.length-1} more in MW` : ""), (main.id||"x") + "@" + bannerDay, !!urgent.length);
+  } else setTimeout(flushToasts, QUIET_MS - (now - lastToast) + 500);
+  if (settings.ntfy) fetch("https://ntfy.sh/" + encodeURIComponent(settings.ntfy), {method:"POST", body:body.join("\n"), headers:{"Title":"Market alert","Priority":"high","Tags":"chart_with_downwards_trend"}}).catch(()=>{});
+}
+function flushToasts(){
+  if (!heldToasts.length || Date.now() - lastToast < QUIET_MS) return;
+  const lines = heldToasts.splice(0); lastToast = Date.now();
+  showToast("Market alert", lines[0] + (lines.length > 1 ? `\n+${lines.length-1} more in MW` : ""), "held@" + lastToast, true);
 }
 function minsToMidnightET(){ return 1440 - etNow().mins; }
-function snooze(sym, how){
-  if (how === "30") settings.snooze[sym] = Date.now() + 30*60e3;
-  else settings.snooze[sym] = Date.now() + minsToMidnightET()*60e3;
+function snooze(syms, how){
+  syms = [].concat(syms); const until = how === "30" ? Date.now() + 30*60e3 : Date.now() + minsToMidnightET()*60e3;
+  syms.forEach(sym => settings.snooze[sym] = until);
   Object.keys(settings.snooze).forEach(k => { if (settings.snooze[k] < Date.now()) delete settings.snooze[k]; });
-  saveSettings(); toast(how === "30" ? `${sym} snoozed for 30 min` : `${sym} muted for the rest of today`); renderAll();
+  const name = syms.length === 1 ? syms[0] : syms.join(", ");
+  saveSettings(); toast(how === "30" ? `${name} snoozed for 30 min` : `${name} muted for the rest of today`); renderAll();
 }
 function togglePause(){
   settings.pauseUntil = pausedNow() ? 0 : Date.now() + minsToMidnightET()*60e3;
@@ -923,7 +965,8 @@ async function showToast(title, body, tag, sticky){
 }
 function beep(times){
   try{
-    const ac = new (window.AudioContext||window.webkitAudioContext)();
+    const ac = beep.ac || (beep.ac = new (window.AudioContext||window.webkitAudioContext)());
+    if (ac.state === "suspended") ac.resume();
     for (let i=0;i<times;i++){
       const o = ac.createOscillator(), g = ac.createGain(); o.type = "sine"; o.frequency.value = 880 - i*120;
       o.connect(g); g.connect(ac.destination); const t = ac.currentTime + i*0.28;
@@ -1147,7 +1190,9 @@ function regime(){
   if (vix!=null){ if (vix > 3){ off++; why.push(`volatility up ${vix.toFixed(1)}%`); } else if (vix < -3){ on++; why.push(`volatility down ${Math.abs(vix).toFixed(1)}%`); } }
   if (credit!=null){ if (credit < -0.25){ off++; why.push("credit lagging Treasuries"); } else if (credit > 0.15){ on++; why.push("credit firm"); } }
   if (uup!=null){ if (uup > 0.3){ off++; why.push("dollar up"); } else if (uup < -0.3){ on++; why.push("dollar down"); } }
-  if (eq < -1){ off++; why.push(`stocks ${eq.toFixed(1)}%`); } else if (eq > 0.5){ on++; why.push(`stocks +${eq.toFixed(1)}%`); }
+  // a big equity move outweighs the cross-asset hints
+  if (eq <= -2){ off += 2; why.push(`stocks ${eq.toFixed(1)}%`); } else if (eq < -1){ off++; why.push(`stocks ${eq.toFixed(1)}%`); }
+  else if (eq >= 1.5){ on += 2; why.push(`stocks +${eq.toFixed(1)}%`); } else if (eq > 0.5){ on++; why.push(`stocks +${eq.toFixed(1)}%`); }
   if (smh!=null){ if (smh - spy > 1){ on++; why.push("chips leading"); } else if (smh - spy < -1){ off++; why.push("chips lagging"); } }
   const k = off >= 2 && off > on ? "off" : on >= 2 && on > off ? "on" : "mix";
   // [label, value, minor (hidden when narrow), up-is-bad]
@@ -1202,6 +1247,16 @@ function watchInfo(w){
   let st = hitL.length || red ? "hit" : (dist!=null && w.nearOn!==false && w.near && dist <= w.near) ? "near" : "";
   return {sym, q, m, off, lv, useLv, px, hitL, next, dist, vol, red, st};
 }
+/* what to say about a ticker's level position (row, compact strip, tray) */
+function levelText(I, short){
+  const deep = I.hitL[I.hitL.length-1];
+  if (deep != null){
+    const below = (I.px/deep - 1)*100;
+    if (!I.next && below < -0.5) return short ? `${below.toFixed(1)}% < ${fmt$(deep,0)}` : `${below.toFixed(1)}% below ${fmt$(deep,0)}, your last level`;
+    return short ? "at " + fmt$(deep,0) : "At buy level " + fmt$(deep,0);
+  }
+  return null;
+}
 function ladder(lv, px){
   const all = [...lv, px], lo = Math.min(...all), hi = Math.max(...all), pad = (hi-lo)*0.08 || hi*0.02;
   const pos = v => (v-(lo-pad))/((hi+pad)-(lo-pad))*100;
@@ -1221,7 +1276,7 @@ function renderWatch(){
     const fromHi = m.hi && px ? (1 - px/m.hi)*100 : null;
     const parts = [];
     if (useLv && px){
-      if (hitL.length) parts.push(`<span class="st hit">At buy level ${fmt$(hitL[hitL.length-1],0)}</span>${next?`<span>· next ${fmt$(next,0)}</span>`:""}`);
+      if (hitL.length) parts.push(`<span class="st hit">${levelText(I)}</span>${next?`<span>· next ${fmt$(next,0)}</span>`:""}`);
       else if (next) parts.push(`<span>Next buy <b>${fmt$(next,0)}</b></span><span class="st ${I.st}">${dist.toFixed(1)}% away${vol && dist/vol < 15 ?` · ${(dist/vol).toFixed(1)}σ`:""}</span>`);
       else parts.push(`<span class="muted">Below all your levels</span>`);
     }
@@ -1257,19 +1312,24 @@ function renderWatch(){
   const cash = cfg.fixed.filter(f=>!f.sym).reduce((a,f)=>a+(+f.value||0),0);
   const plan = []; cfg.watch.forEach(w => { const I = watchInfo(w); if (!(+w.buyAmt > 0) || !I.px || I.off) return; I.lv.filter(L => L < I.px).forEach(L => plan.push({sym:I.sym, L, amt:+w.buyAmt, d:(I.px/L-1)*100})); });
   plan.sort((a,b)=>a.d-b.d);
-  let cum = 0, covered = 0; plan.forEach(x => { cum += x.amt; if (cum <= cash + 0.5) covered++; });
-  const planHtml = plan.length ? `<div class="note" style="margin:0 0 6px;font-size:11.5px;color:var(--fg-2)" title="${esc(plan.map(x=>`${x.sym} ${fmt$(x.L,0)}: ${fmt$(x.amt,0)}`).join(" · "))}">Cash ${fmt$(cash,0)} covers <b style="color:${covered<plan.length?"var(--warn)":"var(--up)"}">${covered} of ${plan.length}</b> planned buys (${fmt$(cum,0)} total)${plan[0]?` · next: ${esc(plan[0].sym)} ${fmt$(plan[0].L,0)}`:""}</div>` : "";
+  let trig0 = 0; cfg.watch.forEach(w => { const I = watchInfo(w); if (+w.buyAmt > 0 && I.px && !I.off) trig0 += I.hitL.length * +w.buyAmt; });
+  const left = Math.max(0, cash - trig0);
+  let cum = 0, covered = 0; plan.forEach(x => { cum += x.amt; if (cum <= left + 0.5) covered++; });
+  let trig = 0; cfg.watch.forEach(w => { const I = watchInfo(w); if (+w.buyAmt > 0 && I.px && !I.off) trig += I.hitL.length * +w.buyAmt; });
+  const over = trig > cash + 0.5;
+  const trigHtml = trig ? `<div class="note" style="margin:0 0 4px;font-size:11.5px;color:${over?"var(--warn)":"var(--fg-2)"}">Buys triggered today: <b>${fmt$(trig,0)}</b> of ${fmt$(cash,0)} cash${over?` · <b>${fmt$(trig-cash,0)} more than you have</b>`:` · ${fmt$(cash-trig,0)} left`}</div>` : "";
+  const planHtml = trigHtml + (plan.length ? `<div class="note" style="margin:0 0 6px;font-size:11.5px;color:var(--fg-2)" title="${esc(plan.map(x=>`${x.sym} ${fmt$(x.L,0)}: ${fmt$(x.amt,0)}`).join(" · "))}">${trig0 ? "What's left" : "Cash " + fmt$(cash,0)} covers <b style="color:${covered<plan.length?"var(--warn)":"var(--up)"}">${covered} of ${plan.length}</b> planned buys (${fmt$(cum,0)} total)${plan[0]?` · next: ${esc(plan[0].sym)} ${fmt$(plan[0].L,0)}`:""}</div>` : "");
   $("wl-body").innerHTML = html ? planHtml + html : `<div class="empty">No tickers yet. <button data-open="alerts">Add one</button></div>`;
   $("wl-sum").innerHTML = settings.allOff ? `<span class="muted">alerts off</span>` : pausedNow() ? `<span style="color:var(--warn);font-weight:600">paused</span>` : (hits?`<span class="down" style="font-weight:600">${hits} at level</span>`:"") + (nears?`<span style="color:var(--warn);font-weight:600">${nears} near</span>`:"") + (!hits&&!nears?`<span class="muted">${cfg.watch.length} watching</span>`:"");
   // compact strip: closest to a buy level first
   const rows = cfg.watch.map(watchInfo).filter(I => I.px).sort((a,b) => (a.hitL.length?-1e9:0) - (b.hitL.length?-1e9:0) || (a.dist ?? 1e9) - (b.dist ?? 1e9));
   $("strip").innerHTML = rows.map(I => `<div class="srow num"><span class="s">${esc(I.sym)}${erChip(I.sym)}</span><span>${fmt$(I.px)}</span><span class="${cls(I.q.dp)}">${fmtPct(I.q.dp,1)}</span>
-    <span class="d ${I.hitL.length||I.red?"hit":I.st}">${I.hitL.length ? "at " + fmt$(I.hitL[I.hitL.length-1],0) : I.next ? `${I.dist.toFixed(1)}% → ${fmt$(I.next,0)}` : I.red ? "red day" : "—"}</span></div>`).join("") || `<div class="muted" style="font-size:11.5px">No watchlist prices yet.</div>`;
+    <span class="d ${I.hitL.length||I.red?"hit":I.st}">${I.hitL.length ? levelText(I, true) : I.next ? `${I.dist.toFixed(1)}% → ${fmt$(I.next,0)}` : I.red ? "red day" : "—"}</span></div>`).join("") || `<div class="muted" style="font-size:11.5px">No watchlist prices yet.</div>`;
 }
 function renderLog(){
   const f = firedToday();
   $("log-sum").innerHTML = f.log.length ? `<span>${f.log.length} today</span>` : `<span class="muted">none yet</span>`;
-  $("log-body").innerHTML = f.log.length ? f.log.slice(0,40).map(l=>`<div><time>${timeStr(l.t)}</time><span>${esc(l.msg)}</span></div>`).join("") : `<div class="muted">No alerts yet today.</div>`;
+  $("log-body").innerHTML = f.log.length ? f.log.slice(0,40).map(l=>`<div ${l.quiet?'class="muted" title="Logged quietly: this ticker alerted in the last 15 min"':""}><time>${timeStr(l.t)}</time><span>${esc(l.msg)}</span></div>`).join("") : `<div class="muted">No alerts yet today.</div>`;
 }
 
 /* ---------- frame ---------- */
@@ -1290,6 +1350,10 @@ function renderFrame(){
   $("mkt").title = (ds.why ? ds.why + ". " : "") + (ses.s==="open" ? "Market open · live prices" + (ses.early ? " · closes at 1 pm today." : ".") : ses.label + (ses.why && ses.why!=="Market holiday" ? " (" + ses.why + ")" : "") + " · showing the last close. The free data feeds don't carry pre-market or after-hours prices.") + " Click for data status.";
   const age = lastUpdate ? Math.round((Date.now()-lastUpdate)/60000) : null;
   $("upd").textContent = lastUpdate ? (ses.s==="open" ? `Updated ${dateTime(lastUpdate)}${age>=3 ? ` (${age} min ago)` : ""}` : `Last close prices · checked ${dateTime(lastUpdate)}`) : "";
+  const b = $("banner");
+  if (b.classList.contains("show") && bannerDay && (bannerDay !== etNow().date || (ses.s !== "open" && lastLoud && Date.now() - lastLoud > 30*60e3))) b.classList.remove("show");
+  const sn = $("since");
+  if (sn.classList.contains("show") && (Date.now() - (+sn.dataset.at||0) > 15*60e3 || sn.dataset.day !== etNow().date)) sn.classList.remove("show");
   const p = $("paused");
   p.classList.toggle("show", !!pausedNow());
   if (pausedNow()) p.innerHTML = `<span>Alerts paused for the rest of today</span><button data-act="resume">Resume</button>`;
@@ -1315,6 +1379,7 @@ function renderStatus(){
     ${kv("Symbols priced", health.total ? `${health.ok} of ${health.total}` : "—")}
     ${health.fail.length ? kv("Didn't update", esc(health.fail.slice(0,8).join(", "))) : ""}
     ${health.backup.length ? kv("Priced by backup", esc(health.backup.slice(0,8).join(", "))) : ""}
+    ${health.bad && health.bad.length ? kv("Ignored bad prints", esc(health.bad.slice(0,8).join(", "))) : ""}
     ${kv("Refresh", ms ? `every ${Math.round(ms/1000)}s` + (ses.s==="open" && minRefreshSec() > (+settings.refresh||60) ? " (stretched to stay under the free limit)" : "") : "manual")}
     ${kv("Finnhub calls, last minute", `${perMin} of 60`)}
     ${kv("Twelve Data credits today", settings.tdKey ? `${u.date===d?u.n:0} of 800` : "no key")}
@@ -1335,7 +1400,7 @@ function showSince(){
   const na = firedToday().log.length - lookSnap.alerts;
   if ((dUsd==null || Math.abs(dUsd) < 1) && (!mover || Math.abs(mover.ch) < 0.05) && !na) return;
   el.innerHTML = `<span>Since ${timeStr(lookSnap.t)}:</span>${dUsd!=null?`<b class="${cls(dUsd)}">${fmtS$(dUsd)}</b>`:""}${mover?`<span>${esc(mover.s)} <b class="${cls(mover.ch)}">${fmtPct(mover.ch,1)}</b></span>`:""}${na>0?`<b style="color:var(--down)">${na} new alert${na>1?"s":""}</b>`:""}<span class="x2">✕</span>`;
-  el.classList.add("show"); lookSnap = null;
+  el.classList.add("show"); el.dataset.at = Date.now(); el.dataset.day = etNow().date; lookSnap = null;
 }
 window.addEventListener("blur", snapLook);
 window.addEventListener("focus", showSince);
@@ -1349,7 +1414,7 @@ function updateTray(){
   if (cfg.holdings.length && Object.keys(quotes).length) parts.push(`${fmt$(P.total,0)} ${fmtPct(P.dayPct)}`);
   const b = quotes[settings.bench]; if (b) parts.push(`${settings.bench} ${fmtPct(b.dp,1)}`);
   const near = cfg.watch.map(watchInfo).filter(I => I.px && (I.hitL.length || I.dist!=null)).sort((a,b)=>(a.hitL.length?-1e9:a.dist)-(b.hitL.length?-1e9:b.dist))[0];
-  if (near) parts.push(near.hitL.length ? `${near.sym} at ${fmt$(near.hitL[near.hitL.length-1],0)}` : `${near.sym} ${near.dist.toFixed(1)}% to ${fmt$(near.next,0)}`);
+  if (near) parts.push(near.hitL.length ? `${near.sym} ${levelText(near, true)}` : `${near.sym} ${near.dist.toFixed(1)}% to ${fmt$(near.next,0)}`);
   const ds = dataState(); if (ds.k !== "ok") parts.push(ds.why);
   if (pausedNow()) parts.push("alerts paused");
   const alert = (firedToday().unseen || 0) > 0, stale = ds.k !== "ok", paused = !!pausedNow(), tip = parts.join(" · "), key = [tip, alert, stale, paused].join("|");
@@ -1417,7 +1482,7 @@ $("bMore").onclick = e=>{ e.stopPropagation(); const m = $("menu"), open = m.cla
 document.addEventListener("click", e=>{ if (!e.target.closest("#menu,#bMore")) closeMenu(); }, true);
 $("menu").addEventListener("click", e=>{ if (e.target.closest("button")) setTimeout(closeMenu, 0); });
 function dismissBanner(){ $("banner").classList.remove("show"); markSeen(); }
-$("banner").onclick = e=>{ const b = e.target.closest("[data-snz]"); if (b && b.dataset.snz !== "ok" && bannerSym) snooze(bannerSym, b.dataset.snz); dismissBanner(); };
+$("banner").onclick = e=>{ const b = e.target.closest("[data-snz]"); if (b && b.dataset.snz !== "ok" && bannerSyms.length) snooze(bannerSyms, b.dataset.snz); dismissBanner(); };
 $("since").onclick = ()=> $("since").classList.remove("show");
 $("bPause").onclick = ()=> togglePause();
 $("mkt").onclick = e=>{ e.stopPropagation(); const p = $("statusPop"); p.classList.toggle("hide"); if (!p.classList.contains("hide")) renderStatus(); };
@@ -1605,17 +1670,19 @@ function showTab(tab){
   else if (tab==="backup"){
     B.innerHTML = `
       <div class="field"><label>Back up or move your setup</label><p>Holdings, funds and cash, watchlist and alert rules. Keep this private: it's your portfolio.</p>
-        <label style="display:flex;gap:7px;align-items:center;font-weight:400;margin-top:6px"><input type="checkbox" id="bKeys"> Include my data keys (to move to the desktop app or another PC)</label></div>
+        <label style="display:flex;gap:7px;align-items:center;font-weight:400;margin-top:6px"><input type="checkbox" id="bKeys"> Include my data keys and settings (to move to the desktop app or another PC)</label></div>
       <textarea class="code" id="bTxt" spellcheck="false">${esc(JSON.stringify(cfg))}</textarea>
       <div style="display:flex;gap:8px;margin:8px 0 18px;flex-wrap:wrap"><button class="btn" id="bCopy">Copy</button><button class="btn" id="bDl">Download file</button></div>
       <div class="field"><label>Restore</label><p>Paste a backup above, then click Restore. This replaces your current list.</p></div>
       <button class="btn primary" id="bRestore">Restore from the box above</button><div class="err" id="bErr"></div>`;
-    $("bKeys").onchange = e=>{ const c = JSON.parse(JSON.stringify(cfg)); if (e.target.checked) c._keys = {key:settings.key, tdKey:settings.tdKey}; $("bTxt").value = JSON.stringify(c); };
+    $("bKeys").onchange = e=>{ const c = JSON.parse(JSON.stringify(cfg)); if (e.target.checked){ c._keys = {key:settings.key, tdKey:settings.tdKey}; c._settings = {ntfy:settings.ntfy, sound:settings.sound, refresh:settings.refresh, bench:settings.bench, theme:settings.theme, heatOrder:settings.heatOrder}; } $("bTxt").value = JSON.stringify(c); };
     $("bCopy").onclick = async ()=>{ try{ await navigator.clipboard.writeText($("bTxt").value); toast("Copied"); }catch(e){ $("bTxt").select(); document.execCommand("copy"); toast("Copied"); } };
     $("bDl").onclick = ()=>{ const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([$("bTxt").value], {type:"application/json"})); a.download = "market-widget-backup.json"; a.click(); };
     $("bRestore").onclick = ()=>{
       try{ const c = JSON.parse($("bTxt").value); if (!Array.isArray(c.holdings) || !Array.isArray(c.watch)) throw new Error("this doesn't look like a widget backup");
-        if (c._keys){ if (c._keys.key) settings.key = String(c._keys.key); if (c._keys.tdKey) settings.tdKey = String(c._keys.tdKey); saveSettings(); delete c._keys; hist = {}; loadHist.day = null; }
+        if (c._keys){ if (c._keys.key) settings.key = String(c._keys.key); if (c._keys.tdKey) settings.tdKey = String(c._keys.tdKey); delete c._keys; hist = {}; loadHist.day = null; }
+        if (c._settings && typeof c._settings === "object"){ ["ntfy","sound","refresh","bench","theme","heatOrder"].forEach(k => { if (c._settings[k] != null) settings[k] = c._settings[k]; }); document.documentElement.dataset.theme = settings.theme; delete c._settings; }
+        saveSettings();
         cfg = normCfg(c); store.set("cfg", cfg); toast("Restored"); closeSheet(); schedule(true);
       }catch(e){ $("bErr").textContent = "Couldn't restore: " + e.message; }
     };
