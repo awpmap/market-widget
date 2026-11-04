@@ -1,0 +1,51 @@
+name: Background alerts
+
+# Checks the watchlist every 5 minutes on weekdays and sends Windows notifications through Edge.
+# All personal settings live in the ALERT_SETUP repository secret. Logs show counts only.
+on:
+  schedule:
+    - cron: "*/5 13-21 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Send a test notification"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alerts
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Restore alert memory
+        uses: actions/cache/restore@v4
+        with:
+          path: .alert-state
+          key: alert-state-${{ github.run_id }}
+          restore-keys: alert-state-
+      - name: Install
+        run: npm install --no-save --silent web-push@3.6.7
+      - name: Check prices
+        env:
+          ALERT_SETUP: ${{ secrets.ALERT_SETUP }}
+          TEST_PUSH: ${{ github.event_name == 'workflow_dispatch' && inputs.test }}
+        run: node scripts/check-alerts.mjs
+      - name: Save alert memory
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .alert-state
+          key: alert-state-${{ github.run_id }}

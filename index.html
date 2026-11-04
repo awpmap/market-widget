@@ -161,18 +161,30 @@ body.compact #log-sec, body.compact footer{display:none}
 .note{font-size:10.5px;color:var(--muted);margin-top:6px}
 
 /* ============ watchlist ============ */
-.wrow{padding:8px 2px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
+.wrow{padding:9px 10px 9px 12px;margin:0 -12px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);position:relative}
 .wrow:first-child{border-top:0}
+.wrow::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:transparent}
+.wrow.st-hit::before{background:var(--down)} .wrow.st-near::before{background:var(--warn)}
+.wrow.muted-row{opacity:.55}
 .wtop{display:grid;grid-template-columns:minmax(64px,1fr) 64px minmax(70px,auto) 62px;gap:8px;align-items:center}
-.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.wtop .s{font-weight:600}
+.wtop .s small{display:block;font-weight:400;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lad{position:relative;height:30px;margin:8px 4px 0}
+.lad .track{position:absolute;left:0;right:0;top:7px;height:3px;background:var(--line-2);border-radius:3px}
+.lad .zone{position:absolute;top:7px;height:3px;background:color-mix(in srgb,var(--warn) 55%,transparent);border-radius:3px}
+.lad .tk{position:absolute;top:2px;width:2px;height:13px;margin-left:-1px;background:var(--warn);border-radius:1px}
+.lad .tl{position:absolute;top:17px;transform:translateX(-50%);font-size:10px;color:var(--fg-2);white-space:nowrap}
+.lad .now{position:absolute;top:3px;width:11px;height:11px;margin-left:-5.5px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 28%,transparent)}
+.wmeta{display:flex;align-items:center;gap:10px;margin-top:4px;font-size:11.5px;color:var(--fg-2)}
+.wmeta b{color:var(--fg);font-weight:600}
+.wmeta .st{font-weight:600}
+.wmeta .st.hit{color:var(--down)} .wmeta .st.near{color:var(--warn)}
+.wmeta .r{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--muted)}
 .chip{font-size:10.5px;background:var(--surface-2);border-radius:10px;padding:2px 8px;color:var(--fg-2);white-space:nowrap}
-.chip.hit{background:color-mix(in srgb,var(--down) 24%,transparent);color:var(--fg)}
-.chip.near{background:color-mix(in srgb,var(--warn) 24%,transparent);color:var(--fg)}
-.chip.off{opacity:.45;text-decoration:line-through}
-.ladder{position:relative;height:18px;margin-top:6px}
-.ladder .track{position:absolute;left:0;right:0;top:8px;height:2px;background:var(--line-2);border-radius:2px}
-.ladder .lv{position:absolute;top:3px;width:2px;height:12px;background:var(--warn);border-radius:1px}
-.ladder .now{position:absolute;top:1px;width:10px;height:10px;margin-left:-5px;margin-top:3px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 30%,transparent)}
+.steps{margin:0 0 12px;padding-left:18px;font-size:12.5px;line-height:1.55}
+.steps li{margin-bottom:6px}
+.codebox{width:100%;height:84px;font:11px var(--mono);word-break:break-all}
+.ok{color:var(--up);font-weight:600}
 
 /* ============ alert log, banner, toast ============ */
 .log div{font-size:11.5px;padding:5px 0;border-top:1px dashed var(--line);display:flex;gap:8px}
@@ -278,7 +290,7 @@ textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
   <section class="sec" id="wl-sec" data-sec="watch">
     <button class="sec-h" data-toggle="watch">
       <svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>
-      <span class="sec-t">Watchlist &amp; buy levels</span>
+      <span class="sec-t">Watchlist</span>
       <span class="sec-sum num" id="wl-sum"></span>
     </button>
     <div class="sec-b" id="wl-body"></div>
@@ -303,6 +315,7 @@ textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
     <button data-tab="general" class="on">General</button>
     <button data-tab="holdings">Holdings</button>
     <button data-tab="alerts">Alerts</button>
+    <button data-tab="background">Background</button>
     <button data-tab="markets">Markets</button>
     <button data-tab="backup">Backup</button>
   </div>
@@ -313,7 +326,7 @@ textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
 
 <script>
 "use strict";
-const APP_VERSION = "2.3.0";
+const APP_VERSION = "2.4.0";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -626,8 +639,16 @@ function notify(list){
   b.classList.remove("show"); void b.offsetWidth; b.classList.add("show");
   if (settings.sound === "on") beep(main.kind === "near" ? 1 : 3);
   const body = list.map(a => a.msg).join("\n");
-  try{ if ("Notification" in window && Notification.permission === "granted") new Notification(list.length > 1 ? `${list.length} market alerts` : "Market alert", {body, icon:"icons/icon-192.png", tag:"mw-"+Date.now(), requireInteraction: main.kind !== "near"}); }catch(e){}
+  const day = etNow().date; list.forEach(a => showToast("Market alert", a.msg, a.id + "@" + day, a.kind !== "near"));
   if (settings.ntfy) fetch("https://ntfy.sh/" + encodeURIComponent(settings.ntfy), {method:"POST", body, headers:{"Title":"Market alert","Priority": main.kind==="near"?"default":"high","Tags":"chart_with_downwards_trend"}}).catch(()=>{});
+}
+async function showToast(title, body, tag, sticky){
+  try{
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const opts = {body, icon:"icons/icon-192.png", badge:"icons/icon-192.png", tag, requireInteraction: !!sticky};
+    const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+    if (reg) await reg.showNotification(title, opts); else new Notification(title, opts);
+  }catch(e){}
 }
 function beep(times){
   try{
@@ -640,6 +661,31 @@ function beep(times){
     }
   }catch(e){}
 }
+
+/* ---------- background alerts: Web Push keys made on this PC; setup code goes into a private GitHub secret ---------- */
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+const unb64u = s => Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/") + "===".slice((s.length+3)%4)), c => c.charCodeAt(0));
+async function enableBackground(){
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) throw new Error("this browser doesn't support background alerts");
+  const perm = await Notification.requestPermission(); if (perm !== "granted") throw new Error("notifications are blocked for this app");
+  const reg = await navigator.serviceWorker.register("sw.js"); await navigator.serviceWorker.ready;
+  let bg = store.get("bg", {});
+  if (!bg.pub){
+    const kp = await crypto.subtle.generateKey({name:"ECDSA", namedCurve:"P-256"}, true, ["sign","verify"]);
+    bg.pub = b64u(await crypto.subtle.exportKey("raw", kp.publicKey));
+    bg.priv = (await crypto.subtle.exportKey("jwk", kp.privateKey)).d;
+  }
+  const old = await reg.pushManager.getSubscription(); if (old) await old.unsubscribe();
+  const sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: unb64u(bg.pub)});
+  bg.sub = sub.toJSON(); delete bg.hash; store.set("bg", bg);
+}
+function bgPayload(){
+  const bg = store.get("bg", {});
+  return {v:1, vapid:{pub:bg.pub, priv:bg.priv}, sub:bg.sub, fk:settings.key, allOff:!!settings.allOff,
+    watch: cfg.watch.map(w=>({sym:w.sym, on:w.on, dayDrop:w.dayDrop, redOn:w.redOn, offHigh:w.offHigh, offOn:w.offOn, levels:w.levels, levelsOn:w.levelsOn, near:w.near, nearOn:w.nearOn, split:w.split}))};
+}
+function bgCode(){ return btoa(unescape(encodeURIComponent(JSON.stringify(bgPayload())))); }
+function bgHash(){ const p = bgPayload(); delete p.vapid; delete p.sub; const t = JSON.stringify(p); let h = 0; for (let i=0;i<t.length;i++) h = (h*31 + t.charCodeAt(i))|0; return String(h); }
 
 /* ---------- small charts ---------- */
 function sparkSvg(sym, levels){
@@ -823,27 +869,32 @@ function renderMarkets(){
 function renderWatch(){
   let hits = 0, nears = 0;
   const html = cfg.watch.map(w=>{
-    const sym = (w.sym||"").toUpperCase(), q = quotes[sym], m = metrics[sym] || {}, lv = effLevels(w), off = w.on===false;
-    const chips = [];
-    if (off) chips.push(`<span class="chip off">alerts off</span>`);
-    if (m.hi && q){ const d = (1 - q.c/m.hi)*100; chips.push(`<span class="chip ${off||w.offOn===false?"off":d>=w.offHigh?"hit":d>=w.offHigh*0.8?"near":""}">−${d.toFixed(1)}% from high</span>`); }
-    lv.forEach(L=>{
-      const st = q ? (q.c<=L ? "hit" : (w.near && q.c<=L*(1+w.near/100)) ? "near" : "") : "";
-      if (!off && w.levelsOn!==false){ if (st==="hit") hits++; else if (st==="near") nears++; }
-      const dist = q ? (q.c/L - 1)*100 : null;
-      chips.push(`<span class="chip ${off||w.levelsOn===false?"off":st}">${fmt$(L,0)}${dist!=null?" · "+(dist<=0?"hit":dist.toFixed(1)+"% away"):""}</span>`);
-    });
-    let ladder = "";
-    if (q && lv.length){
-      const all = [...lv, q.c], lo = Math.min(...all)*0.985, hi = Math.max(...all)*1.015, pos = v => ((v-lo)/(hi-lo)*100).toFixed(1);
-      ladder = `<div class="ladder" title="Your levels (orange) and the price now (blue)"><div class="track"></div>${lv.map(L=>`<div class="lv" style="left:${pos(L)}%"></div>`).join("")}<div class="now" style="left:${pos(q.c)}%"></div></div>`;
+    const sym = (w.sym||"").toUpperCase(), q = quotes[sym], m = metrics[sym] || {}, off = w.on===false || settings.allOff;
+    const lv = effLevels(w).slice().sort((a,b)=>b-a), useLv = w.levelsOn!==false && lv.length;
+    const px = q && q.c, fromHi = m.hi && px ? (1 - px/m.hi)*100 : null;
+    let st = "", line = "";
+    if (useLv && px){
+      const hitL = lv.filter(L => px <= L), next = lv.find(L => L < px);
+      if (hitL.length){ st = "hit"; line = `<span class="st hit">At buy level ${fmt$(hitL[hitL.length-1],0)}</span>${hitL.length<lv.length?` <span>· next ${fmt$(lv[hitL.length],0)}</span>`:""}`; }
+      else { const d = (px/lv[0] - 1)*100; st = (w.nearOn!==false && w.near && d <= w.near) ? "near" : "";
+        line = `<span>Next buy <b>${fmt$(lv[0],0)}</b></span><span class="st ${st}">${d.toFixed(1)}% away</span>`; }
+    } else if (px && q.dp!=null && w.redOn!==false && w.dayDrop && q.dp <= -w.dayDrop){ st = "hit"; line = `<span class="st hit">Red day: ${fmtPct(q.dp,1)}</span>`; }
+    else line = `<span class="muted">${w.note ? "" : "Watching"}</span>`;
+    if (!off){ if (st==="hit") hits++; else if (st==="near") nears++; }
+    let lad = "";
+    if (useLv && px){
+      const all = [...lv, px], lo = Math.min(...all), hi = Math.max(...all), pad = (hi-lo)*0.08 || hi*0.02;
+      const pos = v => ((v-(lo-pad))/((hi+pad)-(lo-pad))*100).toFixed(1);
+      const zone = lv.length > 1 ? `<div class="zone" style="left:${pos(lv[lv.length-1])}%;width:${(pos(lv[0])-pos(lv[lv.length-1])).toFixed(1)}%"></div>` : "";
+      lad = `<div class="lad" title="Your buy levels (orange) and today's price (blue)"><div class="track"></div>${zone}${lv.map(L=>`<div class="tk" style="left:${pos(L)}%"></div><div class="tl num" style="left:${pos(L)}%">${fmt$(L,0)}</div>`).join("")}<div class="now" style="left:${pos(px)}%"></div></div>`;
     }
-    return `<div class="wrow"><div class="wtop">
-      <div class="s" style="font-weight:600">${esc(sym)}<small style="display:block;font-weight:400;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(w.note||"")}</small></div>
+    const right = `<span class="r">${fromHi!=null?`<span class="num">${fromHi>=0?"−":"+"}${Math.abs(fromHi).toFixed(1)}% from high</span>`:""}${off?`<span class="chip">alerts off</span>`:""}<button class="rbtn" data-ref="${esc(sym)}" title="Refresh just ${esc(sym)}" aria-label="Refresh ${esc(sym)}">↻</button></span>`;
+    return `<div class="wrow ${off?"muted-row":st?"st-"+st:""}"><div class="wtop">
+      <div class="s">${esc(sym)}<small>${esc(w.note||"")}</small></div>
       ${sparkSvg(sym, lv)}
-      <div class="v num" style="text-align:right">${q?fmt$(q.c):"—"}</div>
+      <div class="v num" style="text-align:right">${px?fmt$(px):"—"}</div>
       <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}</div></div>
-      ${ladder}<div class="chips">${chips.join("")}<button class="rbtn" data-ref="${esc(sym)}" title="Refresh just ${esc(sym)}" style="margin-left:auto" aria-label="Refresh ${esc(sym)}">↻</button></div></div>`;
+      ${lad}<div class="wmeta">${line}${right}</div></div>`;
   }).join("");
   $("wl-body").innerHTML = html || `<div class="empty">No tickers yet. <button data-open="alerts">Add one</button></div>`;
   $("wl-sum").innerHTML = settings.allOff ? `<span class="muted">alerts paused</span>` : (hits?`<span class="down" style="font-weight:600">${hits} at level</span>`:"") + (nears?`<span style="color:var(--warn);font-weight:600">${nears} near</span>`:"") + (!hits&&!nears?`<span class="muted">${cfg.watch.length} watching</span>`:"");
@@ -1017,6 +1068,28 @@ function showTab(tab){
     $("aList").onclick = e=>{ const d = e.target.closest("[data-wdel]"); if (!d) return; const w = cfg.watch[+d.dataset.wdel]; if (confirm(`Remove ${w.sym} from your watchlist?`)){ cfg.watch.splice(+d.dataset.wdel,1); save(); showTab("alerts"); } };
     const add = ()=>{ const sym = $("aSym").value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,""); if (!sym) return; if (!cfg.watch.some(w=>w.sym.toUpperCase()===sym)){ cfg.watch.push({sym, note:"", dayDrop:3, offHigh:10, levels:[], near:1.5}); save(); schedule(true); } showTab("alerts"); };
     $("aAdd").onclick = add; $("aSym").onkeydown = e=>{ if (e.key==="Enter") add(); };
+  }
+  else if (tab==="background"){
+    const bg = store.get("bg", {});
+    const stale = bg.hash && bg.hash !== bgHash();
+    B.innerHTML = `
+      <div class="field"><label>Alerts when the window is closed</label>
+        <p>A checker runs on GitHub every 5 minutes while the market is open and sends a Windows pop-up through Edge, even with this window closed. Your levels and keys go only into a private GitHub secret, never into the public code or logs.</p></div>
+      <ol class="steps">
+        <li><b>Turn on notifications.</b> <button class="btn" id="bgOn">${bg.sub ? "✓ Connected · regenerate" : "Connect this PC"}</button></li>
+        <li><b>Copy your setup code.</b> <button class="btn" id="bgCopy" ${bg.sub?"":"disabled"}>Copy code</button>${stale?` <span style="color:var(--warn);font-weight:600">Your watchlist changed: copy and save it again.</span>`:""}
+          <textarea class="codebox" id="bgCode" readonly placeholder="Connect first">${bg.sub ? esc(bgCode()) : ""}</textarea></li>
+        <li><b>Save it on GitHub</b> as a secret named <code>ALERT_SETUP</code>: <a href="https://github.com/awpmap/market-widget/settings/secrets/actions/new" target="_blank" rel="noopener" style="color:var(--accent)">open the secrets page</a>, paste, click Add secret. (Updating later: open the secret and paste over it.)</li>
+        <li><b>Send yourself a test.</b> <a href="https://github.com/awpmap/market-widget/actions/workflows/alerts.yml" target="_blank" rel="noopener" style="color:var(--accent)">Open the checker</a> → Run workflow → Run. A pop-up should arrive within a minute.</li>
+        <li><b>Keep Edge running in the background.</b> Edge settings → System → turn on "Continue running background extensions and apps when Microsoft Edge is closed."</li>
+      </ol>
+      <p class="note">Checks happen about every 5 to 15 minutes (GitHub's timing), 9:30 am to 4 pm ET on weekdays. Each alert fires once a day. Pop-ups match the ones this window shows, so you won't get doubles.</p>
+      <div class="err" id="bgErr"></div>`;
+    $("bgOn").onclick = async ()=>{
+      try{ await enableBackground(); toast("Connected"); showTab("background"); }
+      catch(e){ $("bgErr").textContent = "Couldn't connect: " + (e.message || e) + (location.protocol!=="https:" ? " (open the app from its web address)" : ""); }
+    };
+    $("bgCopy").onclick = async ()=>{ const t = $("bgCode"); try{ await navigator.clipboard.writeText(t.value); }catch(e){ t.select(); document.execCommand("copy"); } const b = store.get("bg", {}); b.hash = bgHash(); store.set("bg", b); toast("Copied. Paste it into GitHub"); showTab("background"); };
   }
   else if (tab==="markets"){
     const grp = (title, arr) => `<div class="field"><label>${title}</label><div class="mk-list">${arr.map(m=>`<label><input type="checkbox" data-mk="${m.sym}" ${cfg.hiddenMk.includes(m.sym)?"":"checked"}> ${esc(m.name)} <span class="muted">${m.sym}</span></label>`).join("")}</div></div>`;
