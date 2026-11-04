@@ -7,6 +7,7 @@ fn main() {
             "shell_hide",
             "shell_quit",
             "shell_tray",
+            "shell_alive",
             "shell_notify",
         ])),
     )

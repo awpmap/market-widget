@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-shell-tray"
+description = "Enables the shell_tray command without any pre-configured scope."
+commands.allow = ["shell_tray"]
+
+[[permission]]
+identifier = "deny-shell-tray"
+description = "Denies the shell_tray command without any pre-configured scope."
+commands.deny = ["shell_tray"]

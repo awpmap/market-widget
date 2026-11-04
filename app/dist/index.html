@@ -27,7 +27,9 @@ let tries = 0, timer = 0;
 async function attempt(){
   clearTimeout(timer); tries++;
   try {
-    await fetch(APP + "manifest.webmanifest?ping=" + Date.now(), { mode: "no-cors", cache: "no-store" });
+    // GitHub Pages allows cross-origin reads, so a real status check is possible
+    const r = await fetch(APP + "manifest.webmanifest?ping=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) throw new Error("status " + r.status);
     location.replace(APP);
   } catch (e) {
     document.getElementById("on").style.display = "none";
@@ -39,6 +41,9 @@ async function attempt(){
 }
 document.getElementById("retry").onclick = attempt;
 window.addEventListener("online", attempt);
+// tell the tray app this page is alive (so its watchdog doesn't reload while we wait)
+const alive = () => { try { window.__TAURI__ && window.__TAURI__.core.invoke("shell_alive"); } catch (e) {} };
+alive(); setInterval(alive, 30000);
 attempt();
 </script>
 </body></html>

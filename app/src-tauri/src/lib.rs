@@ -3,7 +3,12 @@
 //! start with Windows, always-on-top, a global hotkey and native toasts.
 //! Information only: nothing here can trade or touch a brokerage.
 
-use std::{fs, path::PathBuf, sync::Mutex};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 use serde::{Deserialize, Serialize};
 use tauri::{
@@ -20,7 +25,13 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 use tauri_plugin_notification::NotificationExt;
 
 const AUTOSTART_ARG: &str = "--autostart";
-const LAUNCHER_URL: &str = "index.html";
+/// The bundled launcher page (Windows serves app files from http://tauri.localhost).
+#[cfg(windows)]
+const LAUNCHER_URL: &str = "http://tauri.localhost/index.html";
+#[cfg(not(windows))]
+const LAUNCHER_URL: &str = "tauri://localhost/index.html";
+/// If the page stops checking in for this long, the shell warns and reloads it.
+const WATCHDOG_SECS: u64 = 180;
 
 /// Preferences that belong to the shell (the page keeps its own in its storage).
 #[derive(Serialize, Deserialize, Clone)]
@@ -43,7 +54,10 @@ struct Shell {
     prefs: Mutex<Prefs>,
     tray: Mutex<Option<TrayIcon<Wry>>>,
     items: Mutex<Option<TrayItems>>,
-    alert_state: Mutex<bool>,
+    icon_state: Mutex<&'static str>,
+    heartbeat: Mutex<Instant>,
+    watchdog_fired: Mutex<bool>,
+    hotkey_ok: Mutex<bool>,
 }
 
 struct TrayItems {
@@ -51,6 +65,7 @@ struct TrayItems {
     on_top: CheckMenuItem<Wry>,
     autostart: CheckMenuItem<Wry>,
     start_hidden: CheckMenuItem<Wry>,
+    pause: CheckMenuItem<Wry>,
 }
 
 #[derive(Serialize)]
@@ -60,6 +75,7 @@ struct AppState {
     autostart: bool,
     start_hidden: bool,
     hotkey: bool,
+    hotkey_ok: bool,
     hotkey_label: &'static str,
 }
 
@@ -177,6 +193,7 @@ fn apply_pref(app: &AppHandle, key: &str, value: bool) -> Result<(), String> {
                 if !gs.is_registered(hotkey()) {
                     gs.register(hotkey()).map_err(|_| "Ctrl+Alt+M is already used by another app".to_string())?;
                 }
+                *app.state::<Shell>().hotkey_ok.lock().unwrap() = true;
             } else if gs.is_registered(hotkey()) {
                 let _ = gs.unregister(hotkey());
             }
@@ -205,6 +222,7 @@ fn shell_state(app: AppHandle) -> AppState {
         autostart,
         start_hidden: p.start_hidden,
         hotkey: p.hotkey,
+        hotkey_ok: *app.state::<Shell>().hotkey_ok.lock().unwrap(),
         hotkey_label: "Ctrl+Alt+M",
     }
 }
@@ -225,27 +243,90 @@ fn shell_quit(app: AppHandle) {
     app.exit(0);
 }
 
-/// Update the tray tooltip, and switch the tray icon to the alert version
-/// while there are unread alerts.
-#[tauri::command]
-fn shell_tray(app: AppHandle, tooltip: String, alert: bool) {
+fn set_tray_icon(app: &AppHandle, state: &'static str) {
     let shell = app.state::<Shell>();
+    let mut last = shell.icon_state.lock().unwrap();
+    if *last == state {
+        return;
+    }
+    *last = state;
+    let bytes: &[u8] = match state {
+        "alert" => include_bytes!("../icons/tray-alert.png"),
+        "stale" => include_bytes!("../icons/tray-stale.png"),
+        _ => include_bytes!("../icons/tray.png"),
+    };
+    if let Some(tray) = shell.tray.lock().unwrap().as_ref() {
+        if let Ok(img) = Image::from_bytes(bytes) {
+            let _ = tray.set_icon(Some(img));
+        }
+    };
+}
+
+/// Update the tray: tooltip text, icon (red dot = unseen alerts, amber dot = data
+/// is stale or failing) and the pause check mark. Also counts as a heartbeat.
+#[tauri::command]
+fn shell_tray(app: AppHandle, tooltip: String, alert: bool, stale: bool, paused: bool) {
+    let shell = app.state::<Shell>();
+    *shell.heartbeat.lock().unwrap() = Instant::now();
+    *shell.watchdog_fired.lock().unwrap() = false;
     let tip: String = tooltip.chars().take(120).collect();
     if let Some(tray) = shell.tray.lock().unwrap().as_ref() {
         let _ = tray.set_tooltip(Some(if tip.is_empty() { "MW".to_string() } else { tip }));
-        let mut last = shell.alert_state.lock().unwrap();
-        if *last != alert {
-            *last = alert;
-            let bytes: &[u8] = if alert {
-                include_bytes!("../icons/tray-alert.png")
-            } else {
-                include_bytes!("../icons/tray.png")
-            };
-            if let Ok(img) = Image::from_bytes(bytes) {
-                let _ = tray.set_icon(Some(img));
-            }
-        }
     };
+    if let Some(items) = shell.items.lock().unwrap().as_ref() {
+        let _ = items.pause.set_checked(paused);
+    };
+    set_tray_icon(&app, if alert { "alert" } else if stale { "stale" } else { "ok" });
+}
+
+/// The page (or the launcher) checks in every 30 s so the shell knows it is alive.
+#[tauri::command]
+fn shell_alive(app: AppHandle) {
+    let shell = app.state::<Shell>();
+    *shell.heartbeat.lock().unwrap() = Instant::now();
+    *shell.watchdog_fired.lock().unwrap() = false;
+}
+
+fn reload_launcher(app: &AppHandle) {
+    if let Some(w) = main_window(app) {
+        if let Ok(url) = tauri::Url::parse(LAUNCHER_URL) {
+            let _ = w.navigate(url);
+        }
+    }
+}
+
+/// Watchdog: if the page stops checking in (renderer crash, failed load), warn once
+/// in the tray and with a toast, then reload through the launcher.
+fn start_watchdog(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(30));
+        let shell = app.state::<Shell>();
+        let silent = shell.heartbeat.lock().unwrap().elapsed() > Duration::from_secs(WATCHDOG_SECS);
+        if !silent {
+            continue;
+        }
+        let first = {
+            let mut fired = shell.watchdog_fired.lock().unwrap();
+            let first = !*fired;
+            *fired = true;
+            first
+        };
+        *shell.heartbeat.lock().unwrap() = Instant::now(); // give the reload time to come up
+        if first {
+            if let Some(tray) = shell.tray.lock().unwrap().as_ref() {
+                let _ = tray.set_tooltip(Some("MW: the page stopped responding, reloading…"));
+            };
+            set_tray_icon(&app, "stale");
+            let _ = app
+                .notification()
+                .builder()
+                .title("MW is reloading")
+                .body("The widget stopped responding, so alerts were paused. Reloading it now.")
+                .show();
+        }
+        let h = app.clone();
+        let _ = app.run_on_main_thread(move || reload_launcher(&h));
+    });
 }
 
 /// Native toast. `body` is short text from the page.
@@ -302,7 +383,10 @@ pub fn run() {
             prefs: Mutex::new(Prefs::default()),
             tray: Mutex::new(None),
             items: Mutex::new(None),
-            alert_state: Mutex::new(false),
+            icon_state: Mutex::new("ok"),
+            heartbeat: Mutex::new(Instant::now()),
+            watchdog_fired: Mutex::new(false),
+            hotkey_ok: Mutex::new(false),
         })
         .invoke_handler(tauri::generate_handler![
             shell_state,
@@ -310,6 +394,7 @@ pub fn run() {
             shell_hide,
             shell_quit,
             shell_tray,
+            shell_alive,
             shell_notify
         ])
         .setup(|app| {
@@ -331,7 +416,7 @@ pub fn run() {
             // Tray menu.
             let show = MenuItem::with_id(app, "show", "Open MW", true, None::<&str>)?;
             let refresh = MenuItem::with_id(app, "refresh", "Refresh prices", true, None::<&str>)?;
-            let pause = MenuItem::with_id(app, "pause", "Pause or resume alerts", true, None::<&str>)?;
+            let pause = CheckMenuItem::with_id(app, "pause", "Pause alerts for today", true, false, None::<&str>)?;
             let on_top = CheckMenuItem::with_id(app, "on_top", "Always on top", true, prefs.on_top, None::<&str>)?;
             #[cfg(desktop)]
             let auto_on = handle.autolaunch().is_enabled().unwrap_or(false);
@@ -360,8 +445,8 @@ pub fn run() {
                         let _ = app.emit("mw-refresh", ());
                     }
                     "pause" => {
+                        // the page owns the pause state and sends back the check mark
                         let _ = app.emit("mw-pause", ());
-                        show_main(app);
                     }
                     "on_top" => {
                         let v = !app.state::<Shell>().prefs.lock().unwrap().on_top;
@@ -377,12 +462,8 @@ pub fn run() {
                         let _ = apply_pref(app, "autostart", v);
                     }
                     "reload" => {
-                        if let Some(w) = main_window(app) {
-                            if let Ok(url) = tauri::Url::parse("tauri://localhost/").and_then(|u| u.join(LAUNCHER_URL)) {
-                                let _ = w.navigate(url);
-                            }
-                            show_main(app);
-                        }
+                        reload_launcher(app);
+                        show_main(app);
                     }
                     "quit" => app.exit(0),
                     _ => {}
@@ -396,12 +477,13 @@ pub fn run() {
 
             *app.state::<Shell>().tray.lock().unwrap() = Some(tray);
             *app.state::<Shell>().items.lock().unwrap() =
-                Some(TrayItems { show, on_top, autostart, start_hidden });
+                Some(TrayItems { show, on_top, autostart, start_hidden, pause });
 
             // Global hotkey (skip quietly if another app owns it).
             #[cfg(desktop)]
             if prefs.hotkey {
-                let _ = handle.global_shortcut().register(hotkey());
+                let ok = handle.global_shortcut().register(hotkey()).is_ok();
+                *app.state::<Shell>().hotkey_ok.lock().unwrap() = ok;
             }
 
             // Window: close (X) hides to the tray instead of quitting.
@@ -423,6 +505,7 @@ pub fn run() {
                 }
             }
             refresh_tray_labels(&handle);
+            start_watchdog(handle.clone());
             Ok(())
         })
         .build(tauri::generate_context!())

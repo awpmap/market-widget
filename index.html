@@ -186,7 +186,7 @@ body.compact #log-sec, body.compact footer{display:none}
 .seg button.on{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .grp{margin-top:6px}
 .grp-h{display:flex;align-items:center;gap:6px;width:100%;padding:7px 2px;font-size:11.5px;color:var(--fg-2);border-top:1px solid var(--line)}
-.grp-h b{color:var(--fg);font-weight:600}
+.grp-h b{color:var(--fg);font-weight:600;white-space:nowrap}
 .grp-h .r{margin-left:auto;display:flex;gap:10px}
 .grp.collapsed .grp-rows{display:none}
 .grp.collapsed .chev{transform:rotate(-90deg)}
@@ -319,6 +319,13 @@ textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
 @media (max-width:360px){ .kpi{padding:6px 7px} .kpi b{font-size:13px} .kpi span{font-size:10px} .idx{grid-template-columns:1fr 1fr} .hrow,.wtop{grid-template-columns:minmax(56px,1fr) auto 58px} .hrow > .spark,.wtop > .spark{display:none} .wdet{grid-template-columns:1fr} }
 @media (max-width:400px){ .mk-up,.mk-nq{display:none} }
 .pill:focus{outline:none} .pill:focus-visible{outline:2px solid var(--accent)}
+body.native #titlebar .logo *{pointer-events:none}
+.er{display:inline-block;white-space:nowrap}
+.hrow .s,.wtop .s,.srow .s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.risk span{white-space:nowrap}
+.breadth .bar{min-width:40px}
+.grp-h .muted{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+@media (max-width:300px){ .mk-nq,.mk-sum-idx{display:none} .srow .er,.hrow .er{display:none} .risk{grid-template-columns:1fr} #mk-sum span:first-child{display:none} }
 @media (prefers-reduced-motion: reduce){ *{animation:none !important;transition:none !important} }
 </style>
 </head>
@@ -416,7 +423,7 @@ textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
 
 <script>
 "use strict";
-const APP_VERSION = "3.0.0";
+const APP_VERSION = "3.1.0";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -540,8 +547,8 @@ function session(){
   if (t.mins>=close && t.mins<1200) return {s:"ext", label:"After hours"};
   return {s:"closed", label:"Closed"};
 }
-/* Each refresh prices every symbol once; stretch the interval so it stays under ~50 calls a minute. */
-function minRefreshSec(){ return Math.ceil(allSyms().length / 50 * 60); }
+/* Each refresh prices every symbol once; stretch the interval so it stays under ~45 calls a minute. */
+function minRefreshSec(){ return Math.ceil(allSyms().length / 45 * 60); }   // leaves room for clicks, news and daily data
 function refreshMs(){ if (+settings.refresh === 0) return null; const s = session().s; return s==="open" ? Math.max(30, +settings.refresh||60, minRefreshSec())*1000 : s==="ext" ? 5*60e3 : 30*60e3; }
 /* A quote may raise an alert only while the market is open and only if it is from today's session. */
 function alertable(q){
@@ -554,7 +561,8 @@ function alertable(q){
 /* ---------- data: Finnhub free tier, rate-limited (55 calls / rolling minute) ---------- */
 const API = "https://finnhub.io/api/v1/";
 const RL = {times:[], active:0, hi:[], lo:[], timer:null};
-function limited(fn, low){ return new Promise((res, rej)=>{ (low?RL.lo:RL.hi).push({fn,res,rej}); pump(); }); }
+// low = background (metrics, calendars); "top" = something you just clicked, which jumps the queue
+function limited(fn, low){ return new Promise((res, rej)=>{ const j = {fn,res,rej}; if (low === "top") RL.hi.unshift(j); else (low?RL.lo:RL.hi).push(j); pump(); }); }
 function pump(){
   const now = Date.now(); RL.times = RL.times.filter(t => now - t < 60000);
   while ((RL.hi.length || RL.lo.length) && RL.active < 6 && RL.times.length < 55){
@@ -590,7 +598,7 @@ async function refreshOne(sym){
   toast("Updating " + sym + "…");
   try{
     let q = null;
-    try{ q = await limited(()=>api("quote?symbol=" + encodeURIComponent(sym))); }catch(e){}
+    try{ q = await limited(()=>api("quote?symbol=" + encodeURIComponent(sym)), "top"); }catch(e){}
     if (!(q && q.c)) q = await backupQuote(sym).catch(()=>null);
     if (q && q.c){ q.at = Date.now(); quotes[sym] = q; store.set("lastQuotes", quotes);
       const day = etNow().date; if (session().s !== "closed"){ if (!spark[day]) spark = {[day]:{}}; const a = spark[day][sym] || (spark[day][sym] = []); if (a[a.length-1] !== q.c) a.push(q.c); store.set("spark", spark); }
@@ -653,11 +661,13 @@ function addMonths(dateStr, n){ const d = new Date(dateStr + "T12:00:00Z"); d.se
 async function loadHist(syms){
   if (!settings.tdKey) return;
   const today = etNow().date;
-  const need = [...new Set(syms)].filter(s => !hist[s] || hist[s].date !== today || hist[s].v !== 2);
+  if (loadHist.day !== today){ loadHist.day = today; loadHist.busy = new Set(); loadHist.failed = new Set(); }
+  const need = [...new Set(syms)].filter(s => (!hist[s] || hist[s].date !== today || hist[s].v !== 3) && !loadHist.busy.has(s) && !loadHist.failed.has(s));
+  need.forEach(s => loadHist.busy.add(s));
   for (const sym of need){
     tdCall("time_series?symbol=" + encodeURIComponent(sym) + "&interval=1day&outputsize=1300").then(js=>{
       const vals = (js.values || []).filter(v => v.datetime < today).map(v => ({d:v.datetime.slice(0,10), c:+v.close})); // newest first, completed days only
-      if (!vals.length) return;
+      if (!vals.length){ loadHist.failed.add(sym); return; }
       const refs = {};
       PERIODS.forEach(p=>{
         let r = null;
@@ -670,9 +680,9 @@ async function loadHist(syms){
       const rets = []; for (let i=0; i<Math.min(60, cl.length-1); i++) rets.push(cl[i]/cl[i+1]-1);
       const mu = rets.reduce((a,b)=>a+b,0)/(rets.length||1);
       const vol = rets.length >= 20 ? Math.sqrt(rets.reduce((a,b)=>a+(b-mu)**2,0)/(rets.length-1))*100 : null;  // typical daily move, %
-      hist[sym] = {v:2, date:today, last:vals[0], refs, sma50:avg(50), sma200:avg(200), vol};
+      hist[sym] = {v:3, date:today, last:vals[0], refs, sma20:avg(20), sma50:avg(50), sma100:avg(100), sma200:avg(200), vol};
       store.set("hist", hist); renderMarkets();
-    }).catch(()=>{ /* keep older data */ });
+    }).catch(()=>{ loadHist.failed.add(sym); /* keep older data; don't retry today */ }).finally(()=>loadHist.busy.delete(sym));
   }
 }
 
@@ -726,7 +736,7 @@ async function loadNews(sym){
   const c = newsCache[sym]; if (c && (c.loading || Date.now() - c.at < 15*60e3)) return;
   newsCache[sym] = {loading:true, at:Date.now(), items:c ? c.items : null};
   const to = etNow().date, from = new Date(Date.now() - 3*864e5).toISOString().slice(0,10);
-  try{ const j = await limited(()=>api(`company-news?symbol=${encodeURIComponent(sym)}&from=${from}&to=${to}`));
+  try{ const j = await limited(()=>api(`company-news?symbol=${encodeURIComponent(sym)}&from=${from}&to=${to}`), "top");
     newsCache[sym] = {at:Date.now(), items:(Array.isArray(j)?j:[]).sort((a,b)=>b.datetime-a.datetime).slice(0,3)};
   }catch(e){ newsCache[sym] = {at:Date.now(), items:[], err:e.message}; }
   renderPortfolio(); renderWatch();
@@ -752,7 +762,7 @@ async function loadNavs(force){
   const funds = cfg.fixed.filter(f => f.sym && +f.shares > 0);
   await Promise.all(funds.map(f=>{
     const sym = f.sym.toUpperCase(), n = navs[sym];
-    if (!force && n && n.at && Date.now() - n.at < 3*3600e3 && !n.err) return null;
+    if (!force && n && n.at && Date.now() - n.at < (n.err ? 60*60e3 : 3*3600e3)) return null;   // failed: retry hourly, not every refresh
     return loadNav(sym);
   }));
 }
@@ -882,7 +892,7 @@ function togglePause(){
   saveSettings(); toast(settings.pauseUntil ? "Alerts paused until tomorrow" : "Alerts back on"); renderAll(); updateTray();
 }
 async function showToast(title, body, tag, sticky){
-  if (NATIVE){ nat.invoke("shell_notify", {title, body}).catch(()=>{}); return; }
+  if (NATIVE){ nat.invoke("shell_notify", {title, body}).catch(e => { lastErr = "Windows pop-up failed: " + e + ". Check Windows Settings → Notifications for Market Widget."; $("err").textContent = lastErr; }); return; }
   try{
     if (!("Notification" in window) || Notification.permission !== "granted") return;
     const opts = {body, icon:"icons/icon-192.png", badge:"icons/icon-192.png", tag, requireInteraction: !!sticky};
@@ -963,6 +973,8 @@ function heatColor(p, cap){
 }
 
 /* ---------- portfolio ---------- */
+// "today" only once today's session has started; before the open, on weekends and holidays the change is the last session's
+function dayWord(){ const ses = session(), t = etNow(); return ses.s==="open" || (ses.label==="After hours" && t.mins < 1200) ? "today" : "last session"; }
 const openRows = new Set();
 function portfolioCalc(){
   let live = 0, prev = 0, missing = 0, cost = 0, costVal = 0;
@@ -989,7 +1001,7 @@ function renderPortfolio(){
   $("pf-sum").innerHTML = any ? `<b style="color:var(--fg);font-size:13px">${fmt$(P.total,0)}</b><span class="${cls(P.dayPct)}" style="font-weight:600">${fmtPct(P.dayPct)}</span>` : "";
   const spy = quotes.SPY && quotes.SPY.dp, vs = (P.stockPct!=null && spy!=null) ? P.stockPct - spy : null;
   // risk read: beta-weighted exposure, concentration
-  let bv = 0, bw = 0; P.rows.forEach(r => { const b = metrics[r.sym] && metrics[r.sym].beta; if (r.val && b!=null){ bv += r.val*b; bw += r.val; } });
+  let bv = 0, bw = 0, bEst = 0; P.rows.forEach(r => { if (!r.val) return; let b = metrics[r.sym] && metrics[r.sym].beta; if (b == null){ b = 1; bEst++; } bv += r.val*b; bw += r.val; });
   const fundsVal = P.fi.filter(x=>x.live).reduce((a,x)=>a+x.value,0);
   const beta = bw ? bv/bw : null, perSpy = bw ? (bv + fundsVal) / 100 : null;
   const byVal = P.rows.filter(r=>r.val).map(r=>({sym:r.sym, val:r.val}));
@@ -1048,14 +1060,14 @@ function renderPortfolio(){
 
   body.innerHTML = `
     <div class="hero"><div><div class="val num">${any?fmt$(P.total,0):"—"}</div></div>
-      <div class="chg num ${cls(P.dayUsd)}">${any?fmtS$(P.dayUsd):"—"} <span>${any?fmtPct(P.dayPct):""}</span><small>today</small></div></div>
+      <div class="chg num ${cls(P.dayUsd)}">${any?fmtS$(P.dayUsd):"—"} <span>${any?fmtPct(P.dayPct):""}</span><small>${dayWord()}</small></div></div>
     <div class="kpis num">
       <div class="kpi" title="Your stocks and ETFs today minus the S&amp;P 500 (cash and funds left out)"><b class="${cls(vs)}">${vs==null?"—":fmtPct(vs)}</b><span>stocks vs S&amp;P</span></div>
       <div class="kpi"><b>${cashes.length?fmt$(cashTotal,0):"—"}</b><span>cash ready</span></div>
       <div class="kpi"><b class="${cls(gain)}">${gain==null?"—":fmtPct(gain,1)}</b><span>gain vs your cost</span></div>
     </div>
-    ${any && top.length ? `<div class="risk num" title="Beta is from Finnhub (how much each holding tends to move with the market). Mutual funds count as beta 1, cash as 0.">
-      ${beta!=null?`<span>Beta <b>${beta.toFixed(2)}</b></span><span>S&amp;P −1% ≈ <b class="down">${fmtS$(-perSpy)}</b></span>`:""}
+    ${any && top.length ? `<div class="risk num" title="Beta is from Finnhub (how much each holding tends to move with the market). Holdings without one, and mutual funds, count as 1.0; cash as 0.">
+      ${beta!=null?`<span title="${bEst ? bEst + " holding(s) have no published beta (common for ETFs) and count as 1.0" : ""}">Beta <b>${beta.toFixed(2)}</b>${bEst?`<span class="muted">*</span>`:""}</span><span>S&amp;P −1% ≈ <b class="down">${fmtS$(-perSpy)}</b></span>`:""}
       <span>Largest <b>${esc(top[0][0])} ${(top[0][1]/P.total*100).toFixed(0)}%</b></span>${top.length>3?`<span>Top 3 <b>${top3.toFixed(0)}%</b></span>`:""}</div>` : ""}
     <div class="alloc">${alloc}</div><div class="legend">${legend}</div>
     <div class="toolbar"><span style="flex:1"></span>
@@ -1104,19 +1116,22 @@ function refDate(period){
 /* market regime from cross-asset ETFs (1-day moves) */
 function regime(){
   const d = sym => quotes[sym] && isFinite(quotes[sym].dp) ? quotes[sym].dp : null;
-  const spy = d("SPY"), vix = d("VIXY"), hyg = d("HYG"), ief = d("IEF"), uup = d("UUP"), smh = d("SMH"), rsp = d("RSP");
+  const spy = d("SPY"), qqq = d("QQQ"), vix = d("VIXY"), hyg = d("HYG"), ief = d("IEF"), uup = d("UUP"), smh = d("SMH"), rsp = d("RSP");
   if (spy == null) return null;
+  const eq = qqq != null ? (spy + qqq)/2 : spy;   // stocks: S&P and Nasdaq together
   const credit = hyg!=null && ief!=null ? hyg - ief : null;
   let off = 0, on = 0; const why = [];
   if (vix!=null){ if (vix > 3){ off++; why.push(`volatility up ${vix.toFixed(1)}%`); } else if (vix < -3){ on++; why.push(`volatility down ${Math.abs(vix).toFixed(1)}%`); } }
   if (credit!=null){ if (credit < -0.25){ off++; why.push("credit lagging Treasuries"); } else if (credit > 0.15){ on++; why.push("credit firm"); } }
-  if (uup!=null && uup > 0.3){ off++; why.push("dollar up"); }
-  if (spy < -1){ off++; why.push(`S&P ${spy.toFixed(1)}%`); } else if (spy > 0.5){ on++; why.push(`S&P +${spy.toFixed(1)}%`); }
+  if (uup!=null){ if (uup > 0.3){ off++; why.push("dollar up"); } else if (uup < -0.3){ on++; why.push("dollar down"); } }
+  if (eq < -1){ off++; why.push(`stocks ${eq.toFixed(1)}%`); } else if (eq > 0.5){ on++; why.push(`stocks +${eq.toFixed(1)}%`); }
+  if (smh!=null){ if (smh - spy > 1){ on++; why.push("chips leading"); } else if (smh - spy < -1){ off++; why.push("chips lagging"); } }
   const k = off >= 2 && off > on ? "off" : on >= 2 && on > off ? "on" : "mix";
+  // [label, value, minor (hidden when narrow), up-is-bad]
   const chips = [];
-  if (vix!=null) chips.push(["Vol (VIXY)", vix]);
+  if (vix!=null) chips.push(["Vol (VIXY)", vix, false, true]);
   if (credit!=null) chips.push(["Credit vs Tsy", credit]);
-  if (uup!=null) chips.push(["Dollar", uup]);
+  if (uup!=null) chips.push(["Dollar", uup, true, true]);
   if (smh!=null) chips.push(["Chips vs S&P", smh - spy]);
   if (rsp!=null) chips.push(["Equal-wt vs S&P", rsp - spy, true]);
   return {k, label: k==="off" ? "Risk-off" : k==="on" ? "Risk-on" : "Mixed", why, chips};
@@ -1139,7 +1154,7 @@ function renderMarkets(){
   const anyPeriod = per==="1D" || sec.some(m => pctFor(m.sym, per) != null);
   const bell = BELLWETHERS.map(sym => ({sym, e:erInfo(sym)})).filter(x => x.e && x.e.days <= 7);
   $("mk-body").innerHTML = `
-    ${rg ? `<div class="regime num" title="${esc(rg.why.length ? "Why: " + rg.why.join(", ") : "No strong signal either way")}"><span class="rg ${rg.k}">${rg.label}</span>${rg.chips.map(([n,v,minor])=>`<span class="xa ${minor?"mk-up":""}">${esc(n)} <b class="${cls(v)}">${fmtPct(v,1)}</b></span>`).join("")}</div>` : ""}
+    ${rg ? `<div class="regime num" title="${esc(rg.why.length ? rg.label + " because: " + rg.why.join(", ") : "No strong signal either way")}"><span class="muted" style="font-size:10.5px">${esc(rg.why.slice(0,2).join(", ") || "No strong signal")}</span>${rg.chips.map(([n,v,minor,inv])=>`<span class="xa ${minor?"mk-up":""}">${esc(n)} <b class="${cls(inv ? -v : v)}">${fmtPct(v,1)}</b></span>`).join("")}</div>` : ""}
     ${bell.length ? `<div class="note" style="margin:0 0 8px">Chip earnings this week: ${bell.map(x=>`<b>${x.sym}</b> ${x.e.label.slice(3)}`).join(" · ")}</div>` : ""}
     <div class="seg perseg" id="perSeg">${PERIODS.map(p=>`<button data-per="${p.k}" class="${per===p.k?"on":""}">${p.label}</button>`).join("")}</div>
     <div class="idx num">${idx.map(m=>{ const q = quotes[m.sym], p = pctFor(m.sym, per); return `<button class="c ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" title="Click to refresh just ${m.sym}"><span>${esc(m.name)}</span><b class="${cls(p)}">${fmtPct(p, dec)}</b><em>${q?fmt$(q.c):"—"}</em></button>`; }).join("")}</div>
@@ -1147,7 +1162,7 @@ function renderMarkets(){
     <div class="toolbar"><span class="sec-t" style="flex:1;font-size:11px">Sectors</span>
       <div class="seg" id="ordSeg"><button data-ord="fixed" class="${settings.heatOrder!=="rank"?"on":""}" title="Tiles stay in the same place">Fixed</button><button data-ord="rank" class="${settings.heatOrder==="rank"?"on":""}" title="Best to worst">Ranked</button></div></div>
     <div class="heat">${tiles(sec)}</div>
-    ${secP.length?`<div class="breadth"><span>${upN} of ${secP.length} up today${above.length?` · ${aboveN} above 50-day avg`:""}</span><span class="bar"><i style="width:${(upN/secP.length*100).toFixed(0)}%"></i></span></div>`:""}
+    ${secP.length?`<div class="breadth"><span>${upN} of ${secP.length} up today${above.length?` · ${aboveN} of ${above.length} above 50-day`:""}</span><span class="bar"><i style="width:${(upN/secP.length*100).toFixed(0)}%"></i></span></div>`:""}
     ${oth.length?`<div class="toolbar" style="margin-top:10px"><span class="sec-t" style="font-size:11px">Other markets</span></div><div class="heat">${tiles(oth)}</div>`:""}
     ${anyPeriod?"":`<div class="note">${per} isn't loaded yet. ${settings.tdKey?"History loads in the background (about 3 minutes the first time each day).":"Add a free Twelve Data key in Settings to unlock 1M, 3Y and 5Y and make every time frame exact."}</div>`}
     ${per!=="1D"&&refDate(per)?`<div class="note">${per} change since ${(d=>(+d.slice(5,7))+"/"+(+d.slice(8,10))+"/"+d.slice(2,4))(refDate(per))}</div>`:""}`;
@@ -1240,8 +1255,9 @@ function dataState(){
 function renderFrame(){
   const ses = session(), ds = dataState();
   $("mkt").className = "pill " + (ses.s==="open"?"open":ses.s==="ext"?"ext":"") + (ds.k!=="ok" ? " " + ds.k : "");
-  $("mkt").lastElementChild.textContent = {"Market open":"Open","Pre-market":"Pre-market","After hours":"After hours","Closed":"Closed","Weekend":"Weekend","Holiday":"Holiday"}[ses.label] || ses.label;
-  $("mkt").title = (ds.why ? ds.why + ". " : "") + (ses.s==="open" ? "Market open · live prices" + (ses.early ? " · closes at 1 pm today" : "") : ses.label + (ses.why && ses.why!=="Market holiday" ? " (" + ses.why + ")" : "") + " · showing the last close. The free data feeds don't carry pre-market or after-hours prices.") + " Click for data status.";
+  const ageMin = lastUpdate ? Math.round((Date.now()-lastUpdate)/60000) : 0;
+  $("mkt").lastElementChild.textContent = ds.k==="stale" && ses.s==="open" && ageMin >= 2 ? `${ageMin}m old` : ds.k==="bad" ? "No data" : {"Market open":"Open","Pre-market":"Pre-market","After hours":"After hours","Closed":"Closed","Weekend":"Weekend","Holiday":"Holiday"}[ses.label] || ses.label;
+  $("mkt").title = (ds.why ? ds.why + ". " : "") + (ses.s==="open" ? "Market open · live prices" + (ses.early ? " · closes at 1 pm today." : ".") : ses.label + (ses.why && ses.why!=="Market holiday" ? " (" + ses.why + ")" : "") + " · showing the last close. The free data feeds don't carry pre-market or after-hours prices.") + " Click for data status.";
   const age = lastUpdate ? Math.round((Date.now()-lastUpdate)/60000) : null;
   $("upd").textContent = lastUpdate ? (ses.s==="open" ? `Updated ${dateTime(lastUpdate)}${age>=3 ? ` (${age} min ago)` : ""}` : `Last close prices · checked ${dateTime(lastUpdate)}`) : "";
   const p = $("paused");
@@ -1306,9 +1322,9 @@ function updateTray(){
   if (near) parts.push(near.hitL.length ? `${near.sym} at ${fmt$(near.hitL[near.hitL.length-1],0)}` : `${near.sym} ${near.dist.toFixed(1)}% to ${fmt$(near.next,0)}`);
   const ds = dataState(); if (ds.k !== "ok") parts.push(ds.why);
   if (pausedNow()) parts.push("alerts paused");
-  const alert = (firedToday().unseen || 0) > 0, tip = parts.join(" · "), key = tip + alert;
+  const alert = (firedToday().unseen || 0) > 0, stale = ds.k !== "ok", paused = !!pausedNow(), tip = parts.join(" · "), key = [tip, alert, stale, paused].join("|");
   if (key === trayLast) return; trayLast = key;
-  nat.invoke("shell_tray", {tooltip: tip, alert}).catch(()=>{});
+  nat.invoke("shell_tray", {tooltip: tip, alert, stale, paused}).catch(()=>{});
 }
 
 /* ---------- interactions ---------- */
@@ -1397,7 +1413,7 @@ function showTab(tab){
       </div>
       <div class="row2">
         <div class="field"><label for="sSound">Alert sound</label><select id="sSound"><option value="on">On</option><option value="off">Off</option></select></div>
-        <div class="field"><label>Windows pop-ups</label>${NATIVE ? `<button class="btn" style="width:100%;cursor:default">✓ On (desktop app)</button>` : `<button class="btn" id="sNotif" style="width:100%">${"Notification" in window ? (Notification.permission==="granted"?"✓ Allowed":Notification.permission==="denied"?"Blocked by the browser":"Allow pop-ups") : "Not supported"}</button>`}</div>
+        <div class="field"><label>Windows pop-ups</label>${NATIVE ? `<button class="btn" style="width:100%;cursor:default" title="Use 'Send a test alert' below to check. If nothing shows, turn on notifications for Market Widget in Windows Settings → System → Notifications.">Windows notifications</button>` : `<button class="btn" id="sNotif" style="width:100%">${"Notification" in window ? (Notification.permission==="granted"?"✓ Allowed":Notification.permission==="denied"?"Blocked by the browser":"Allow pop-ups") : "Not supported"}</button>`}</div>
       </div>
       ${NATIVE ? `<div class="field"><label>Desktop app</label><div class="rule" id="appOpts" style="margin:0">
         <div class="opts" style="margin:0">
@@ -1415,7 +1431,7 @@ function showTab(tab){
     $("sTheme").value = settings.theme; $("sRefresh").value = String(settings.refresh); $("sSound").value = settings.sound;
     if (NATIVE){
       const box = $("appOpts");
-      nat.invoke("shell_state").then(st => { nat.state = st; box.querySelectorAll("[data-shell]").forEach(i => i.checked = !!st[i.dataset.shell]); $("appVer").textContent = "App version " + st.version + "."; }).catch(()=>{});
+      nat.invoke("shell_state").then(st => { nat.state = st; box.querySelectorAll("[data-shell]").forEach(i => i.checked = !!st[i.dataset.shell]); $("appVer").textContent = "App version " + st.version + "." + (st.hotkey && !st.hotkey_ok ? " Ctrl+Alt+M is taken by another app, so the hotkey is off." : ""); }).catch(()=>{});
       box.onchange = e => { const k = e.target.dataset.shell; if (!k) return; nat.invoke("shell_set", {key:k, value:e.target.checked}).then(syncNative).catch(err => { toast(String(err)); e.target.checked = !e.target.checked; }); };
     }
     if ($("sNotif")) $("sNotif").onclick = async ()=>{ try{ const r = await Notification.requestPermission(); toast(r==="granted"?"Pop-ups allowed":"Pop-ups not allowed"); showTab("general"); }catch(e){} };
@@ -1424,7 +1440,7 @@ function showTab(tab){
       Object.assign(settings, {key:$("sKey").value.trim(), tdKey:$("sTd").value.trim(), theme:$("sTheme").value, refresh:+$("sRefresh").value, sound:$("sSound").value, ntfy:$("sNtfy").value.trim()});
       saveSettings(); document.documentElement.dataset.theme = settings.theme; toast("Saved");
       try{ if ("Notification" in window && Notification.permission==="default") Notification.requestPermission(); }catch(e){}
-      closeSheet(); schedule(true); if (tdChanged){ hist = {}; loadNavs(true); loadHist(marketSyms()); }
+      closeSheet(); schedule(true); if (tdChanged){ hist = {}; loadHist.day = null; loadNavs(true); loadHist(marketSyms()); }
     };
     $("sKeys").onclick = async ()=>{
       const out = $("keyRes"); out.textContent = "Testing…"; const lines = [];
@@ -1477,6 +1493,7 @@ function showTab(tab){
   else if (tab==="alerts"){
     B.innerHTML = `
       <div class="rule" style="display:flex;align-items:center;gap:10px"><label class="sw"><input type="checkbox" id="aAll" ${settings.allOff?"":"checked"}><span></span></label><div><b>All alerts</b><div class="muted" style="font-size:11px">Master switch. Changes save as you click.</div></div></div>
+      ${cfg.watch.some(w => !w.hiDrop || !w.sigDrop) ? `<div class="rule" style="display:flex;align-items:center;gap:10px"><div style="flex:1"><b>New dip rules</b><div class="muted" style="font-size:11px">"Off today's high" (4%) and "Unusual drop" (2σ) catch fast intraday flushes.</div></div><button class="btn" id="aNewRules">Turn on for all</button></div>` : ""}
       <div id="aList">${cfg.watch.map((w,i)=>{
         const on = w.on!==false, ck = k => w[k]!==false ? "checked" : "", ck2 = (k, v) => (w[k]===true || (w[k]!==false && w[v])) ? "checked" : "";
         return `<div class="rule" data-i="${i}">
@@ -1492,6 +1509,7 @@ function showTab(tab){
             <label><input type="checkbox" data-k="nearOn" ${ck("nearOn")}> Heads-up within</label><span><input type="number" step="0.5" min="0" data-n="near" value="${w.near??1.5}"> %</span>
           </div></div>`; }).join("")}</div>
       <div style="display:flex;gap:6px;margin-top:4px"><input id="aSym" placeholder="Add a ticker, e.g. NVDA" maxlength="10" style="flex:1;text-transform:uppercase"><button class="btn primary" id="aAdd">Add</button></div>`;
+    if ($("aNewRules")) $("aNewRules").onclick = ()=>{ cfg.watch.forEach(w => { if (!w.hiDrop){ w.hiDrop = 4; w.hiOn = true; } if (!w.sigDrop){ w.sigDrop = 2; w.sigOn = true; } }); store.set("cfg", cfg); renderAll(); showTab("alerts"); toast("Dip rules on for every ticker"); };
     $("aAll").onchange = e=>{ settings.allOff = !e.target.checked; saveSettings(); renderAll(); };
     const save = ()=>{ store.set("cfg", cfg); renderAll(); };
     $("aList").onchange = e=>{
@@ -1523,7 +1541,7 @@ function showTab(tab){
         <li><b>Send yourself a test.</b> <a href="https://github.com/awpmap/market-widget/actions/workflows/alerts.yml" target="_blank" rel="noopener" style="color:var(--accent)">Open the checker</a> → Run workflow → Run. A pop-up should arrive within a minute.</li>
         <li><b>Keep Edge running in the background.</b> Edge settings → System → turn on "Continue running background extensions and apps when Microsoft Edge is closed."</li>
       </ol>
-      <p class="note">Checks happen about every 5 to 15 minutes (GitHub's timing), 9:30 am to 4 pm ET on weekdays. Each alert fires once a day. Pop-ups match the ones this window shows, so you won't get doubles.</p>
+      <p class="note">Checks happen about every 5 to 15 minutes (GitHub's timing) during market hours, skipping holidays. Each alert fires once a day. It covers red days, the 52-week-high rule and price levels; snooze, mute and pause in this window don't reach it, and newer rules (today's high, σ, moving averages) only run here.</p>
       <div class="err" id="bgErr"></div>`;
     $("bgOn").onclick = async ()=>{
       try{ await enableBackground(); toast("Connected"); showTab("background"); }
@@ -1617,9 +1635,12 @@ if (NATIVE){
   // no browser right-click menu (Back, Reload, Inspect) except where text is editable
   document.addEventListener("contextmenu", e=>{ if (!e.target.closest("input,textarea")) e.preventDefault(); });
   syncNative().then(checkAppUpdate);
+  // heartbeat: the tray app reloads the page if this stops (crash, failed load)
+  const alive = ()=> nat.invoke("shell_alive").catch(()=>{});
+  alive(); setInterval(alive, 30e3);
   setInterval(checkAppUpdate, 6*3600e3);
 }
-setInterval(renderFrame, 30e3);   // keeps the status light and "x min ago" honest between refreshes
+setInterval(()=>{ renderFrame(); updateTray(); }, 30e3);   // keeps the status light and "x min ago" honest between refreshes
 
 renderAll(); updateBadge();
 schedule(true);
