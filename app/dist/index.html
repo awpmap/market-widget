@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>MW</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+html,body{margin:0;height:100%;background:#0e1116;color:#b7bfcc;font:13px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;user-select:none}
+@media (prefers-color-scheme: light){html,body{background:#f4f6f9;color:#3c4555}b{color:#131722 !important}}
+body{display:grid;place-items:center;text-align:center}
+b{color:#e9ecf1;font-size:14px;font-weight:600}
+.logo{width:40px;height:40px;border-radius:10px;background:#1a5fd6;display:grid;place-items:center;margin:0 auto 12px}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#5b9dff;margin:0 2px;animation:p 1.2s infinite}
+.dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
+@keyframes p{0%,100%{opacity:.25}50%{opacity:1}}
+button{margin-top:10px;background:#5b9dff;color:#0b1220;border:0;border-radius:8px;padding:6px 14px;font:600 12px inherit;cursor:pointer}
+#off{display:none}
+</style></head>
+<body data-tauri-drag-region>
+<div data-tauri-drag-region>
+  <div class="logo" data-tauri-drag-region><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l4-4 3 3 5-6"/></svg></div>
+  <div id="on" data-tauri-drag-region><b>MW</b><br><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+  <div id="off" data-tauri-drag-region><b>Waiting for the internet</b><br>MW will open as soon as you're online.<br><button id="retry">Try now</button></div>
+</div>
+<script>
+// Launcher: the widget itself is hosted, so updates arrive without reinstalling.
+// Wait for a connection first (Windows startup can beat the network).
+const APP = "https://awpmap.github.io/market-widget/";
+let tries = 0, timer = 0;
+async function attempt(){
+  clearTimeout(timer); tries++;
+  try {
+    await fetch(APP + "manifest.webmanifest?ping=" + Date.now(), { mode: "no-cors", cache: "no-store" });
+    location.replace(APP);
+  } catch (e) {
+    document.getElementById("on").style.display = "none";
+    document.getElementById("off").style.display = "block";
+    // After ~2 minutes offline, open anyway: the app's offline copy may load from cache.
+    if (tries >= 24) { location.replace(APP); return; }
+    timer = setTimeout(attempt, 5000);
+  }
+}
+document.getElementById("retry").onclick = attempt;
+window.addEventListener("online", attempt);
+attempt();
+</script>
+</body></html>

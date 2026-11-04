@@ -82,6 +82,68 @@ body.wco .menu{top:calc(env(titlebar-area-height,40px) + 4px);right:calc(100vw -
 .menu span{flex:1}
 .menu kbd{font:10.5px var(--mono);color:var(--muted);background:var(--surface-2);border-radius:4px;padding:1px 5px}
 .msep{height:1px;background:var(--line);margin:4px 6px}
+/* desktop app (Tauri): own window buttons, drag by the title bar */
+.winbtns{display:none;margin-right:-8px}
+body.native .winbtns{display:flex}
+body.native #titlebar{padding-right:0}
+.wb{width:34px;height:40px;display:grid;place-items:center;color:var(--fg-2)}
+.wb svg{width:12px;height:12px}
+.wb:hover{background:var(--surface-2);color:var(--fg)}
+.wb.close:hover{background:#c42b1c;color:#fff}
+.tb-btn.pin.on{color:var(--accent)}
+body:not(.native) .tb-btn.pin{display:none}
+@container (max-width:260px){ .tb-btn.pin{display:none} }
+.pill{cursor:pointer;app-region:no-drag;-webkit-app-region:no-drag}
+.pill.stale i{background:var(--warn) !important;box-shadow:none !important}
+.pill.bad i{background:var(--down) !important;box-shadow:none !important}
+.pop{position:fixed;z-index:46;left:8px;top:44px;width:min(300px,calc(100vw - 16px));background:var(--surface);border:1px solid var(--line-2);border-radius:10px;box-shadow:var(--shadow);padding:10px 12px;font-size:12px}
+.pop h4{margin:0 0 6px;font:600 12px var(--font-d)}
+.pop .kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-top:1px dashed var(--line)}
+.pop .kv:first-of-type{border-top:0}
+.pop .kv span:first-child{color:var(--muted)}
+/* since-you-last-looked strip */
+#since{display:none;align-items:center;gap:8px;margin:0 0 8px;padding:7px 10px;border-radius:var(--r-sm);background:var(--surface-2);font-size:11.5px;color:var(--fg-2);cursor:pointer}
+#since.show{display:flex}
+#since b{color:var(--fg);font-weight:600}
+#since .x2{margin-left:auto;color:var(--muted)}
+/* regime + risk */
+.regime{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+.rg{font-weight:700;font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap}
+.rg.on{background:color-mix(in srgb,var(--up) 18%,transparent);color:var(--up)}
+.rg.off{background:color-mix(in srgb,var(--down) 18%,transparent);color:var(--down)}
+.rg.mix{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.xa{font-size:10.5px;color:var(--fg-2);background:var(--surface-2);border-radius:10px;padding:2px 7px;white-space:nowrap}
+.risk{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:11.5px;color:var(--fg-2);background:var(--surface-2);border-radius:var(--r-sm);padding:7px 9px;margin:-4px 0 10px}
+.risk b{color:var(--fg);font-weight:600}
+.er{font-size:10px;font-weight:600;color:var(--fg-2);background:var(--surface-2);border-radius:5px;padding:0 4px;margin-left:4px;vertical-align:1px}
+.er.soon{color:#1b1300;background:var(--warn)}
+.news{grid-column:1/-1;margin-top:4px;font-size:11.5px}
+.news a{display:block;color:var(--fg);text-decoration:none;padding:4px 0;border-top:1px dashed var(--line);user-select:text}
+.news a:hover{color:var(--accent)}
+.news a small{display:block;color:var(--muted);font-size:10.5px}
+.wrow{cursor:pointer}
+.wdet{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;margin-top:6px;font-size:11.5px;color:var(--fg-2);cursor:default}
+.wdet b{color:var(--fg);font-weight:600}
+.wmeta{flex-wrap:wrap;row-gap:2px}
+/* compact strip: watch tickers sorted by distance to the next buy level */
+#strip{display:none}
+body.compact #strip{display:block;padding:0 12px 8px}
+.srow{display:grid;grid-template-columns:minmax(44px,1fr) auto auto auto;gap:8px;align-items:center;font-size:12px;padding:4px 0;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
+.srow:first-child{border-top:0}
+.srow .s{font-weight:600}
+.srow .d{font-size:11px;color:var(--fg-2);min-width:58px;text-align:right}
+.srow .d.hit{color:var(--down);font-weight:700} .srow .d.near{color:var(--warn);font-weight:700}
+/* banner by kind + actions */
+#banner.k-near{background:var(--warn);color:#1b1300}
+#banner.k-test{background:var(--accent);color:var(--accent-fg)}
+#banner .acts{display:flex;gap:6px;margin-top:7px}
+#banner .acts button{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;background:rgba(0,0,0,.18)}
+#banner .acts button:hover{background:rgba(0,0,0,.3)}
+#paused{display:none;margin-bottom:8px;padding:7px 10px;border-radius:var(--r-sm);background:color-mix(in srgb,var(--warn) 16%,var(--surface));font-size:11.5px;color:var(--fg-2)}
+#paused.show{display:flex;align-items:center;gap:8px}
+#paused button{margin-left:auto;color:var(--accent);font-weight:600;font-size:11.5px}
+#update{display:none}
+#update.show{display:block}
 #titlebar{container-type:inline-size}
 @container (max-width:250px){ .pill span{display:none} .pill{padding:4px} }
 @container (max-width:200px){ .appname{display:none} }
@@ -254,31 +316,40 @@ input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);margin:0}
 .mk-list label{display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 0}
 textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
 .sh-f{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);justify-content:flex-end}
-@media (max-width:360px){ .kpis{grid-template-columns:1fr 1fr} .idx{grid-template-columns:1fr 1fr} .hrow,.wtop{grid-template-columns:minmax(56px,1fr) 0 auto 58px} .spark{display:none} }
+@media (max-width:360px){ .kpi{padding:6px 7px} .kpi b{font-size:13px} .kpi span{font-size:10px} .idx{grid-template-columns:1fr 1fr} .hrow,.wtop{grid-template-columns:minmax(56px,1fr) auto 58px} .hrow > .spark,.wtop > .spark{display:none} .wdet{grid-template-columns:1fr} }
+@media (max-width:400px){ .mk-up,.mk-nq{display:none} }
+.pill:focus{outline:none} .pill:focus-visible{outline:2px solid var(--accent)}
 @media (prefers-reduced-motion: reduce){ *{animation:none !important;transition:none !important} }
 </style>
 </head>
 <body>
 
-<header id="titlebar">
-  <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1a5fd6"/><path d="M6 21l6-6 5 4 9-10" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-  <span class="appname" title="Market Widget">MW</span>
-  <span id="mkt" class="pill"><i></i><span>—</span></span>
-  <span class="spacer"></span>
+<header id="titlebar" data-tauri-drag-region>
+  <svg data-tauri-drag-region class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1a5fd6"/><path d="M6 21l6-6 5 4 9-10" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <span class="appname" title="Market Widget" data-tauri-drag-region>MW</span>
+  <button id="mkt" class="pill" title="Data status"><i></i><span>—</span></button>
+  <span class="spacer" data-tauri-drag-region></span>
   <button class="tb-btn" id="bRefresh" title="Refresh now (R)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg></button>
   <button class="tb-btn" id="bAlerts" title="Alerts"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8z"/><path d="M6.5 14h3"/></svg><span class="badge hide" id="badge">0</span></button>
+  <button class="tb-btn pin" id="bPin" title="Keep on top (T)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M6 2.5h4l-.6 4 2.1 2.2H4.5l2.1-2.2z"/><path d="M8 8.7V14"/></svg></button>
   <button class="tb-btn" id="bMore" title="Menu" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg></button>
+  <span class="winbtns"><button class="wb" id="wMin" title="Minimize"><svg viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.2"><path d="M1.5 6h9"/></svg></button><button class="wb close" id="wClose" title="Hide to tray (Esc). Quit from the tray icon."><svg viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.2"><path d="M2 2l8 8M10 2l-8 8"/></svg></button></span>
 </header>
+<div id="statusPop" class="pop hide" role="dialog" aria-label="Data status"></div>
 <div id="menu" class="menu hide" role="menu">
   <button role="menuitem" id="bCompact"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5h10M3 8h10M3 11h10"/></svg><span id="mCompactLbl">Compact view</span><kbd>C</kbd></button>
   <button role="menuitem" data-open="alerts"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8z"/></svg><span>Alert rules</span></button>
   <button role="menuitem" data-open="holdings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="4" width="11" height="9" rx="1.5"/><path d="M5.5 4V2.8h5V4"/></svg><span>Holdings</span></button>
+  <button role="menuitem" id="bPause"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4v8M10 4v8"/></svg><span id="mPauseLbl">Pause alerts</span><kbd>P</kbd></button>
   <button role="menuitem" data-open="background"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 9.5a5.5 5.5 0 0 1 11 0"/><path d="M8 9.5v3.5M6 13h4"/></svg><span>Background alerts</span></button>
   <div class="msep"></div>
   <button role="menuitem" id="bSettings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg><span>Settings</span><kbd>,</kbd></button>
 </div>
 
 <main id="main">
+  <div id="update" class="callout"></div>
+  <div id="paused"></div>
+  <div id="since" title="Click to clear"></div>
   <div id="banner" role="alert"></div>
 
   <div id="needKey" class="callout hide">
@@ -311,6 +382,7 @@ textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
       <span class="sec-t">Watchlist</span>
       <span class="sec-sum num" id="wl-sum"></span>
     </button>
+    <div id="strip"></div>
     <div class="sec-b" id="wl-body"></div>
   </section>
 
@@ -344,7 +416,7 @@ textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
 
 <script>
 "use strict";
-const APP_VERSION = "2.5.1";
+const APP_VERSION = "3.0.0";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -384,6 +456,16 @@ const PERIODS = [   // TradingView-style ranges
   {k:"3Y", label:"3Y", months:36},
   {k:"5Y", label:"5Y", months:60}
 ];
+/* cross-asset proxies for the market-regime read (ETFs, since index data isn't free) */
+const XASSET = [
+  {sym:"VIXY", name:"Volatility"}, {sym:"HYG", name:"High-yield credit"}, {sym:"IEF", name:"7-10y Treasuries"},
+  {sym:"UUP", name:"US dollar"},  {sym:"RSP", name:"Equal-weight S&P"}
+];
+const BELLWETHERS = ["NVDA","AVGO","TSM","MU","AMD","ASML"];
+/* NYSE full-day holidays and 1 pm early closes (backed up live by Finnhub market status) */
+const HOLIDAYS = new Set(["2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03","2026-09-07","2026-11-26","2026-12-25",
+  "2027-01-01","2027-01-18","2027-02-15","2027-03-26","2027-05-31","2027-06-18","2027-07-05","2027-09-06","2027-11-25","2027-12-24"]);
+const EARLY_CLOSE = {"2026-11-27":780, "2026-12-24":780, "2027-11-26":780};
 const HEAT_CAP = {"1D":2.5,"5D":5,"1M":8,"3M":12,"6M":18,"YTD":25,"1Y":30,"3Y":60,"5Y":100};
 const ACCT_COLORS = ["#5b9dff","#a78bfa","#2dd4bf","#f59e0b","#f472b6","#94a3b8"];
 
@@ -394,7 +476,8 @@ const store = {
   set(k, v){ mem[k] = v; try{ localStorage.setItem("mw_"+k, JSON.stringify(v)); }catch(e){} }
 };
 let cfg = store.get("cfg", null) || JSON.parse(JSON.stringify(DEFAULT_CFG));
-cfg.holdings = cfg.holdings || []; cfg.fixed = cfg.fixed || []; cfg.watch = cfg.watch || []; cfg.hiddenMk = cfg.hiddenMk || [];
+function normCfg(c){ c.holdings = c.holdings || []; c.fixed = c.fixed || []; c.watch = c.watch || []; c.hiddenMk = c.hiddenMk || []; c.myMk = c.myMk || []; return c; }
+normCfg(cfg);
 
 /* one-time private setup link: #setup=<base64 json>. Read locally, never sent anywhere. */
 (function(){
@@ -402,13 +485,13 @@ cfg.holdings = cfg.holdings || []; cfg.fixed = cfg.fixed || []; cfg.watch = cfg.
     const m = location.hash.match(/^#setup=([A-Za-z0-9+/=_-]+)$/);
     if (m){
       const c = JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g,"+").replace(/_/g,"/")))));
-      if (Array.isArray(c.holdings) && Array.isArray(c.watch)){ c.fixed = c.fixed||[]; c.hiddenMk = c.hiddenMk||[]; cfg = c; store.set("cfg", cfg); }
+      if (Array.isArray(c.holdings) && Array.isArray(c.watch)){ cfg = normCfg(c); store.set("cfg", cfg); }
     }
   }catch(e){}
   if (location.hash) try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
 })();
 
-let settings = Object.assign({key:"", tdKey:"", ntfy:"", sound:"on", theme:"auto", refresh:60, compact:false, collapsed:{}, allOff:false, period:"1D", sort:"value", grpCollapsed:{}, heatOrder:"fixed", focus:""}, store.get("settings", {}));
+let settings = Object.assign({key:"", tdKey:"", ntfy:"", sound:"on", theme:"auto", refresh:60, compact:false, collapsed:{}, allOff:false, period:"1D", sort:"value", grpCollapsed:{}, heatOrder:"fixed", focus:"", bench:"SMH", pauseUntil:0, snooze:{}}, store.get("settings", {}));
 if (!PERIODS.some(p=>p.k===settings.period)) settings.period = settings.period==="MTD" ? "1M" : "1D";
 /* funds typed as "ABCDX (12.3 sh ...)" get their ticker and shares picked up automatically */
 cfg.fixed.forEach(f=>{ if (!f.sym){ const m = String(f.name||"").match(/^([A-Z]{3,5})\s*\(\s*([\d.]+)\s*sh/); if (m){ f.sym = m[1]; f.shares = +m[2]; } } });
@@ -424,6 +507,14 @@ const fmtS$ = (n, d=0) => (n==null||!isFinite(n)) ? "—" : (n>=0?"+":"−") + "
 const fmtPct = (n, d=2) => (n==null||!isFinite(n)) ? "—" : (n>=0?"+":"−") + Math.abs(n).toFixed(d) + "%";
 const cls = n => (n==null||!isFinite(n)) ? "" : n>=0 ? "up" : "down";
 const timeStr = t => new Date(t).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+/* ---------- desktop app bridge (Tauri). In a browser all of this stays off. ---------- */
+const TAURI = window.__TAURI__ || null;
+const NATIVE = !!(TAURI && TAURI.core && TAURI.core.invoke);
+const nat = {
+  invoke: (cmd, args) => NATIVE ? TAURI.core.invoke(cmd, args || {}) : Promise.reject(new Error("not in the desktop app")),
+  win: () => TAURI.window.getCurrentWindow(),
+  state: null
+};
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("show"), 2200); }
 
 /* ---------- market clock (US Eastern) ---------- */
@@ -432,15 +523,33 @@ function etNow(){
   const o = {}; p.forEach(x=>o[x.type]=x.value);
   return {day:o.weekday, date:`${o.year}-${o.month}-${o.day}`, mins:(+o.hour%24)*60 + (+o.minute)};
 }
+const etDateOf = ms => new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(ms));
+let mstat = store.get("mstat", null);   // Finnhub market status: {at, isOpen, holiday}
 function session(){
   const t = etNow();
   if (t.day==="Sat"||t.day==="Sun") return {s:"closed", label:"Weekend"};
-  if (t.mins>=570 && t.mins<960) return {s:"open", label:"Market open"};
+  if (HOLIDAYS.has(t.date)) return {s:"closed", label:"Holiday", why:"Market holiday"};
+  const close = EARLY_CLOSE[t.date] || 960;
+  // live check from the exchange calendar (covers surprise closures)
+  const live = mstat && Date.now() - mstat.at < 20*60e3 && mstat.date === t.date ? mstat : null;
+  if (t.mins>=570 && t.mins<close){
+    if (live && live.isOpen === false && live.holiday) return {s:"closed", label:"Holiday", why:live.holiday};
+    return {s:"open", label:"Market open", early: close < 960};
+  }
   if (t.mins>=240 && t.mins<570) return {s:"ext", label:"Pre-market"};
-  if (t.mins>=960 && t.mins<1200) return {s:"ext", label:"After hours"};
+  if (t.mins>=close && t.mins<1200) return {s:"ext", label:"After hours"};
   return {s:"closed", label:"Closed"};
 }
-function refreshMs(){ if (+settings.refresh === 0) return null; const s = session().s; return s==="open" ? Math.max(30, +settings.refresh||60)*1000 : s==="ext" ? 5*60e3 : 30*60e3; }
+/* Each refresh prices every symbol once; stretch the interval so it stays under ~50 calls a minute. */
+function minRefreshSec(){ return Math.ceil(allSyms().length / 50 * 60); }
+function refreshMs(){ if (+settings.refresh === 0) return null; const s = session().s; return s==="open" ? Math.max(30, +settings.refresh||60, minRefreshSec())*1000 : s==="ext" ? 5*60e3 : 30*60e3; }
+/* A quote may raise an alert only while the market is open and only if it is from today's session. */
+function alertable(q){
+  if (!q || !q.c || session().s !== "open") return false;
+  const today = etNow().date;
+  if (q.t && etDateOf(q.t*1000) !== today) return false;
+  return !!q.at && Date.now() - q.at < 15*60e3;
+}
 
 /* ---------- data: Finnhub free tier, rate-limited (55 calls / rolling minute) ---------- */
 const API = "https://finnhub.io/api/v1/";
@@ -472,7 +581,10 @@ let metrics = store.get("metrics", {});     // sym -> {date, hi, lo, r:{5D,MTD,.
 let spark = store.get("spark", {});         // {date: {sym:[prices]}}
 let lastUpdate = store.get("lastUpdate", 0);
 
-function marketSyms(){ return [...MARKETS.indices, ...MARKETS.sectors, ...MARKETS.other].map(m=>m.sym).filter(s=>!cfg.hiddenMk.includes(s)); }
+const xaOn = ()=> !cfg.hiddenMk.includes("__xa");
+function marketSyms(){ return [...cfg.myMk, ...[...MARKETS.indices, ...MARKETS.sectors, ...MARKETS.other].map(m=>m.sym).filter(s=>!cfg.hiddenMk.includes(s)), ...(xaOn()?XASSET.map(x=>x.sym):[])]; }
+function mySyms(){ const s = new Set(); cfg.watch.forEach(w=>w.sym && s.add(w.sym.toUpperCase())); cfg.holdings.forEach(h=>h.sym && s.add(h.sym.toUpperCase())); return [...s]; }
+const health = {ok:0, total:0, fail:[], backup:[], err:"", at:0};
 async function refreshOne(sym){
   if (!settings.key) return;
   toast("Updating " + sym + "…");
@@ -480,7 +592,7 @@ async function refreshOne(sym){
     let q = null;
     try{ q = await limited(()=>api("quote?symbol=" + encodeURIComponent(sym))); }catch(e){}
     if (!(q && q.c)) q = await backupQuote(sym).catch(()=>null);
-    if (q && q.c){ quotes[sym] = q; store.set("lastQuotes", quotes);
+    if (q && q.c){ q.at = Date.now(); quotes[sym] = q; store.set("lastQuotes", quotes);
       const day = etNow().date; if (session().s !== "closed"){ if (!spark[day]) spark = {[day]:{}}; const a = spark[day][sym] || (spark[day][sym] = []); if (a[a.length-1] !== q.c) a.push(q.c); store.set("spark", spark); }
       renderAll(); checkAlerts(); toast(sym + " updated · " + fmt$(q.c));
     } else toast("No price for " + sym);
@@ -490,7 +602,8 @@ function allSyms(){
   const s = new Set();
   cfg.holdings.forEach(h=>h.sym && s.add(h.sym.toUpperCase()));
   cfg.watch.forEach(w=>w.sym && s.add(w.sym.toUpperCase()));
-  [...MARKETS.indices, ...MARKETS.sectors, ...MARKETS.other].forEach(m=>{ if (!cfg.hiddenMk.includes(m.sym)) s.add(m.sym); });
+  marketSyms().forEach(x => s.add(x));
+  if (settings.bench) s.add(settings.bench);
   return [...s];
 }
 
@@ -501,7 +614,7 @@ async function loadMetrics(syms){
     try{
       const m = (await api("stock/metric?metric=all&symbol=" + encodeURIComponent(sym))).metric || {};
       const r = {}; PERIODS.forEach(p=>{ if (p.f && m[p.f]!=null && isFinite(+m[p.f])) r[p.f] = +m[p.f]; });
-      metrics[sym] = {date:today, hi: m["52WeekHigh"]!=null ? +m["52WeekHigh"] : null, lo: m["52WeekLow"]!=null ? +m["52WeekLow"] : null, r};
+      metrics[sym] = {date:today, hi: m["52WeekHigh"]!=null ? +m["52WeekHigh"] : null, lo: m["52WeekLow"]!=null ? +m["52WeekLow"] : null, r, beta: m.beta!=null && isFinite(+m.beta) ? +m.beta : null};
     }catch(e){ /* metrics are optional */ }
   }, true)));
   store.set("metrics", metrics);
@@ -533,14 +646,14 @@ async function backupQuote(sym){
   store.set("tdFallback", {date:d, n:used+1});
   const j = await tdCall("quote?symbol=" + encodeURIComponent(sym));
   if (!j.close) return null;
-  return {c:+j.close, pc:+j.previous_close, d:+j.change, dp:+j.percent_change, h:+j.high, l:+j.low, o:+j.open, t:0, src:"backup"};
+  return {c:+j.close, pc:+j.previous_close, d:+j.change, dp:+j.percent_change, h:+j.high, l:+j.low, o:+j.open, t:+j.timestamp||0, src:"backup"};
 }
 let hist = store.get("hist", {});   // sym -> {date, last:{d,c}, refs:{5D:{d,c},...}}
 function addMonths(dateStr, n){ const d = new Date(dateStr + "T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() - n); return d.toISOString().slice(0,10); }
 async function loadHist(syms){
   if (!settings.tdKey) return;
   const today = etNow().date;
-  const need = syms.filter(s => !hist[s] || hist[s].date !== today);
+  const need = [...new Set(syms)].filter(s => !hist[s] || hist[s].date !== today || hist[s].v !== 2);
   for (const sym of need){
     tdCall("time_series?symbol=" + encodeURIComponent(sym) + "&interval=1day&outputsize=1300").then(js=>{
       const vals = (js.values || []).filter(v => v.datetime < today).map(v => ({d:v.datetime.slice(0,10), c:+v.close})); // newest first, completed days only
@@ -553,12 +666,78 @@ async function loadHist(syms){
         else if (p.ytd){ const t = today.slice(0,4) + "-01-01"; r = vals.find(v => v.d < t) || null; }
         if (r) refs[p.k] = r;
       });
-      hist[sym] = {date:today, last:vals[0], refs};
+      const cl = vals.map(v => v.c), avg = n => cl.length >= n ? cl.slice(0,n).reduce((a,b)=>a+b,0)/n : null;
+      const rets = []; for (let i=0; i<Math.min(60, cl.length-1); i++) rets.push(cl[i]/cl[i+1]-1);
+      const mu = rets.reduce((a,b)=>a+b,0)/(rets.length||1);
+      const vol = rets.length >= 20 ? Math.sqrt(rets.reduce((a,b)=>a+(b-mu)**2,0)/(rets.length-1))*100 : null;  // typical daily move, %
+      hist[sym] = {v:2, date:today, last:vals[0], refs, sma50:avg(50), sma200:avg(200), vol};
       store.set("hist", hist); renderMarkets();
     }).catch(()=>{ /* keep older data */ });
   }
 }
 
+/* exchange calendar: is the market really open today? (1 call every 10 min on weekdays) */
+async function loadMarketStatus(){
+  const t = etNow(); if (t.day==="Sat"||t.day==="Sun") return;
+  if (mstat && mstat.date === t.date && Date.now() - mstat.at < 10*60e3) return;
+  try{ const j = await limited(()=>api("stock/market-status?exchange=US"), true);
+    mstat = {at:Date.now(), date:t.date, isOpen: j.isOpen, holiday: j.holiday || null}; store.set("mstat", mstat);
+  }catch(e){}
+}
+/* earnings dates for everything you own or watch, plus chip bellwethers (1 call a day) */
+let earn = store.get("earn", {});   // {date, map:{SYM:{d, hour}}}
+async function loadEarnings(){
+  const today = etNow().date; if (earn.date === today) return;
+  try{
+    const to = new Date(Date.now() + 35*864e5).toISOString().slice(0,10);
+    const j = await limited(()=>api(`calendar/earnings?from=${today}&to=${to}`), true);
+    const want = new Set([...mySyms(), ...cfg.myMk, ...BELLWETHERS]), map = {};
+    (j.earningsCalendar || []).forEach(e => { if (want.has(e.symbol) && e.date >= today && (!map[e.symbol] || e.date < map[e.symbol].d)) map[e.symbol] = {d:e.date, hour:e.hour||""}; });
+    earn = {date:today, map}; store.set("earn", earn);
+  }catch(e){}
+}
+function erInfo(sym){
+  const e = earn.map && earn.map[sym]; if (!e) return null;
+  const days = Math.round((new Date(e.d+"T12:00:00Z") - new Date(etNow().date+"T12:00:00Z"))/864e5);
+  if (days < 0) return null;
+  return {d:e.d, hour:e.hour, days, label:`ER ${(+e.d.slice(5,7))}/${(+e.d.slice(8,10))}${e.hour==="amc"?" pm":e.hour==="bmo"?" am":""}`};
+}
+const erChip = sym => { const e = erInfo(sym); return e ? `<span class="er ${e.days<=5?"soon":""}" title="Earnings ${e.d}${e.hour==="amc"?" after the close":e.hour==="bmo"?" before the open":""} (${e.days===0?"today":e.days===1?"tomorrow":"in "+e.days+" days"})">${e.label}</span>` : ""; };
+/* fill today's sparklines from 9:30 when the app opens mid-day (Twelve Data, 1 credit per symbol, once a day) */
+async function loadIntraday(){
+  if (!settings.tdKey || session().s === "closed") return;
+  const day = etNow().date, done = store.get("intraDone", {}); if (done.date !== day){ done.date = day; done.syms = []; }
+  if (etNow().mins < 580) return;
+  for (const sym of mySyms().slice(0, 16)){
+    if (done.syms.includes(sym)) continue;
+    done.syms.push(sym); store.set("intraDone", done);
+    tdCall("time_series?symbol=" + encodeURIComponent(sym) + "&interval=5min&outputsize=80").then(js=>{
+      const pts = (js.values || []).filter(v => v.datetime.slice(0,10) === day).map(v => +v.close).reverse();
+      if (pts.length < 3) return;
+      if (!spark[day]) spark = {[day]:{}};
+      const cur = spark[day][sym] || [];
+      if (cur.length < pts.length){ spark[day][sym] = pts.concat(cur.slice(-1)); store.set("spark", spark); renderAll(); }
+    }).catch(()=>{});
+  }
+}
+/* headlines for a row you open (1 call, cached 15 min) */
+const newsCache = {};
+async function loadNews(sym){
+  const c = newsCache[sym]; if (c && (c.loading || Date.now() - c.at < 15*60e3)) return;
+  newsCache[sym] = {loading:true, at:Date.now(), items:c ? c.items : null};
+  const to = etNow().date, from = new Date(Date.now() - 3*864e5).toISOString().slice(0,10);
+  try{ const j = await limited(()=>api(`company-news?symbol=${encodeURIComponent(sym)}&from=${from}&to=${to}`));
+    newsCache[sym] = {at:Date.now(), items:(Array.isArray(j)?j:[]).sort((a,b)=>b.datetime-a.datetime).slice(0,3)};
+  }catch(e){ newsCache[sym] = {at:Date.now(), items:[], err:e.message}; }
+  renderPortfolio(); renderWatch();
+}
+function newsHtml(sym){
+  const c = newsCache[sym];
+  if (!c || (c.loading && !c.items)) return `<div class="news muted">Loading headlines…</div>`;
+  if (!c.items || !c.items.length) return `<div class="news muted">No headlines in the last 3 days${c.err?" ("+esc(c.err)+")":""}.</div>`;
+  const ago = t => { const m = Math.round((Date.now()/1000 - t)/60); return m < 60 ? m + "m ago" : m < 1440 ? Math.round(m/60) + "h ago" : Math.round(m/1440) + "d ago"; };
+  return `<div class="news">${c.items.map(n=>`<a href="${esc(/^https?:\/\//.test(n.url)?n.url:"#")}" target="_blank" rel="noopener">${esc(n.headline)}<small>${esc(n.source||"")} · ${ago(n.datetime)}</small></a>`).join("")}</div>`;
+}
 let navs = store.get("navs", {});   // sym -> {nav, prev, date, at, err}
 async function loadNav(sym){
   try{
@@ -596,50 +775,73 @@ async function tick(){
     $("needKey").classList.add("hide");
     const syms = allSyms(), day = etNow().date, ses = session().s;
     if (!spark[day]) spark = {[day]:{}};
-    let ok = 0;
+    let ok = 0; const fail = [], backup = [];
     await Promise.all(syms.map(sym => limited(async ()=>{
       try{
         let q = null;
         try{ q = await api("quote?symbol=" + encodeURIComponent(sym)); }catch(e){ lastErr = e.message; }
-        if (!(q && q.c)){ try{ q = await backupQuote(sym); if (q) lastErr = ""; }catch(e){} }
-        if (q && q.c){ quotes[sym] = q; ok++;
+        if (!(q && q.c)){ try{ q = await backupQuote(sym); if (q && q.c) backup.push(sym); }catch(e){} }
+        if (!(q && q.c)) fail.push(sym);
+        if (q && q.c){ q.at = Date.now(); quotes[sym] = q; ok++;
           if (ses !== "closed"){ const a = spark[day][sym] || (spark[day][sym] = []); if (!a.length || a[a.length-1] !== q.c){ a.push(q.c); if (a.length > 480) a.shift(); } }
         }
       }catch(e){ lastErr = e.message; }
     })));
+    Object.assign(health, {ok, total:syms.length, fail, backup, err:lastErr, at:Date.now()});
     if (ok){ lastUpdate = Date.now(); store.set("lastUpdate", lastUpdate); store.set("lastQuotes", quotes); store.set("spark", spark); }
     renderAll(); checkAlerts();
+    loadMarketStatus().then(renderFrame);
     loadNavs(false);
-    loadHist(marketSyms());
+    loadHist([...cfg.watch.map(w=>(w.sym||"").toUpperCase()), ...marketSyms(), ...mySyms()].filter(Boolean));
+    loadIntraday();
+    loadEarnings().then(renderAll);
     loadMetrics(syms).then(()=>{ renderAll(); checkAlerts(); });
   } finally {
-    busy = false; $("bRefresh").classList.remove("spin"); $("err").textContent = lastErr; renderAll();
+    busy = false; $("bRefresh").classList.remove("spin");
+    $("err").textContent = lastErr ? lastErr + (health.backup.length ? ` Using the Twelve Data backup for ${health.backup.length} symbol(s).` : "") : ""; renderAll();
   }
 }
 
 /* ---------- alerts ---------- */
-function effLevels(w){ let lv = (w.levels||[]).slice(); if (w.split && etNow().date >= w.split.date) lv = lv.map(x => +(x / w.split.ratio).toFixed(2)); return lv; }
+/* levels: numbers, plus "50d" / "200d" moving averages (from daily history) */
+function effLevels(w){
+  let lv = (w.levels||[]).slice(); if (w.split && etNow().date >= w.split.date) lv = lv.map(x => +(x / w.split.ratio).toFixed(2));
+  const h = hist[(w.sym||"").toUpperCase()];
+  (w.ma||[]).forEach(n => { const v = h && h["sma"+n]; if (v) lv.push(+v.toFixed(2)); });
+  return lv.sort((a,b)=>b-a);
+}
+const lvName = (w, L) => { const h = hist[(w.sym||"").toUpperCase()]; const m = (w.ma||[]).find(n => h && h["sma"+n] && +h["sma"+n].toFixed(2) === L); return m ? `${m}-day average (${fmt$(L)})` : fmt$(L); };
+const volOf = sym => { const h = hist[sym]; return h && h.vol ? h.vol : null; };
+function snoozed(sym){ const t = settings.snooze[sym]; return t && t > Date.now(); }
+function pausedNow(){ return settings.pauseUntil && settings.pauseUntil > Date.now(); }
 function evaluate(w){
   const sym = (w.sym||"").toUpperCase(), q = quotes[sym];
-  if (!q || !q.c || settings.allOff || w.on===false) return [];
-  const out = [], px = q.c;
-  if (w.redOn!==false && w.dayDrop && q.dp <= -w.dayDrop) out.push({id:`${sym}-red`, kind:"red", sym, msg:`${sym} is down ${Math.abs(q.dp).toFixed(1)}% today at ${fmt$(px)}`});
+  if (!alertable(q) || settings.allOff || w.on===false) return [];
+  const out = [], px = q.c, er = erInfo(sym), erTxt = er && er.days <= 7 ? ` · earnings ${er.days===0?"today":er.days===1?"tomorrow":er.label.slice(3)}` : "";
+  if (w.redOn!==false && w.dayDrop && q.dp <= -w.dayDrop) out.push({id:`${sym}-red`, kind:"red", sym, msg:`${sym} is down ${Math.abs(q.dp).toFixed(1)}% today at ${fmt$(px)}${erTxt}`});
+  const vol = volOf(sym);
+  if (w.sigOn!==false && w.sigDrop && vol && q.dp/vol <= -w.sigDrop) out.push({id:`${sym}-sig`, kind:"sig", sym, msg:`${sym} is down ${Math.abs(q.dp/vol).toFixed(1)}σ today (${fmtPct(q.dp,1)}, a normal day is ±${vol.toFixed(1)}%)${erTxt}`});
+  if (w.hiOn!==false && w.hiDrop && q.h && px <= q.h*(1 - w.hiDrop/100)) out.push({id:`${sym}-hd`, kind:"hd", sym, msg:`${sym} is ${((1-px/q.h)*100).toFixed(1)}% below today's high (${fmt$(q.h)}), now ${fmt$(px)}${erTxt}`});
   const hi = metrics[sym] && metrics[sym].hi;
   if (hi && w.offHigh && w.offOn!==false){
     const off = (1 - px/hi)*100, st = store.get("offState", {}), inZone = off >= w.offHigh;
-    if (inZone && st[sym]===false) out.push({id:`${sym}-off`, kind:"off", sym, msg:`${sym} just fell ${off.toFixed(1)}% below its 52-week high (${fmt$(hi)})`});
+    if (inZone && st[sym]===false) out.push({id:`${sym}-off`, kind:"off", sym, msg:`${sym} just fell ${off.toFixed(1)}% below its 52-week high (${fmt$(hi)})${erTxt}`});
     if (st[sym]!==inZone){ st[sym]=inZone; store.set("offState", st); }
   }
-  if (w.levelsOn!==false) effLevels(w).forEach(L=>{
-    if (px <= L) out.push({id:`${sym}-L${L}`, kind:"level", sym, msg:`${sym} hit your ${fmt$(L)} level (now ${fmt$(px)})`});
-    else if (w.nearOn!==false && w.near && px <= L*(1+w.near/100)) out.push({id:`${sym}-N${L}`, kind:"near", sym, msg:`${sym} is ${((px/L-1)*100).toFixed(1)}% above your ${fmt$(L)} level`});
-  });
+  if (w.levelsOn!==false){
+    const lv = effLevels(w), hit = lv.filter(L => px <= L);
+    // one alert per ticker names the deepest level reached; the levels above it count as done for today
+    if (hit.length){ const deep = hit[hit.length-1]; out.push({id:`${sym}-L${deep}`, also:hit.map(L=>`${sym}-L${L}`), kind:"level", sym, msg:`${sym} hit your ${lvName(w,deep)} buy level (now ${fmt$(px)})${hit.length>1?` · through ${hit.length} levels`:""}${erTxt}`}); }
+    const next = lv.find(L => L < px);
+    if (next && w.nearOn!==false && w.near && px <= next*(1+w.near/100)) out.push({id:`${sym}-N${next}`, kind:"near", sym, msg:`${sym} is ${((px/next-1)*100).toFixed(1)}% above your ${lvName(w,next)} level`});
+  }
   return out;
 }
 function firedToday(){ const day = etNow().date; let f = store.get("fired", {}); if (f.day !== day) f = {day, ids:{}, log:[], unseen:0}; return f; }
 function checkAlerts(){
   const f = firedToday(), fresh = [];
-  cfg.watch.forEach(w => evaluate(w).forEach(a => { if (!f.ids[a.id]){ f.ids[a.id] = 1; f.log.unshift({t:Date.now(), msg:a.msg, kind:a.kind}); fresh.push(a); } }));
+  if (!pausedNow()) cfg.watch.forEach(w => { const sym = (w.sym||"").toUpperCase(); if (snoozed(sym)) return;
+    evaluate(w).forEach(a => { if (!f.ids[a.id]){ f.ids[a.id] = 1; (a.also||[]).forEach(id => f.ids[id] = 1); f.log.unshift({t:Date.now(), msg:a.msg, kind:a.kind, sym:a.sym}); fresh.push(a); } }); });
   if (fresh.length) f.unseen = (f.unseen||0) + fresh.length;
   store.set("fired", f); renderLog(); updateBadge();
   if (fresh.length) notify(fresh);
@@ -648,19 +850,39 @@ function updateBadge(){
   const n = firedToday().unseen || 0, b = $("badge");
   b.textContent = n > 9 ? "9+" : n; b.classList.toggle("hide", !n);
   try{ if (navigator.setAppBadge){ n ? navigator.setAppBadge(n) : navigator.clearAppBadge(); } }catch(e){}
+  updateTray();
 }
 function markSeen(){ const f = firedToday(); f.unseen = 0; store.set("fired", f); updateBadge(); }
+let bannerSym = "";
 function notify(list){
-  const main = list.find(a => a.kind !== "near") || list[0];
-  const b = $("banner");
-  b.innerHTML = esc(main.msg) + (list.length > 1 ? `<small>+${list.length-1} more alert${list.length>2?"s":""} · click to dismiss</small>` : `<small>Click to dismiss</small>`);
+  const rank = {level:0, red:1, sig:1, hd:2, off:3, near:5, test:6};
+  list = list.slice().sort((a,b)=>(rank[a.kind]??4)-(rank[b.kind]??4));
+  const main = list[0];
+  const b = $("banner"); bannerSym = main.sym || "";
+  b.className = "k-" + (main.kind==="near" ? "near" : main.kind==="test" ? "test" : "hit");
+  b.innerHTML = esc(main.msg) + (list.length > 1 ? `<small>+${list.length-1} more: ${esc(list.slice(1).map(a=>a.sym).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(", "))}</small>` : "") +
+    `<div class="acts">${bannerSym?`<button data-snz="30">Snooze ${esc(bannerSym)} 30m</button><button data-snz="day">Mute ${esc(bannerSym)} today</button>`:""}<button data-snz="ok">OK</button></div>`;
   b.classList.remove("show"); void b.offsetWidth; b.classList.add("show");
   if (settings.sound === "on") beep(main.kind === "near" ? 1 : 3);
-  const body = list.map(a => a.msg).join("\n");
-  const day = etNow().date; list.forEach(a => showToast("Market alert", a.msg, a.id + "@" + day, a.kind !== "near"));
-  if (settings.ntfy) fetch("https://ntfy.sh/" + encodeURIComponent(settings.ntfy), {method:"POST", body, headers:{"Title":"Market alert","Priority": main.kind==="near"?"default":"high","Tags":"chart_with_downwards_trend"}}).catch(()=>{});
+  const day = etNow().date;
+  // one pop-up per ticker, so a gap through several rules doesn't stack up toasts
+  const bySym = {}; list.forEach(a => { const k = a.sym || a.id; (bySym[k] = bySym[k] || []).push(a); });
+  Object.values(bySym).forEach(as => showToast(as[0].kind==="near" ? "Heads-up" : "Market alert", as.map(a=>a.msg).join("\n"), as[0].id + "@" + day, as[0].kind !== "near"));
+  if (settings.ntfy) fetch("https://ntfy.sh/" + encodeURIComponent(settings.ntfy), {method:"POST", body:list.map(a => a.msg).join("\n"), headers:{"Title":"Market alert","Priority": main.kind==="near"?"default":"high","Tags":"chart_with_downwards_trend"}}).catch(()=>{});
+}
+function minsToMidnightET(){ return 1440 - etNow().mins; }
+function snooze(sym, how){
+  if (how === "30") settings.snooze[sym] = Date.now() + 30*60e3;
+  else settings.snooze[sym] = Date.now() + minsToMidnightET()*60e3;
+  Object.keys(settings.snooze).forEach(k => { if (settings.snooze[k] < Date.now()) delete settings.snooze[k]; });
+  saveSettings(); toast(how === "30" ? `${sym} snoozed for 30 min` : `${sym} muted for the rest of today`); renderAll();
+}
+function togglePause(){
+  settings.pauseUntil = pausedNow() ? 0 : Date.now() + minsToMidnightET()*60e3;
+  saveSettings(); toast(settings.pauseUntil ? "Alerts paused until tomorrow" : "Alerts back on"); renderAll(); updateTray();
 }
 async function showToast(title, body, tag, sticky){
+  if (NATIVE){ nat.invoke("shell_notify", {title, body}).catch(()=>{}); return; }
   try{
     if (!("Notification" in window) || Notification.permission !== "granted") return;
     const opts = {body, icon:"icons/icon-192.png", badge:"icons/icon-192.png", tag, requireInteraction: !!sticky};
@@ -709,8 +931,13 @@ function bgHash(){ const p = bgPayload(); delete p.vapid; delete p.sub; const t 
 function sparkSvg(sym, levels){
   const q = quotes[sym], arr = ((spark[etNow().date]||{})[sym]||[]).slice();
   const W = 64, H = 26;
-  const pts = arr.length >= 2 ? arr : (q && q.pc && q.c ? [q.pc, q.o || q.pc, q.c] : []);
-  if (pts.length < 2) return `<svg class="spark" viewBox="0 0 ${W} ${H}"></svg>`;
+  const pts = arr;
+  if (pts.length < 2){
+    if (!(q && q.pc && q.c)) return `<svg class="spark" viewBox="0 0 ${W} ${H}"></svg>`;
+    // no intraday points yet: show where the price sits against yesterday's close, without inventing a path
+    const up = q.c >= q.pc, yy = up ? 7 : H-7;
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><line x1="0" x2="${W}" y1="${H/2}" y2="${H/2}" stroke="var(--muted)" stroke-opacity=".6" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><circle cx="${W-4}" cy="${yy}" r="2.6" fill="${up?"var(--up)":"var(--down)"}"/></svg>`;
+  }
   const ref = q && q.pc ? q.pc : pts[0];
   const near = (levels||[]).filter(L => L >= Math.min(...pts)*0.98 && L <= Math.max(...pts)*1.02);
   const lo = Math.min(...pts, ref, ...near), hi = Math.max(...pts, ref, ...near), span = (hi-lo) || 1;
@@ -749,7 +976,8 @@ function portfolioCalc(){
   const fi = cfg.fixed.map(fixedInfo);
   const fixed = fi.reduce((a,x)=>a + x.value, 0), fixedDay = fi.reduce((a,x)=>a + (x.dayUsd||0), 0);
   const total = live + fixed, dayUsd = live - prev + fixedDay, base = prev + fixed - fixedDay;
-  return {rows, live, fixed, total, dayUsd, dayPct: base ? dayUsd/base*100 : null, missing, cost, costVal};
+  const stockPct = prev ? (live/prev - 1)*100 : null;
+  return {rows, live, prev, fixed, total, dayUsd, dayPct: base ? dayUsd/base*100 : null, stockPct, missing, cost, costVal, fi};
 }
 function renderPortfolio(){
   const P = portfolioCalc(), body = $("pf-body"), any = Object.keys(quotes).length > 0;
@@ -759,7 +987,15 @@ function renderPortfolio(){
     return;
   }
   $("pf-sum").innerHTML = any ? `<b style="color:var(--fg);font-size:13px">${fmt$(P.total,0)}</b><span class="${cls(P.dayPct)}" style="font-weight:600">${fmtPct(P.dayPct)}</span>` : "";
-  const spy = quotes.SPY && quotes.SPY.dp, vs = (P.dayPct!=null && spy!=null) ? P.dayPct - spy : null;
+  const spy = quotes.SPY && quotes.SPY.dp, vs = (P.stockPct!=null && spy!=null) ? P.stockPct - spy : null;
+  // risk read: beta-weighted exposure, concentration
+  let bv = 0, bw = 0; P.rows.forEach(r => { const b = metrics[r.sym] && metrics[r.sym].beta; if (r.val && b!=null){ bv += r.val*b; bw += r.val; } });
+  const fundsVal = P.fi.filter(x=>x.live).reduce((a,x)=>a+x.value,0);
+  const beta = bw ? bv/bw : null, perSpy = bw ? (bv + fundsVal) / 100 : null;
+  const byVal = P.rows.filter(r=>r.val).map(r=>({sym:r.sym, val:r.val}));
+  const merged = {}; byVal.forEach(r => merged[r.sym] = (merged[r.sym]||0) + r.val);
+  const top = Object.entries(merged).sort((a,b)=>b[1]-a[1]);
+  const top3 = P.total ? top.slice(0,3).reduce((a,x)=>a+x[1],0)/P.total*100 : null;
   const gain = P.cost ? (P.costVal/P.cost - 1)*100 : null;
 
   // allocation by account (+ funds & cash)
@@ -796,7 +1032,7 @@ function renderPortfolio(){
         <span class="r num"><span>${fmt$(fv,0)}</span>${anyLive && fchg!=null ? `<span class="${cls(fchg)}" style="font-weight:600">${fmtPct(fchg)}</span>` : ""}</span></button>
       <div class="grp-rows">${xs.map(({f,x})=>{ const sym = f.sym.toUpperCase();
         return `<div class="hrow" ${settings.tdKey?`data-nav="${esc(sym)}" title="${x.err && !x.live ? "Couldn't update: " + esc(x.err) + ". Click to retry." : "Click to re-check this fund's price"}"`:`style="cursor:default" title="Add a free Twelve Data key in Settings for daily prices"`}>
-          <div class="s">${esc(sym)}<small>${+f.shares ? (+f.shares).toLocaleString("en-US",{maximumFractionDigits:1}) + " sh · " : ""}${(x.value/tot*100).toFixed(1)}%</small></div><div></div>
+          <div class="s">${esc(sym)}<small>${+f.shares ? (+f.shares).toLocaleString("en-US",{maximumFractionDigits:1}) + " sh · " : ""}${(x.value/tot*100).toFixed(1)}%</small></div><span class="spark"></span>
           <div class="v num">${fmt$(x.value,0)}<small>${x.live ? fmt$(x.nav) : "—"}</small></div>
           ${x.live && x.chgPct!=null ? `<div class="dp num ${cls(x.chgPct)}">${fmtPct(x.chgPct)}</div>` : `<div class="dp num muted" style="font-weight:400">${x.err ? "⚠" : "—"}</div>`}</div>`; }).join("")}</div></div>`;
   }
@@ -805,7 +1041,7 @@ function renderPortfolio(){
     const label = f => { const n = String(f.name||"").replace(/\s*\(.*?\)\s*/g," ").replace(/^cash[\s,:-]*/i,"").trim(); return n ? n.charAt(0).toUpperCase() + n.slice(1) : "Cash"; };
     cashHtml = `<div class="grp ${settings.grpCollapsed.__cash?"collapsed":""}">
       <button class="grp-h" data-grp="__cash">${chev}<b>Cash</b><span class="muted">ready to invest</span><span class="r num"><span>${fmt$(cv,0)}</span></span></button>
-      <div class="grp-rows">${cashes.map(f=>`<div class="hrow" style="cursor:default"><div class="s">${esc(label(f))}<small>${((+f.value||0)/tot*100).toFixed(1)}%</small></div><div></div><div class="v num">${fmt$(+f.value||0,0)}</div><div></div></div>`).join("")}</div></div>`;
+      <div class="grp-rows">${cashes.map(f=>`<div class="hrow" style="cursor:default"><div class="s">${esc(label(f))}<small>${((+f.value||0)/tot*100).toFixed(1)}%</small></div><span class="spark"></span><div class="v num">${fmt$(+f.value||0,0)}</div><div></div></div>`).join("")}</div></div>`;
   }
   const fixedHtml = fundsHtml + cashHtml;
   const cashTotal = cashes.reduce((a,f)=>a+(+f.value||0),0);
@@ -814,10 +1050,13 @@ function renderPortfolio(){
     <div class="hero"><div><div class="val num">${any?fmt$(P.total,0):"—"}</div></div>
       <div class="chg num ${cls(P.dayUsd)}">${any?fmtS$(P.dayUsd):"—"} <span>${any?fmtPct(P.dayPct):""}</span><small>today</small></div></div>
     <div class="kpis num">
-      <div class="kpi"><b class="${cls(vs)}">${vs==null?"—":fmtPct(vs)}</b><span>vs S&amp;P today</span></div>
+      <div class="kpi" title="Your stocks and ETFs today minus the S&amp;P 500 (cash and funds left out)"><b class="${cls(vs)}">${vs==null?"—":fmtPct(vs)}</b><span>stocks vs S&amp;P</span></div>
       <div class="kpi"><b>${cashes.length?fmt$(cashTotal,0):"—"}</b><span>cash ready</span></div>
       <div class="kpi"><b class="${cls(gain)}">${gain==null?"—":fmtPct(gain,1)}</b><span>gain vs your cost</span></div>
     </div>
+    ${any && top.length ? `<div class="risk num" title="Beta is from Finnhub (how much each holding tends to move with the market). Mutual funds count as beta 1, cash as 0.">
+      ${beta!=null?`<span>Beta <b>${beta.toFixed(2)}</b></span><span>S&amp;P −1% ≈ <b class="down">${fmtS$(-perSpy)}</b></span>`:""}
+      <span>Largest <b>${esc(top[0][0])} ${(top[0][1]/P.total*100).toFixed(0)}%</b></span>${top.length>3?`<span>Top 3 <b>${top3.toFixed(0)}%</b></span>`:""}</div>` : ""}
     <div class="alloc">${alloc}</div><div class="legend">${legend}</div>
     <div class="toolbar"><span style="flex:1"></span>
       <div class="seg" id="sortSeg">${[["value","Value"],["day","Today"],["name","A–Z"]].map(([k,l])=>`<button data-sort="${k}" class="${settings.sort===k?"on":""}">${l}</button>`).join("")}</div></div>
@@ -835,13 +1074,15 @@ function holdRow(r, total){
       <span>Shares <b>${r.sh}</b></span><span>Weight <b>${wt==null?"—":wt.toFixed(1)+"%"}</b></span>
       ${r.h.avg?`<span>Avg cost <b>${fmt$(r.h.avg)}</b></span><span>Gain <b class="${cls(gain)}">${fmtPct(gain,1)} (${fmtS$(q?(q.c-r.h.avg)*r.sh:null)})</b></span>`:""}
       ${m.hi?`<span>From 52w high <b class="down">${fmtPct((q.c/m.hi-1)*100,1)}</b></span>`:""}${pctFor(r.sym,"YTD")!=null?`<span>YTD <b class="${cls(pctFor(r.sym,"YTD"))}">${fmtPct(pctFor(r.sym,"YTD"),1)}</b></span>`:""}
+      ${m.beta!=null?`<span>Beta <b>${m.beta.toFixed(2)}</b></span>`:""}${erInfo(r.sym)?`<span>Earnings <b>${erInfo(r.sym).label.slice(3)}</b></span>`:""}
       ${q?rangeBar(q.l,q.h,q.c,"Day low","high"):""}
       ${m.hi&&m.lo&&q?rangeBar(m.lo,m.hi,q.c,"52w low","high"):""}
+      ${newsHtml(r.sym)}
       <span style="grid-column:1/-1;text-align:right"><button class="rbtn" data-ref="${esc(r.sym)}">↻ Refresh</button></span>
     </div>`;
   }
   return `<div class="hrow" role="button" tabindex="0" data-row="h:${esc(r.sym)}:${esc(r.h.acct||"")}">
-    <div class="s">${esc(r.sym)}<small>${r.sh} sh${wt!=null?" · "+wt.toFixed(1)+"%":""}</small></div>
+    <div class="s">${esc(r.sym)}${erChip(r.sym)}<small>${r.sh} sh${wt!=null?" · "+wt.toFixed(1)+"%":""}</small></div>
     ${sparkSvg(r.sym)}
     <div class="v num">${fmt$(r.val,0)}<small>${q?fmt$(q.c):"—"}</small></div>
     <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}</div>${det}</div>`;
@@ -860,62 +1101,125 @@ function refDate(period){
   for (const s of marketSyms()){ const r = hist[s] && hist[s].refs[period]; if (r) return r.d; }
   return null;
 }
+/* market regime from cross-asset ETFs (1-day moves) */
+function regime(){
+  const d = sym => quotes[sym] && isFinite(quotes[sym].dp) ? quotes[sym].dp : null;
+  const spy = d("SPY"), vix = d("VIXY"), hyg = d("HYG"), ief = d("IEF"), uup = d("UUP"), smh = d("SMH"), rsp = d("RSP");
+  if (spy == null) return null;
+  const credit = hyg!=null && ief!=null ? hyg - ief : null;
+  let off = 0, on = 0; const why = [];
+  if (vix!=null){ if (vix > 3){ off++; why.push(`volatility up ${vix.toFixed(1)}%`); } else if (vix < -3){ on++; why.push(`volatility down ${Math.abs(vix).toFixed(1)}%`); } }
+  if (credit!=null){ if (credit < -0.25){ off++; why.push("credit lagging Treasuries"); } else if (credit > 0.15){ on++; why.push("credit firm"); } }
+  if (uup!=null && uup > 0.3){ off++; why.push("dollar up"); }
+  if (spy < -1){ off++; why.push(`S&P ${spy.toFixed(1)}%`); } else if (spy > 0.5){ on++; why.push(`S&P +${spy.toFixed(1)}%`); }
+  const k = off >= 2 && off > on ? "off" : on >= 2 && on > off ? "on" : "mix";
+  const chips = [];
+  if (vix!=null) chips.push(["Vol (VIXY)", vix]);
+  if (credit!=null) chips.push(["Credit vs Tsy", credit]);
+  if (uup!=null) chips.push(["Dollar", uup]);
+  if (smh!=null) chips.push(["Chips vs S&P", smh - spy]);
+  if (rsp!=null) chips.push(["Equal-wt vs S&P", rsp - spy, true]);
+  return {k, label: k==="off" ? "Risk-off" : k==="on" ? "Risk-on" : "Mixed", why, chips};
+}
 function renderMarkets(){
   const per = settings.period, cap = HEAT_CAP[per] || 15, dec = per==="1D" ? 2 : 1;
   const vis = a => a.filter(m => !cfg.hiddenMk.includes(m.sym));
   const idx = vis(MARKETS.indices), sec = vis(MARKETS.sectors), oth = vis(MARKETS.other);
+  const my = cfg.myMk.map(sym => ({sym, name:sym}));
   const secP = sec.map(m => pctFor(m.sym, "1D")).filter(v => v!=null);
   const upN = secP.filter(v => v >= 0).length;
-  $("mk-sum").innerHTML = idx.slice(0,2).map(m=>{ const p = pctFor(m.sym,"1D"); return `<span>${esc(m.name.replace(" 500","").replace(" 100",""))} <b class="${cls(p)}">${fmtPct(p,1)}</b></span>`; }).join("") + (secP.length?`<span class="muted">${upN}/${secP.length} up</span>`:"");
+  const above = sec.filter(m => { const h = hist[m.sym], q = quotes[m.sym]; return h && h.sma50 && q && q.c; });
+  const aboveN = above.filter(m => quotes[m.sym].c > hist[m.sym].sma50).length;
+  const rg = xaOn() ? regime() : null;
+  $("mk-sum").innerHTML = idx.slice(0,2).map((m,i)=>{ const p = pctFor(m.sym,"1D"); return `<span class="${i?"mk-nq":""}">${esc(m.name.replace(" 500","").replace(" 100",""))} <b class="${cls(p)}">${fmtPct(p,1)}</b></span>`; }).join("") +
+    (rg ? `<span class="rg ${rg.k}" title="${esc(rg.why.join(", ") || "No strong signal")}">${rg.label}</span>` : secP.length?`<span class="muted mk-up">${upN}/${secP.length} up</span>`:"");
   const tiles = arr => { let a = arr.map(m => ({...m, p: pctFor(m.sym, per)}));
     if (settings.heatOrder === "rank") a = a.sort((x,y)=>(y.p??-1e9)-(x.p??-1e9));
-    return a.map(m => `<button class="tile ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" style="background:${heatColor(m.p, cap)}" title="${esc(m.name)} (${m.sym}). Click to highlight and refresh just this one."><span class="n">${esc(m.name)}</span><span class="b"><span class="p num">${fmtPct(m.p, dec)}</span><span class="t">${m.sym}</span></span></button>`).join(""); };
+    return a.map(m => `<button class="tile ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" style="background:${heatColor(m.p, cap)}" title="${esc(m.name)} (${m.sym}). Click to highlight and refresh just this one."><span class="n">${esc(m.name)}${erChip(m.sym)}</span><span class="b"><span class="p num">${fmtPct(m.p, dec)}</span><span class="t">${m.sym===m.name?"":m.sym}</span></span></button>`).join(""); };
   const anyPeriod = per==="1D" || sec.some(m => pctFor(m.sym, per) != null);
+  const bell = BELLWETHERS.map(sym => ({sym, e:erInfo(sym)})).filter(x => x.e && x.e.days <= 7);
   $("mk-body").innerHTML = `
+    ${rg ? `<div class="regime num" title="${esc(rg.why.length ? "Why: " + rg.why.join(", ") : "No strong signal either way")}"><span class="rg ${rg.k}">${rg.label}</span>${rg.chips.map(([n,v,minor])=>`<span class="xa ${minor?"mk-up":""}">${esc(n)} <b class="${cls(v)}">${fmtPct(v,1)}</b></span>`).join("")}</div>` : ""}
+    ${bell.length ? `<div class="note" style="margin:0 0 8px">Chip earnings this week: ${bell.map(x=>`<b>${x.sym}</b> ${x.e.label.slice(3)}`).join(" · ")}</div>` : ""}
     <div class="seg perseg" id="perSeg">${PERIODS.map(p=>`<button data-per="${p.k}" class="${per===p.k?"on":""}">${p.label}</button>`).join("")}</div>
     <div class="idx num">${idx.map(m=>{ const q = quotes[m.sym], p = pctFor(m.sym, per); return `<button class="c ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" title="Click to refresh just ${m.sym}"><span>${esc(m.name)}</span><b class="${cls(p)}">${fmtPct(p, dec)}</b><em>${q?fmt$(q.c):"—"}</em></button>`; }).join("")}</div>
+    ${my.length?`<div class="toolbar"><span class="sec-t" style="flex:1;font-size:11px">My list</span><button class="rbtn" data-open="markets">Edit</button></div><div class="heat" style="margin-bottom:10px">${tiles(my)}</div>`:""}
     <div class="toolbar"><span class="sec-t" style="flex:1;font-size:11px">Sectors</span>
       <div class="seg" id="ordSeg"><button data-ord="fixed" class="${settings.heatOrder!=="rank"?"on":""}" title="Tiles stay in the same place">Fixed</button><button data-ord="rank" class="${settings.heatOrder==="rank"?"on":""}" title="Best to worst">Ranked</button></div></div>
     <div class="heat">${tiles(sec)}</div>
-    ${secP.length?`<div class="breadth"><span>${upN} of ${secP.length} sectors up today</span><span class="bar"><i style="width:${(upN/secP.length*100).toFixed(0)}%"></i></span></div>`:""}
+    ${secP.length?`<div class="breadth"><span>${upN} of ${secP.length} up today${above.length?` · ${aboveN} above 50-day avg`:""}</span><span class="bar"><i style="width:${(upN/secP.length*100).toFixed(0)}%"></i></span></div>`:""}
     ${oth.length?`<div class="toolbar" style="margin-top:10px"><span class="sec-t" style="font-size:11px">Other markets</span></div><div class="heat">${tiles(oth)}</div>`:""}
     ${anyPeriod?"":`<div class="note">${per} isn't loaded yet. ${settings.tdKey?"History loads in the background (about 3 minutes the first time each day).":"Add a free Twelve Data key in Settings to unlock 1M, 3Y and 5Y and make every time frame exact."}</div>`}
     ${per!=="1D"&&refDate(per)?`<div class="note">${per} change since ${(d=>(+d.slice(5,7))+"/"+(+d.slice(8,10))+"/"+d.slice(2,4))(refDate(per))}</div>`:""}`;
 }
 
 /* ---------- watchlist ---------- */
+function watchInfo(w){
+  const sym = (w.sym||"").toUpperCase(), q = quotes[sym], m = metrics[sym] || {}, off = w.on===false || settings.allOff;
+  const lv = effLevels(w), useLv = w.levelsOn!==false && lv.length, px = q && q.c;
+  const hitL = useLv && px ? lv.filter(L => px <= L) : [], next = useLv && px ? lv.find(L => L < px) : null;
+  const dist = next ? (px/next - 1)*100 : null, vol = volOf(sym);
+  const red = !!(px && q.dp!=null && w.redOn!==false && w.dayDrop && q.dp <= -w.dayDrop);
+  let st = hitL.length || red ? "hit" : (dist!=null && w.nearOn!==false && w.near && dist <= w.near) ? "near" : "";
+  return {sym, q, m, off, lv, useLv, px, hitL, next, dist, vol, red, st};
+}
+function ladder(lv, px){
+  const all = [...lv, px], lo = Math.min(...all), hi = Math.max(...all), pad = (hi-lo)*0.08 || hi*0.02;
+  const pos = v => (v-(lo-pad))/((hi+pad)-(lo-pad))*100;
+  const zone = lv.length > 1 ? `<div class="zone" style="left:${pos(lv[lv.length-1]).toFixed(1)}%;width:${(pos(lv[0])-pos(lv[lv.length-1])).toFixed(1)}%"></div>` : "";
+  // label the most useful levels first (next one below the price, then the deepest hit), skip labels that would overlap
+  const next = lv.find(L => L < px), hit = lv.filter(L => px <= L);
+  const order = [next, hit[hit.length-1], ...lv].filter((v,i,a)=>v!=null && a.indexOf(v)===i);
+  const placed = [];
+  order.forEach(L => { const p = pos(L), wPct = 12 + String(Math.round(L)).length*2.2; if (placed.every(o => Math.abs(o.p - p) > (o.w + wPct)/2)) placed.push({L, p, w:wPct}); });
+  return `<div class="lad" title="Buy levels (orange): ${lv.map(L=>fmt$(L,0)).join(", ")}. Blue dot = price now."><div class="track"></div>${zone}${lv.map(L=>`<div class="tk" style="left:${pos(L).toFixed(1)}%"></div>`).join("")}${placed.map(o=>`<div class="tl num" style="left:${o.p.toFixed(1)}%">${fmt$(o.L,0)}</div>`).join("")}<div class="now" style="left:${pos(px).toFixed(1)}%"></div></div>`;
+}
 function renderWatch(){
   let hits = 0, nears = 0;
+  const bench = settings.bench, bq = quotes[bench];
   const html = cfg.watch.map(w=>{
-    const sym = (w.sym||"").toUpperCase(), q = quotes[sym], m = metrics[sym] || {}, off = w.on===false || settings.allOff;
-    const lv = effLevels(w).slice().sort((a,b)=>b-a), useLv = w.levelsOn!==false && lv.length;
-    const px = q && q.c, fromHi = m.hi && px ? (1 - px/m.hi)*100 : null;
-    let st = "", line = "";
+    const I = watchInfo(w), {sym, q, m, off, lv, useLv, px, hitL, next, dist, vol} = I;
+    const fromHi = m.hi && px ? (1 - px/m.hi)*100 : null;
+    const parts = [];
     if (useLv && px){
-      const hitL = lv.filter(L => px <= L), next = lv.find(L => L < px);
-      if (hitL.length){ st = "hit"; line = `<span class="st hit">At buy level ${fmt$(hitL[hitL.length-1],0)}</span>${hitL.length<lv.length?` <span>· next ${fmt$(lv[hitL.length],0)}</span>`:""}`; }
-      else { const d = (px/lv[0] - 1)*100; st = (w.nearOn!==false && w.near && d <= w.near) ? "near" : "";
-        line = `<span>Next buy <b>${fmt$(lv[0],0)}</b></span><span class="st ${st}">${d.toFixed(1)}% away</span>`; }
-    } else if (px && q.dp!=null && w.redOn!==false && w.dayDrop && q.dp <= -w.dayDrop){ st = "hit"; line = `<span class="st hit">Red day: ${fmtPct(q.dp,1)}</span>`; }
-    else line = `<span class="muted">${w.note ? "" : "Watching"}</span>`;
-    if (!off){ if (st==="hit") hits++; else if (st==="near") nears++; }
-    let lad = "";
-    if (useLv && px){
-      const all = [...lv, px], lo = Math.min(...all), hi = Math.max(...all), pad = (hi-lo)*0.08 || hi*0.02;
-      const pos = v => ((v-(lo-pad))/((hi+pad)-(lo-pad))*100).toFixed(1);
-      const zone = lv.length > 1 ? `<div class="zone" style="left:${pos(lv[lv.length-1])}%;width:${(pos(lv[0])-pos(lv[lv.length-1])).toFixed(1)}%"></div>` : "";
-      lad = `<div class="lad" title="Your buy levels (orange) and today's price (blue)"><div class="track"></div>${zone}${lv.map(L=>`<div class="tk" style="left:${pos(L)}%"></div><div class="tl num" style="left:${pos(L)}%">${fmt$(L,0)}</div>`).join("")}<div class="now" style="left:${pos(px)}%"></div></div>`;
+      if (hitL.length) parts.push(`<span class="st hit">At buy level ${fmt$(hitL[hitL.length-1],0)}</span>${next?`<span>· next ${fmt$(next,0)}</span>`:""}`);
+      else if (next) parts.push(`<span>Next buy <b>${fmt$(next,0)}</b></span><span class="st ${I.st}">${dist.toFixed(1)}% away${vol && dist/vol < 15 ?` · ${(dist/vol).toFixed(1)}σ`:""}</span>`);
+      else parts.push(`<span class="muted">Below all your levels</span>`);
     }
-    const right = `<span class="r">${fromHi!=null?`<span class="num">${fromHi>=0?"−":"+"}${Math.abs(fromHi).toFixed(1)}% from high</span>`:""}${off?`<span class="chip">alerts off</span>`:""}<button class="rbtn" data-ref="${esc(sym)}" title="Refresh just ${esc(sym)}" aria-label="Refresh ${esc(sym)}">↻</button></span>`;
-    return `<div class="wrow ${off?"muted-row":st?"st-"+st:""}"><div class="wtop">
-      <div class="s">${esc(sym)}<small>${esc(w.note||"")}</small></div>
+    if (I.red) parts.push(`<span class="st hit">Red day ${fmtPct(q.dp,1)}</span>`);
+    if (!parts.length) parts.push(`<span class="muted">${px ? "Watching" : "Waiting for a price"}</span>`);
+    if (!off){ if (I.st==="hit") hits++; else if (I.st==="near") nears++; }
+    const rel = px && bq && bq.dp!=null && sym !== bench && q.dp!=null ? q.dp - bq.dp : null;
+    const sn = snoozed(sym);
+    const right = `<span class="r">${rel!=null?`<span class="num" title="Today's move minus ${esc(bench)}'s: separates a sector-wide dip from a stock-specific drop">vs ${esc(bench)} <b class="${cls(rel)}">${fmtPct(rel,1)}</b></span>`:""}${fromHi!=null?`<span class="num" title="From the 52-week high">${fromHi>=0?"−":"+"}${Math.abs(fromHi).toFixed(1)}% hi</span>`:""}${off?`<span class="chip">alerts off</span>`:sn?`<span class="chip" title="Snoozed until ${timeStr(settings.snooze[sym])}">snoozed</span>`:""}<button class="rbtn" data-ref="${esc(sym)}" title="Refresh just ${esc(sym)}" aria-label="Refresh ${esc(sym)}">↻</button></span>`;
+    const open = openRows.has("w:"+sym);
+    let det = "";
+    if (open){
+      const h = hist[sym] || {};
+      det = `<div class="wdet num">
+        ${q&&q.h?`<span>Off today's high <b class="${px<q.h?"down":""}">${fmtPct((px/q.h-1)*100,1)}</b></span>`:""}
+        ${vol&&q?`<span>Today in σ <b class="${cls(q.dp)}">${(q.dp/vol>=0?"+":"−")+Math.abs(q.dp/vol).toFixed(1)}σ</b> <span class="muted">(±${vol.toFixed(1)}%)</span></span>`:""}
+        ${h.sma50&&px?`<span>50-day avg <b>${fmt$(h.sma50,0)}</b> <span class="muted">${fmtPct((px/h.sma50-1)*100,1)}</span></span>`:""}
+        ${h.sma200&&px?`<span>200-day avg <b>${fmt$(h.sma200,0)}</b> <span class="muted">${fmtPct((px/h.sma200-1)*100,1)}</span></span>`:""}
+        ${m.beta!=null?`<span>Beta <b>${m.beta.toFixed(2)}</b></span>`:""}${erInfo(sym)?`<span>Earnings <b>${erInfo(sym).label.slice(3)}</b> <span class="muted">${erInfo(sym).days}d</span></span>`:""}
+        ${q?rangeBar(q.l,q.h,q.c,"Day low","high"):""}${m.hi&&m.lo&&px?rangeBar(m.lo,m.hi,px,"52w low","high"):""}
+        ${newsHtml(sym)}
+        ${off?"":`<span style="grid-column:1/-1;display:flex;gap:6px;justify-content:flex-end"><button class="rbtn" data-snzsym="${esc(sym)}" data-how="30">Snooze 30m</button><button class="rbtn" data-snzsym="${esc(sym)}" data-how="day">Mute today</button></span>`}
+      </div>`;
+    }
+    return `<div class="wrow ${off?"muted-row":I.st?"st-"+I.st:""}" data-row="w:${esc(sym)}" role="button" tabindex="0" aria-expanded="${open}"><div class="wtop">
+      <div class="s">${esc(sym)}${erChip(sym)}<small>${esc(w.note||"")}</small></div>
       ${sparkSvg(sym, lv)}
       <div class="v num" style="text-align:right">${px?fmt$(px):"—"}</div>
       <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}</div></div>
-      ${lad}<div class="wmeta">${line}${right}</div></div>`;
+      ${useLv && px ? ladder(lv, px) : ""}<div class="wmeta">${parts.join("")}${right}</div>${det}</div>`;
   }).join("");
   $("wl-body").innerHTML = html || `<div class="empty">No tickers yet. <button data-open="alerts">Add one</button></div>`;
-  $("wl-sum").innerHTML = settings.allOff ? `<span class="muted">alerts paused</span>` : (hits?`<span class="down" style="font-weight:600">${hits} at level</span>`:"") + (nears?`<span style="color:var(--warn);font-weight:600">${nears} near</span>`:"") + (!hits&&!nears?`<span class="muted">${cfg.watch.length} watching</span>`:"");
+  $("wl-sum").innerHTML = settings.allOff ? `<span class="muted">alerts off</span>` : pausedNow() ? `<span style="color:var(--warn);font-weight:600">paused</span>` : (hits?`<span class="down" style="font-weight:600">${hits} at level</span>`:"") + (nears?`<span style="color:var(--warn);font-weight:600">${nears} near</span>`:"") + (!hits&&!nears?`<span class="muted">${cfg.watch.length} watching</span>`:"");
+  // compact strip: closest to a buy level first
+  const rows = cfg.watch.map(watchInfo).filter(I => I.px).sort((a,b) => (a.hitL.length?-1e9:0) - (b.hitL.length?-1e9:0) || (a.dist ?? 1e9) - (b.dist ?? 1e9));
+  $("strip").innerHTML = rows.map(I => `<div class="srow num"><span class="s">${esc(I.sym)}${erChip(I.sym)}</span><span>${fmt$(I.px)}</span><span class="${cls(I.q.dp)}">${fmtPct(I.q.dp,1)}</span>
+    <span class="d ${I.hitL.length||I.red?"hit":I.st}">${I.hitL.length ? "at " + fmt$(I.hitL[I.hitL.length-1],0) : I.next ? `${I.dist.toFixed(1)}% → ${fmt$(I.next,0)}` : I.red ? "red day" : "—"}</span></div>`).join("") || `<div class="muted" style="font-size:11.5px">No watchlist prices yet.</div>`;
 }
 function renderLog(){
   const f = firedToday();
@@ -924,23 +1228,97 @@ function renderLog(){
 }
 
 /* ---------- frame ---------- */
+const dateTime = t => { const d = new Date(t); return etDateOf(t) === etNow().date ? timeStr(t) : d.toLocaleDateString([], {weekday:"short", month:"numeric", day:"numeric"}) + " " + timeStr(t); };
+function dataState(){
+  const ses = session(), ms = refreshMs(), age = lastUpdate ? Date.now() - lastUpdate : Infinity;
+  if (!settings.key) return {k:"bad", why:"No market-data key yet"};
+  if (health.at && health.total && health.ok === 0) return {k:"bad", why:"No prices came back on the last refresh"};
+  if (ses.s === "open" && ms && age > Math.max(2*ms, 3*60e3)) return {k:"stale", why:`Prices are ${Math.round(age/60000)} min old`};
+  if (health.fail.length) return {k:"stale", why:`${health.fail.length} symbol(s) didn't update`};
+  return {k:"ok", why:""};
+}
+function renderFrame(){
+  const ses = session(), ds = dataState();
+  $("mkt").className = "pill " + (ses.s==="open"?"open":ses.s==="ext"?"ext":"") + (ds.k!=="ok" ? " " + ds.k : "");
+  $("mkt").lastElementChild.textContent = {"Market open":"Open","Pre-market":"Pre-market","After hours":"After hours","Closed":"Closed","Weekend":"Weekend","Holiday":"Holiday"}[ses.label] || ses.label;
+  $("mkt").title = (ds.why ? ds.why + ". " : "") + (ses.s==="open" ? "Market open · live prices" + (ses.early ? " · closes at 1 pm today" : "") : ses.label + (ses.why && ses.why!=="Market holiday" ? " (" + ses.why + ")" : "") + " · showing the last close. The free data feeds don't carry pre-market or after-hours prices.") + " Click for data status.";
+  const age = lastUpdate ? Math.round((Date.now()-lastUpdate)/60000) : null;
+  $("upd").textContent = lastUpdate ? (ses.s==="open" ? `Updated ${dateTime(lastUpdate)}${age>=3 ? ` (${age} min ago)` : ""}` : `Last close prices · checked ${dateTime(lastUpdate)}`) : "";
+  const p = $("paused");
+  p.classList.toggle("show", !!pausedNow());
+  if (pausedNow()) p.innerHTML = `<span>Alerts paused for the rest of today</span><button data-act="resume">Resume</button>`;
+  $("mPauseLbl").textContent = pausedNow() ? "Resume alerts" : "Pause alerts today";
+  if (!$("statusPop").classList.contains("hide")) renderStatus();
+}
 function renderAll(){
-  const ses = session();
-  $("mkt").className = "pill " + (ses.s==="open"?"open":ses.s==="ext"?"ext":"");
-  $("mkt").lastElementChild.textContent = {"Market open":"Open","Pre-market":"Pre-market","After hours":"After hours","Closed":"Closed","Weekend":"Weekend"}[ses.label] || ses.label;
-  $("mkt").title = ses.s==="open" ? "Market open · live prices" : ses.label + " · showing the 4 PM close. The free data feeds don't carry pre-market or after-hours prices.";
   $("mCompactLbl").textContent = settings.compact ? "Full view" : "Compact view";
   document.body.classList.toggle("compact", !!settings.compact);
   document.querySelectorAll(".sec").forEach(s => s.classList.toggle("collapsed", !!settings.collapsed[s.dataset.sec]));
-  renderPortfolio(); renderMarkets(); renderWatch(); renderLog();
-  const age = lastUpdate ? Math.round((Date.now()-lastUpdate)/60000) : null;
-  $("upd").textContent = lastUpdate ? (ses.s==="open" ? `Updated ${timeStr(lastUpdate)}${age>=3 ? ` (${age} min ago)` : ""}` : `4 PM close prices · checked ${timeStr(lastUpdate)}`) : "";
+  renderPortfolio(); renderMarkets(); renderWatch(); renderLog(); renderFrame();
   const P = portfolioCalc();
-  document.title = (settings.compact && Object.keys(quotes).length && cfg.holdings.length) ? `${fmt$(P.total,0)} ${fmtPct(P.dayPct)} · Market Widget` : "Market Widget";
+  document.title = (settings.compact && Object.keys(quotes).length && cfg.holdings.length) ? `${fmt$(P.total,0)} ${fmtPct(P.dayPct)} · MW` : "MW";
+  updateTray();
+}
+function renderStatus(){
+  const ses = session(), ds = dataState(), u = store.get("tdUsed", {}), fb = store.get("tdFallback", {}), d = etNow().date;
+  const now = Date.now(), perMin = RL.times.filter(t => now - t < 60000).length, ms = refreshMs();
+  const kv = (k, v) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`;
+  $("statusPop").innerHTML = `<h4>${ds.k==="ok" ? "✓ Data is live" : ds.k==="stale" ? "⚠ " + esc(ds.why) : "✕ " + esc(ds.why)}</h4>
+    ${kv("Market", esc(ses.label) + (ses.early ? " (1 pm close)" : "") + (mstat && mstat.date===d ? " · exchange-checked" : ""))}
+    ${kv("Last update", lastUpdate ? dateTime(lastUpdate) : "never")}
+    ${kv("Symbols priced", health.total ? `${health.ok} of ${health.total}` : "—")}
+    ${health.fail.length ? kv("Didn't update", esc(health.fail.slice(0,8).join(", "))) : ""}
+    ${health.backup.length ? kv("Priced by backup", esc(health.backup.slice(0,8).join(", "))) : ""}
+    ${kv("Refresh", ms ? `every ${Math.round(ms/1000)}s` + (ses.s==="open" && minRefreshSec() > (+settings.refresh||60) ? " (stretched to stay under the free limit)" : "") : "manual")}
+    ${kv("Finnhub calls, last minute", `${perMin} of 60`)}
+    ${kv("Twelve Data credits today", settings.tdKey ? `${u.date===d?u.n:0} of 800` : "no key")}
+    ${settings.tdKey ? kv("Backup quotes today", `${fb.date===d?fb.n:0} of 150`) : ""}
+    ${lastErr ? `<div class="err" style="margin:6px 0 0">${esc(lastErr)}</div>` : ""}`;
+}
+/* "since you last looked": snapshot when the window loses focus, compare when it comes back */
+let lookSnap = null;
+function snapLook(){
+  if (!lastUpdate) return;
+  const P = portfolioCalc(), px = {}; [...mySyms(), settings.bench].forEach(s => { if (quotes[s]) px[s] = quotes[s].c; });
+  lookSnap = {t:Date.now(), total:P.total, px, alerts:firedToday().log.length, day:etNow().date};
+}
+function showSince(){
+  const el = $("since"); if (!lookSnap || lookSnap.day !== etNow().date || Date.now() - lookSnap.t < 3*60e3) return;
+  const P = portfolioCalc(), dUsd = cfg.holdings.length ? P.total - lookSnap.total : null;
+  let mover = null; Object.entries(lookSnap.px).forEach(([s0, p0]) => { const q = quotes[s0]; if (q && p0){ const ch = (q.c/p0-1)*100; if (!mover || Math.abs(ch) > Math.abs(mover.ch)) mover = {s:s0, ch}; } });
+  const na = firedToday().log.length - lookSnap.alerts;
+  if ((dUsd==null || Math.abs(dUsd) < 1) && (!mover || Math.abs(mover.ch) < 0.05) && !na) return;
+  el.innerHTML = `<span>Since ${timeStr(lookSnap.t)}:</span>${dUsd!=null?`<b class="${cls(dUsd)}">${fmtS$(dUsd)}</b>`:""}${mover?`<span>${esc(mover.s)} <b class="${cls(mover.ch)}">${fmtPct(mover.ch,1)}</b></span>`:""}${na>0?`<b style="color:var(--down)">${na} new alert${na>1?"s":""}</b>`:""}<span class="x2">✕</span>`;
+  el.classList.add("show"); lookSnap = null;
+}
+window.addEventListener("blur", snapLook);
+window.addEventListener("focus", showSince);
+document.addEventListener("visibilitychange", ()=>{ document.hidden ? snapLook() : showSince(); });
+
+/* tray icon (desktop app): tooltip shows the day at a glance; red dot while alerts are unseen */
+let trayLast = "";
+function updateTray(){
+  if (!NATIVE) return;
+  const P = portfolioCalc(), parts = ["MW"];
+  if (cfg.holdings.length && Object.keys(quotes).length) parts.push(`${fmt$(P.total,0)} ${fmtPct(P.dayPct)}`);
+  const b = quotes[settings.bench]; if (b) parts.push(`${settings.bench} ${fmtPct(b.dp,1)}`);
+  const near = cfg.watch.map(watchInfo).filter(I => I.px && (I.hitL.length || I.dist!=null)).sort((a,b)=>(a.hitL.length?-1e9:a.dist)-(b.hitL.length?-1e9:b.dist))[0];
+  if (near) parts.push(near.hitL.length ? `${near.sym} at ${fmt$(near.hitL[near.hitL.length-1],0)}` : `${near.sym} ${near.dist.toFixed(1)}% to ${fmt$(near.next,0)}`);
+  const ds = dataState(); if (ds.k !== "ok") parts.push(ds.why);
+  if (pausedNow()) parts.push("alerts paused");
+  const alert = (firedToday().unseen || 0) > 0, tip = parts.join(" · "), key = tip + alert;
+  if (key === trayLast) return; trayLast = key;
+  nat.invoke("shell_tray", {tooltip: tip, alert}).catch(()=>{});
 }
 
 /* ---------- interactions ---------- */
 document.addEventListener("click", e=>{
+  const sz = e.target.closest("[data-snzsym]"); if (sz){ e.stopPropagation(); snooze(sz.dataset.snzsym, sz.dataset.how); return; }
+  if (e.target.closest("[data-act=resume]")){ togglePause(); return; }
+  // desktop app: open web links in the default browser
+  const a = e.target.closest("a[href^='http']");
+  if (a && NATIVE){ e.preventDefault(); e.stopPropagation(); (TAURI.opener ? TAURI.opener.openUrl(a.href) : nat.invoke("plugin:opener|open_url", {url:a.href})).catch(()=>{}); return; }
+  if (a) return;
   const t = e.target.closest("[data-ref],[data-tile],[data-nav],[data-ord],[data-toggle],[data-grp],[data-row],[data-sort],[data-per],[data-open]");
   if (!t) return;
   if (t.dataset.ref){ e.stopPropagation(); refreshOne(t.dataset.ref); return; }
@@ -953,17 +1331,32 @@ document.addEventListener("click", e=>{
     saveSettings(); renderAll(); return;
   }
   if (t.dataset.grp != null){ settings.grpCollapsed[t.dataset.grp] = !settings.grpCollapsed[t.dataset.grp]; saveSettings(); renderPortfolio(); return; }
-  if (t.dataset.row){ if (e.target.closest(".detail")) return; openRows.has(t.dataset.row) ? openRows.delete(t.dataset.row) : openRows.add(t.dataset.row); renderPortfolio(); return; }
+  if (t.dataset.row){ if (e.target.closest(".detail,.wdet")) return; const k = t.dataset.row;
+    if (openRows.has(k)) openRows.delete(k); else { openRows.add(k); loadNews(k.split(":")[1]); }
+    k.startsWith("w:") ? renderWatch() : renderPortfolio(); return; }
   if (t.dataset.sort){ settings.sort = t.dataset.sort; saveSettings(); renderPortfolio(); return; }
   if (t.dataset.per){ settings.period = t.dataset.per; saveSettings(); renderMarkets(); return; }
   if (t.dataset.open){ openSheet(t.dataset.open); return; }
 });
 document.addEventListener("keydown", e=>{
-  if (e.target.matches("input,textarea,select")) return;
-  if (e.key==="Escape" && !$("menu").classList.contains("hide")) closeMenu();
-  else if (e.key==="Escape" && !$("sheet").classList.contains("hide")) closeSheet();
-  else if (e.key==="r"||e.key==="R") schedule(true);
-  else if (e.key==="c"||e.key==="C") $("bCompact").click();
+  if (e.target.matches("input,textarea,select") || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toLowerCase(), sheetOpen = !$("sheet").classList.contains("hide");
+  if (e.key==="Escape"){
+    if (!$("menu").classList.contains("hide")) closeMenu();
+    else if (!$("statusPop").classList.contains("hide")) $("statusPop").classList.add("hide");
+    else if (sheetOpen) closeSheet();
+    else if ($("banner").classList.contains("show")) dismissBanner();
+    else if (NATIVE) nat.invoke("shell_hide").catch(()=>{});
+    return;
+  }
+  if (sheetOpen) return;
+  if (k==="r") schedule(true);
+  else if (k==="c") $("bCompact").click();
+  else if (k==="a"){ dismissBanner(); toast("Alerts marked as seen"); }
+  else if (k==="p") togglePause();
+  else if (k==="t" && NATIVE) $("bPin").click();
+  else if (k==="/"){ e.preventDefault(); openSheet("alerts"); setTimeout(()=>{ const i = $("aSym"); if (i) i.focus(); }, 30); }
+  else if (["1","2","3","4"].includes(k)){ const sec = ["portfolio","markets","watch","log"][+k-1]; settings.compact = false; settings.collapsed[sec] = false; saveSettings(); renderAll(); document.querySelector(`[data-sec="${sec}"]`).scrollIntoView({behavior:"smooth", block:"start"}); }
   else if (e.key===",") openSheet("general");
   else if ((e.key==="Enter"||e.key===" ") && e.target.dataset && e.target.dataset.row){ e.preventDefault(); e.target.click(); }
 });
@@ -975,7 +1368,12 @@ function closeMenu(){ $("menu").classList.add("hide"); $("bMore").setAttribute("
 $("bMore").onclick = e=>{ e.stopPropagation(); const m = $("menu"), open = m.classList.contains("hide"); m.classList.toggle("hide", !open); $("bMore").setAttribute("aria-expanded", String(open)); if (open) m.querySelector("button").focus(); };
 document.addEventListener("click", e=>{ if (!e.target.closest("#menu,#bMore")) closeMenu(); }, true);
 $("menu").addEventListener("click", e=>{ if (e.target.closest("button")) setTimeout(closeMenu, 0); });
-$("banner").onclick = ()=>{ $("banner").classList.remove("show"); markSeen(); };
+function dismissBanner(){ $("banner").classList.remove("show"); markSeen(); }
+$("banner").onclick = e=>{ const b = e.target.closest("[data-snz]"); if (b && b.dataset.snz !== "ok" && bannerSym) snooze(bannerSym, b.dataset.snz); dismissBanner(); };
+$("since").onclick = ()=> $("since").classList.remove("show");
+$("bPause").onclick = ()=> togglePause();
+$("mkt").onclick = e=>{ e.stopPropagation(); const p = $("statusPop"); p.classList.toggle("hide"); if (!p.classList.contains("hide")) renderStatus(); };
+document.addEventListener("click", e=>{ if (!e.target.closest("#statusPop,#mkt")) $("statusPop").classList.add("hide"); }, true);
 
 /* ---------- settings sheet ---------- */
 let curTab = "general", draft = null;
@@ -999,16 +1397,28 @@ function showTab(tab){
       </div>
       <div class="row2">
         <div class="field"><label for="sSound">Alert sound</label><select id="sSound"><option value="on">On</option><option value="off">Off</option></select></div>
-        <div class="field"><label>Windows pop-ups</label><button class="btn" id="sNotif" style="width:100%">${"Notification" in window ? (Notification.permission==="granted"?"✓ Allowed":Notification.permission==="denied"?"Blocked in Edge":"Allow pop-ups") : "Not supported"}</button></div>
+        <div class="field"><label>Windows pop-ups</label>${NATIVE ? `<button class="btn" style="width:100%;cursor:default">✓ On (desktop app)</button>` : `<button class="btn" id="sNotif" style="width:100%">${"Notification" in window ? (Notification.permission==="granted"?"✓ Allowed":Notification.permission==="denied"?"Blocked by the browser":"Allow pop-ups") : "Not supported"}</button>`}</div>
       </div>
+      ${NATIVE ? `<div class="field"><label>Desktop app</label><div class="rule" id="appOpts" style="margin:0">
+        <div class="opts" style="margin:0">
+          <span>Start with Windows</span><label class="sw"><input type="checkbox" data-shell="autostart"><span></span></label>
+          <span>Start hidden in the tray</span><label class="sw"><input type="checkbox" data-shell="start_hidden"><span></span></label>
+          <span>Keep on top of other windows (T)</span><label class="sw"><input type="checkbox" data-shell="on_top"><span></span></label>
+          <span>Show / hide from anywhere: Ctrl+Alt+M</span><label class="sw"><input type="checkbox" data-shell="hotkey"><span></span></label>
+        </div></div><p>Closing the window (X or Esc) keeps MW running in the tray so alerts still pop up. Quit from the tray icon's menu. <span id="appVer"></span></p></div>` : ""}
       <div class="field"><label for="sNtfy">Phone alerts (optional)</label><input id="sNtfy" type="text" value="${esc(settings.ntfy)}" placeholder="ntfy topic, e.g. mk-dips-8x2q (hard to guess)">
         <p>Install the free ntfy app and subscribe to the same name to get alerts on your phone.</p></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="sSave">Save</button><button class="btn" id="sTest">Send a test alert</button><button class="btn" id="sKeys">Test my keys</button></div>
       <div id="keyRes" class="note" style="white-space:pre-line"></div>
       <p class="note">Data use: Finnhub allows 60 calls a minute with no daily cap, so refreshing everything is fine. Twelve Data allows 800 a day; used today: ${(()=>{const u=store.get("tdUsed",{});return u.date===etNow().date?u.n:0;})()}.</p>
-      <p class="note" style="margin-top:14px">Shortcuts: R refresh · C compact · , settings · Esc close. Version ${APP_VERSION}.</p>`;
+      <p class="note" style="margin-top:14px">Shortcuts: R refresh · C compact · A mark alerts seen · P pause alerts · / add a ticker · 1–4 jump to a section · , settings · Esc close${NATIVE?" or hide to tray · T keep on top":""}. Version ${APP_VERSION}.</p>`;
     $("sTheme").value = settings.theme; $("sRefresh").value = String(settings.refresh); $("sSound").value = settings.sound;
-    $("sNotif").onclick = async ()=>{ try{ const r = await Notification.requestPermission(); toast(r==="granted"?"Pop-ups allowed":"Pop-ups not allowed"); showTab("general"); }catch(e){} };
+    if (NATIVE){
+      const box = $("appOpts");
+      nat.invoke("shell_state").then(st => { nat.state = st; box.querySelectorAll("[data-shell]").forEach(i => i.checked = !!st[i.dataset.shell]); $("appVer").textContent = "App version " + st.version + "."; }).catch(()=>{});
+      box.onchange = e => { const k = e.target.dataset.shell; if (!k) return; nat.invoke("shell_set", {key:k, value:e.target.checked}).then(syncNative).catch(err => { toast(String(err)); e.target.checked = !e.target.checked; }); };
+    }
+    if ($("sNotif")) $("sNotif").onclick = async ()=>{ try{ const r = await Notification.requestPermission(); toast(r==="granted"?"Pop-ups allowed":"Pop-ups not allowed"); showTab("general"); }catch(e){} };
     $("sSave").onclick = ()=>{
       const tdChanged = $("sTd").value.trim() !== settings.tdKey;
       Object.assign(settings, {key:$("sKey").value.trim(), tdKey:$("sTd").value.trim(), theme:$("sTheme").value, refresh:+$("sRefresh").value, sound:$("sSound").value, ntfy:$("sNtfy").value.trim()});
@@ -1030,7 +1440,7 @@ function showTab(tab){
       } else lines.push("Twelve Data: no key entered");
       out.textContent = lines.join("\n");
     };
-    $("sTest").onclick = ()=>{ settings.ntfy = $("sNtfy").value.trim(); notify([{kind:"level", msg:"Test alert: this is what a dip alert looks like"}]); };
+    $("sTest").onclick = ()=>{ settings.ntfy = $("sNtfy").value.trim(); notify([{kind:"test", msg:"Test alert: this is what a dip alert looks like"}]); };
   }
   else if (tab==="holdings"){
     const accts = [...new Set(["Roth","Taxable", ...draft.holdings.map(h=>h.acct).filter(Boolean)])];
@@ -1068,7 +1478,7 @@ function showTab(tab){
     B.innerHTML = `
       <div class="rule" style="display:flex;align-items:center;gap:10px"><label class="sw"><input type="checkbox" id="aAll" ${settings.allOff?"":"checked"}><span></span></label><div><b>All alerts</b><div class="muted" style="font-size:11px">Master switch. Changes save as you click.</div></div></div>
       <div id="aList">${cfg.watch.map((w,i)=>{
-        const on = w.on!==false, ck = k => w[k]!==false ? "checked" : "";
+        const on = w.on!==false, ck = k => w[k]!==false ? "checked" : "", ck2 = (k, v) => (w[k]===true || (w[k]!==false && w[v])) ? "checked" : "";
         return `<div class="rule" data-i="${i}">
           <div class="rule-h"><label class="sw"><input type="checkbox" data-k="on" ${on?"checked":""}><span></span></label>${esc(w.sym)}
             <input data-note="1" value="${esc(w.note||"")}" placeholder="note" style="flex:1;min-width:0;font-size:11px;padding:3px 6px;font-weight:400">
@@ -1076,7 +1486,9 @@ function showTab(tab){
           <div class="opts ${on?"":"dis"}">
             <label><input type="checkbox" data-k="redOn" ${ck("redOn")}> Red day: down at least</label><span><input type="number" step="0.5" min="0.5" data-n="dayDrop" value="${w.dayDrop??3}"> %</span>
             <label><input type="checkbox" data-k="offOn" ${ck("offOn")}> Falls below 52-week high by</label><span><input type="number" step="1" min="1" data-n="offHigh" value="${w.offHigh??10}"> %</span>
-            <label><input type="checkbox" data-k="levelsOn" ${ck("levelsOn")}> Buy levels ($)</label><span><input type="text" data-l="1" value="${esc((w.levels||[]).join(", "))}" placeholder="e.g. 150, 140"></span>
+            <label title="A fast drop from today's high, even if the day is only slightly red"><input type="checkbox" data-k="hiOn" ${ck2("hiOn","hiDrop")}> Off today's high by</label><span><input type="number" step="0.5" min="0.5" data-n="hiDrop" value="${w.hiDrop??4}"> %</span>
+            <label title="Scaled to how much this stock normally moves in a day (needs a Twelve Data key)"><input type="checkbox" data-k="sigOn" ${ck2("sigOn","sigDrop")}> Unusual drop: at least</label><span><input type="number" step="0.5" min="0.5" data-n="sigDrop" value="${w.sigDrop??2}"> σ</span>
+            <label title="Prices, and 50d / 200d for the moving averages"><input type="checkbox" data-k="levelsOn" ${ck("levelsOn")}> Buy levels</label><span><input type="text" data-l="1" value="${esc([...(w.levels||[]), ...(w.ma||[]).map(n=>n+"d")].join(", "))}" placeholder="e.g. 150, 140, 200d"></span>
             <label><input type="checkbox" data-k="nearOn" ${ck("nearOn")}> Heads-up within</label><span><input type="number" step="0.5" min="0" data-n="near" value="${w.near??1.5}"> %</span>
           </div></div>`; }).join("")}</div>
       <div style="display:flex;gap:6px;margin-top:4px"><input id="aSym" placeholder="Add a ticker, e.g. NVDA" maxlength="10" style="flex:1;text-transform:uppercase"><button class="btn primary" id="aAdd">Add</button></div>`;
@@ -1084,20 +1496,23 @@ function showTab(tab){
     const save = ()=>{ store.set("cfg", cfg); renderAll(); };
     $("aList").onchange = e=>{
       const r = e.target.closest(".rule"); if (!r) return; const w = cfg.watch[+r.dataset.i], t = e.target;
-      if (t.dataset.k){ w[t.dataset.k] = t.checked; if (t.dataset.k==="on") r.querySelector(".opts").classList.toggle("dis", !t.checked); }
+      if (t.dataset.k){ w[t.dataset.k] = t.checked; if (t.dataset.k==="on") r.querySelector(".opts").classList.toggle("dis", !t.checked);
+        const nf = {hiOn:"hiDrop", sigOn:"sigDrop"}[t.dataset.k]; if (nf && t.checked && !w[nf]) w[nf] = +r.querySelector(`[data-n=${nf}]`).value || (nf==="hiDrop"?4:2); }
       if (t.dataset.n){ const v = parseFloat(t.value); if (isFinite(v) && v>=0) w[t.dataset.n] = v; }
-      if (t.dataset.l) w.levels = t.value.split(/[ ,;]+/).map(Number).filter(x=>x>0).sort((a,b)=>b-a);
+      if (t.dataset.l){ const toks = t.value.split(/[ ,;$]+/).filter(Boolean);
+        w.levels = toks.map(Number).filter(x=>x>0).sort((a,b)=>b-a);
+        w.ma = [...new Set(toks.map(x=>(x.match(/^(20|50|100|200)d$/i)||[])[1]).filter(Boolean).map(Number))]; }
       if (t.dataset.note) w.note = t.value;
       save();
     };
     $("aList").onclick = e=>{ const d = e.target.closest("[data-wdel]"); if (!d) return; const w = cfg.watch[+d.dataset.wdel]; if (confirm(`Remove ${w.sym} from your watchlist?`)){ cfg.watch.splice(+d.dataset.wdel,1); save(); showTab("alerts"); } };
-    const add = ()=>{ const sym = $("aSym").value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,""); if (!sym) return; if (!cfg.watch.some(w=>w.sym.toUpperCase()===sym)){ cfg.watch.push({sym, note:"", dayDrop:3, offHigh:10, levels:[], near:1.5}); save(); schedule(true); } showTab("alerts"); };
+    const add = ()=>{ const sym = $("aSym").value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,""); if (!sym) return; if (!cfg.watch.some(w=>w.sym.toUpperCase()===sym)){ cfg.watch.push({sym, note:"", dayDrop:3, offHigh:10, levels:[], near:1.5, hiDrop:4, sigDrop:2}); save(); schedule(true); } showTab("alerts"); };
     $("aAdd").onclick = add; $("aSym").onkeydown = e=>{ if (e.key==="Enter") add(); };
   }
   else if (tab==="background"){
     const bg = store.get("bg", {});
     const stale = bg.hash && bg.hash !== bgHash();
-    B.innerHTML = `
+    B.innerHTML = (NATIVE ? `<div class="callout"><b>Not needed with the desktop app.</b>MW keeps checking from the tray and shows Windows pop-ups itself. If you set up the GitHub checker earlier, delete the ALERT_SETUP secret so you don't get each alert twice.</div>` : "") + `
       <div class="field"><label>Alerts when the window is closed</label>
         <p>A checker runs on GitHub every 5 minutes while the market is open and sends a Windows pop-up through Edge, even with this window closed. Your levels and keys go only into a private GitHub secret, never into the public code or logs.</p></div>
       <ol class="steps">
@@ -1119,8 +1534,19 @@ function showTab(tab){
   else if (tab==="markets"){
     const grp = (title, arr) => `<div class="field"><label>${title}</label><div class="mk-list">${arr.map(m=>`<label><input type="checkbox" data-mk="${m.sym}" ${cfg.hiddenMk.includes(m.sym)?"":"checked"}> ${esc(m.name)} <span class="muted">${m.sym}</span></label>`).join("")}</div></div>`;
     B.innerHTML = `<p class="muted" style="margin-top:0;font-size:12px">Choose what the Markets panel shows. Sectors are tracked with ETFs (e.g. XLV for healthcare).</p>
+      <div class="field"><label>My list</label><p style="margin:0 0 6px">Your own tiles, shown first (stocks or ETFs, up to 12). Each one adds a call per refresh.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px">${cfg.myMk.map(x=>`<span class="chip">${esc(x)} <button class="x" data-mydel="${esc(x)}" style="width:16px;height:16px" title="Remove">✕</button></span>`).join("") || `<span class="muted" style="font-size:11.5px">Empty</span>`}</div>
+        <div style="display:flex;gap:6px"><input id="myAdd" placeholder="e.g. SOXX" maxlength="10" style="flex:1;text-transform:uppercase"><button class="btn" id="myAddB">Add</button></div></div>
+      <div class="field"><label class="mk-list" style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="xaOn" ${xaOn()?"checked":""}> Risk-on / risk-off read</label><p>Uses volatility, credit, Treasury, dollar and equal-weight ETFs (VIXY, HYG, IEF, UUP, RSP). 5 calls per refresh.</p></div>
+      <div class="field"><label for="bench">Compare watchlist moves against</label><select id="bench">${["SMH","SOXX","QQQ","SPY","XLK"].map(x=>`<option ${settings.bench===x?"selected":""}>${x}</option>`).join("")}</select><p>Shows "vs ${esc(settings.bench)}" on each watchlist row, to tell a sector-wide dip from a stock-specific drop.</p></div>
       ${grp("Indexes", MARKETS.indices)}${grp("Sectors", MARKETS.sectors)}${grp("Other markets", MARKETS.other)}`;
-    B.onchange = e=>{ const s = e.target.dataset.mk; if (!s) return; cfg.hiddenMk = cfg.hiddenMk.filter(x=>x!==s); if (!e.target.checked) cfg.hiddenMk.push(s); store.set("cfg", cfg); renderAll(); if (e.target.checked) schedule(true); };
+    const addMy = ()=>{ const v = $("myAdd").value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,""); if (!v || cfg.myMk.includes(v)) return; if (cfg.myMk.length >= 12){ toast("My list holds 12 tiles"); return; } cfg.myMk.push(v); store.set("cfg", cfg); renderAll(); schedule(true); showTab("markets"); };
+    $("myAddB").onclick = addMy; $("myAdd").onkeydown = e=>{ if (e.key==="Enter") addMy(); };
+    B.onclick = e=>{ const d = e.target.closest("[data-mydel]"); if (!d) return; cfg.myMk = cfg.myMk.filter(x=>x!==d.dataset.mydel); store.set("cfg", cfg); renderAll(); showTab("markets"); };
+    B.onchange = e=>{
+      if (e.target.id==="xaOn"){ cfg.hiddenMk = cfg.hiddenMk.filter(x=>x!=="__xa"); if (!e.target.checked) cfg.hiddenMk.push("__xa"); store.set("cfg", cfg); renderAll(); if (e.target.checked) schedule(true); return; }
+      if (e.target.id==="bench"){ settings.bench = e.target.value; saveSettings(); schedule(true); showTab("markets"); return; }
+      const s = e.target.dataset.mk; if (!s) return; cfg.hiddenMk = cfg.hiddenMk.filter(x=>x!==s); if (!e.target.checked) cfg.hiddenMk.push(s); store.set("cfg", cfg); renderAll(); if (e.target.checked) schedule(true); };
   }
   else if (tab==="backup"){
     B.innerHTML = `
@@ -1133,7 +1559,7 @@ function showTab(tab){
     $("bDl").onclick = ()=>{ const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([$("bTxt").value], {type:"application/json"})); a.download = "market-widget-backup.json"; a.click(); };
     $("bRestore").onclick = ()=>{
       try{ const c = JSON.parse($("bTxt").value); if (!Array.isArray(c.holdings) || !Array.isArray(c.watch)) throw new Error("this doesn't look like a widget backup");
-        c.fixed = c.fixed || []; c.hiddenMk = c.hiddenMk || []; cfg = c; store.set("cfg", cfg); toast("Restored"); closeSheet(); schedule(true);
+        cfg = normCfg(c); store.set("cfg", cfg); toast("Restored"); closeSheet(); schedule(true);
       }catch(e){ $("bErr").textContent = "Couldn't restore: " + e.message; }
     };
   }
@@ -1160,6 +1586,40 @@ document.addEventListener("visibilitychange", ()=>{ if (!document.hidden && refr
   }catch(e){}
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 })();
+
+/* ---------- desktop app wiring ---------- */
+async function syncNative(){
+  try{ nat.state = await nat.invoke("shell_state"); $("bPin").classList.toggle("on", !!nat.state.on_top); $("bPin").title = (nat.state.on_top ? "On top (T to release)" : "Keep on top (T)"); }catch(e){}
+}
+const verNum = v => String(v||"").replace(/^[^0-9]*/,"").split(".").map(n=>parseInt(n)||0);
+const newer = (a, b) => { const x = verNum(a), y = verNum(b); for (let i=0;i<3;i++){ if ((x[i]||0) !== (y[i]||0)) return (x[i]||0) > (y[i]||0); } return false; };
+async function checkAppUpdate(){
+  if (!NATIVE || !nat.state) return;
+  let u = store.get("appUpd", {});
+  if (!u.at || Date.now() - u.at > 12*3600e3){
+    try{ const r = await fetch("https://api.github.com/repos/awpmap/market-widget/releases/latest", {headers:{Accept:"application/vnd.github+json"}});
+      if (r.ok){ const j = await r.json(); u = {at:Date.now(), tag:j.tag_name, url:j.html_url}; store.set("appUpd", u); } }catch(e){}
+  }
+  const el = $("update");
+  if (u.tag && newer(u.tag, nat.state.version)){ el.innerHTML = `<b>New MW app version ${esc(u.tag.replace(/^app-v/,""))}</b>The widget itself updates on its own; this is the Windows app around it. <a href="${esc(u.url)}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">Download</a>`; el.classList.add("show"); }
+  else el.classList.remove("show");
+}
+if (NATIVE){
+  document.body.classList.add("native");
+  $("wMin").onclick = ()=> nat.win().minimize().catch(()=>{});
+  $("wClose").onclick = ()=> nat.invoke("shell_hide").catch(()=>{});
+  $("bPin").onclick = async ()=>{ const on = !(nat.state && nat.state.on_top); try{ await nat.invoke("shell_set", {key:"on_top", value:on}); await syncNative(); toast(on ? "Kept on top" : "No longer on top"); }catch(e){ toast(String(e)); } };
+  try{
+    TAURI.event.listen("mw-refresh", ()=> schedule(true));
+    TAURI.event.listen("mw-pause", ()=> togglePause());
+    TAURI.event.listen("mw-shell-changed", ()=> syncNative());
+  }catch(e){}
+  // no browser right-click menu (Back, Reload, Inspect) except where text is editable
+  document.addEventListener("contextmenu", e=>{ if (!e.target.closest("input,textarea")) e.preventDefault(); });
+  syncNative().then(checkAppUpdate);
+  setInterval(checkAppUpdate, 6*3600e3);
+}
+setInterval(renderFrame, 30e3);   // keeps the status light and "x min ago" honest between refreshes
 
 renderAll(); updateBadge();
 schedule(true);

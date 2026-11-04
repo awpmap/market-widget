@@ -40,8 +40,13 @@ if (TEST) {
   process.exit(0);
 }
 
+// NYSE holidays and 1 pm early closes (same table as the app)
+const HOLIDAYS = new Set(["2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03","2026-09-07","2026-11-26","2026-12-25",
+  "2027-01-01","2027-01-18","2027-02-15","2027-03-26","2027-05-31","2027-06-18","2027-07-05","2027-09-06","2027-11-25","2027-12-24"]);
+const EARLY_CLOSE = {"2026-11-27": 780, "2026-12-24": 780, "2027-11-26": 780};
 const now = et();
-const open = process.env.MW_FORCE_OPEN === "1" || (!["Sat", "Sun"].includes(now.day) && now.mins >= 570 && now.mins < 960);
+const close = EARLY_CLOSE[now.date] || 960;
+const open = process.env.MW_FORCE_OPEN === "1" || (!["Sat", "Sun"].includes(now.day) && !HOLIDAYS.has(now.date) && now.mins >= 570 && now.mins < close);
 if (!open) { console.log("Market closed; skipping."); process.exit(0); }
 if (setup.allOff) { console.log("Alerts paused in the app."); process.exit(0); }
 
@@ -62,6 +67,8 @@ for (const w of (setup.watch || [])) {
   try {
     const q = await fh(`quote?symbol=${encodeURIComponent(sym)}`);
     if (!q || !q.c) { failed++; continue; }
+    // only act on a price from today's session (never on yesterday's close)
+    if (process.env.MW_FORCE_OPEN !== "1" && q.t && new Intl.DateTimeFormat("en-CA", {timeZone: "America/New_York"}).format(new Date(q.t * 1000)) !== now.date) continue;
     checked++;
     const px = q.c, alerts = [];
     if (w.redOn !== false && w.dayDrop && q.dp <= -w.dayDrop) alerts.push({id: `${sym}-red`, kind: "red", msg: `${sym} is down ${Math.abs(q.dp).toFixed(1)}% today at ${money(px)}`});
@@ -80,15 +87,16 @@ for (const w of (setup.watch || [])) {
     if (w.levelsOn !== false) {
       let lv = (w.levels || []).slice();
       if (w.split && now.date >= w.split.date) lv = lv.map(x => +(x / w.split.ratio).toFixed(2));
-      for (const L of lv) {
-        if (px <= L) alerts.push({id: `${sym}-L${L}`, kind: "level", msg: `${sym} hit your ${money(L)} level (now ${money(px)})`});
-        else if (w.nearOn !== false && w.near && px <= L * (1 + w.near / 100)) alerts.push({id: `${sym}-N${L}`, kind: "near", msg: `${sym} is ${((px / L - 1) * 100).toFixed(1)}% above your ${money(L)} level`});
-      }
+      lv.sort((a, b) => b - a);
+      const hit = lv.filter(L => px <= L), next = lv.find(L => L < px);
+      // one alert names the deepest level reached; the ones above it count as done
+      if (hit.length) { const deep = hit[hit.length - 1]; alerts.push({id: `${sym}-L${deep}`, also: hit.map(L => `${sym}-L${L}`), kind: "level", msg: `${sym} hit your ${money(deep)} buy level (now ${money(px)})${hit.length > 1 ? ` · through ${hit.length} levels` : ""}`}); }
+      if (next && w.nearOn !== false && w.near && px <= next * (1 + w.near / 100)) alerts.push({id: `${sym}-N${next}`, kind: "near", msg: `${sym} is ${((px / next - 1) * 100).toFixed(1)}% above your ${money(next)} level`});
     }
     for (const a of alerts) {
       const key = h(a.id);
       if (state.fired[key]) continue;
-      try { await push("Market alert", a.msg, `${a.id}@${now.date}`, a.kind !== "near"); state.fired[key] = 1; sent++; }
+      try { await push("Market alert", a.msg, `${a.id}@${now.date}`, a.kind !== "near"); state.fired[key] = 1; (a.also || []).forEach(id => state.fired[h(id)] = 1); sent++; }
       catch (e) { failed++; if (e.statusCode === 404 || e.statusCode === 410) { console.log("This PC's push connection expired. Reconnect in the app (Settings → Background) and update the secret."); break; } }
     }
   } catch { failed++; }
