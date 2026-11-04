@@ -294,7 +294,7 @@ textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
   </section>
 
   <div class="err" id="err"></div>
-  <footer><span>Finnhub free feed · regular-hours prices · info only, never trades</span><span id="upd"></span></footer>
+  <footer><span>Info only · never trades</span><span id="upd"></span></footer>
 </main>
 
 <div id="sheet" class="hide" role="dialog" aria-label="Settings">
@@ -313,7 +313,7 @@ textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
 
 <script>
 "use strict";
-const APP_VERSION = "2.2.0";
+const APP_VERSION = "2.3.0";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -717,22 +717,45 @@ function renderPortfolio(){
         <span class="r num"><span>${fmt$(gv,0)}</span><span class="${cls(gp)}" style="font-weight:600">${fmtPct(gp)}</span></span></button>
       <div class="grp-rows">${rs.map(r=>holdRow(r, P.total)).join("")}</div></div>`;
   }).join("");
-  const fixedHtml = cfg.fixed.length ? `<div class="grp ${settings.grpCollapsed.__fixed?"collapsed":""}">
-      <button class="grp-h" data-grp="__fixed"><svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg><b>Funds &amp; cash</b><span class="muted">${settings.tdKey?"daily NAV":"last known values"}</span><span class="r num">${fmt$(P.fixed,0)}</span></button>
-      <div class="grp-rows">${cfg.fixed.map(f=>{ const x = fixedInfo(f), d = x.date ? (+x.date.slice(5,7)) + "/" + (+x.date.slice(8,10)) : "";
-        return `<div class="hrow" ${f.sym&&settings.tdKey?`data-nav="${esc(f.sym.toUpperCase())}" title="Click to re-check this fund's price"`:`style="cursor:default"`}><div class="s">${esc(f.sym ? f.sym.toUpperCase() : f.name)}<small>${x.live ? `NAV ${fmt$(x.nav)} · ${d}` : f.sym && settings.tdKey ? (x.err ? "couldn't update: " + esc(x.err) : "updating…") : f.sym ? "add a Twelve Data key for daily NAV" : esc(f.sym?f.name:"fixed value")}</small></div><div></div>
-          <div class="v num">${fmt$(x.value,0)}<small>${(x.value/tot*100).toFixed(1)}%</small></div>${x.live && x.chgPct!=null ? `<div class="dp num ${cls(x.chgPct)}" title="Change on ${d}">${fmtPct(x.chgPct)}</div>` : "<div></div>"}</div>`; }).join("")}</div></div>` : "";
+  const chev = `<svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>`;
+  const funds = cfg.fixed.filter(f=>f.sym), cashes = cfg.fixed.filter(f=>!f.sym);
+  const shortDate = d => d ? (+d.slice(5,7)) + "/" + (+d.slice(8,10)) : "";
+  let fundsHtml = "", cashHtml = "";
+  if (funds.length){
+    const xs = funds.map(f=>({f, x:fixedInfo(f)}));
+    const fv = xs.reduce((a,o)=>a+o.x.value,0);
+    const fprev = xs.reduce((a,o)=>a+(o.x.live && o.x.chgPct!=null ? o.x.value/(1+o.x.chgPct/100) : o.x.value),0);
+    const fchg = fprev ? (fv/fprev-1)*100 : null, anyLive = xs.some(o=>o.x.live), anyErr = xs.some(o=>!o.x.live && o.x.err);
+    const asOf = (xs.find(o=>o.x.live)||{x:{}}).x.date;
+    fundsHtml = `<div class="grp ${settings.grpCollapsed.__funds?"collapsed":""}">
+      <button class="grp-h" data-grp="__funds">${chev}<b>Mutual funds</b><span class="muted">${anyLive ? "close " + shortDate(asOf) : settings.tdKey ? "" : "not live"}${anyErr ? ` <span title="Some fund prices couldn't update. Click a fund to retry, or use Settings → Test my keys." style="color:var(--warn)">⚠</span>` : ""}</span>
+        <span class="r num"><span>${fmt$(fv,0)}</span>${anyLive && fchg!=null ? `<span class="${cls(fchg)}" style="font-weight:600">${fmtPct(fchg)}</span>` : ""}</span></button>
+      <div class="grp-rows">${xs.map(({f,x})=>{ const sym = f.sym.toUpperCase();
+        return `<div class="hrow" ${settings.tdKey?`data-nav="${esc(sym)}" title="${x.err && !x.live ? "Couldn't update: " + esc(x.err) + ". Click to retry." : "Click to re-check this fund's price"}"`:`style="cursor:default" title="Add a free Twelve Data key in Settings for daily prices"`}>
+          <div class="s">${esc(sym)}<small>${+f.shares ? (+f.shares).toLocaleString("en-US",{maximumFractionDigits:1}) + " sh · " : ""}${(x.value/tot*100).toFixed(1)}%</small></div><div></div>
+          <div class="v num">${fmt$(x.value,0)}<small>${x.live ? fmt$(x.nav) : "—"}</small></div>
+          ${x.live && x.chgPct!=null ? `<div class="dp num ${cls(x.chgPct)}">${fmtPct(x.chgPct)}</div>` : `<div class="dp num muted" style="font-weight:400">${x.err ? "⚠" : "—"}</div>`}</div>`; }).join("")}</div></div>`;
+  }
+  if (cashes.length){
+    const cv = cashes.reduce((a,f)=>a+(+f.value||0),0);
+    const label = f => { const n = String(f.name||"").replace(/\s*\(.*?\)\s*/g," ").replace(/^cash[\s,:-]*/i,"").trim(); return n ? n.charAt(0).toUpperCase() + n.slice(1) : "Cash"; };
+    cashHtml = `<div class="grp ${settings.grpCollapsed.__cash?"collapsed":""}">
+      <button class="grp-h" data-grp="__cash">${chev}<b>Cash</b><span class="muted">ready to invest</span><span class="r num"><span>${fmt$(cv,0)}</span></span></button>
+      <div class="grp-rows">${cashes.map(f=>`<div class="hrow" style="cursor:default"><div class="s">${esc(label(f))}<small>${((+f.value||0)/tot*100).toFixed(1)}%</small></div><div></div><div class="v num">${fmt$(+f.value||0,0)}</div><div></div></div>`).join("")}</div></div>`;
+  }
+  const fixedHtml = fundsHtml + cashHtml;
+  const cashTotal = cashes.reduce((a,f)=>a+(+f.value||0),0);
 
   body.innerHTML = `
     <div class="hero"><div><div class="val num">${any?fmt$(P.total,0):"—"}</div></div>
-      <div class="chg num ${cls(P.dayUsd)}">${any?fmtS$(P.dayUsd):"—"} <span>${any?fmtPct(P.dayPct):""}</span><small>today, whole portfolio</small></div></div>
+      <div class="chg num ${cls(P.dayUsd)}">${any?fmtS$(P.dayUsd):"—"} <span>${any?fmtPct(P.dayPct):""}</span><small>today</small></div></div>
     <div class="kpis num">
-      <div class="kpi"><b class="${cls(vs)}">${vs==null?"—":fmtPct(vs)}</b><span>vs S&amp;P 500 today</span></div>
-      <div class="kpi"><b>${any?fmt$(P.live,0):"—"}</b><span>live ETFs/stocks</span></div>
+      <div class="kpi"><b class="${cls(vs)}">${vs==null?"—":fmtPct(vs)}</b><span>vs S&amp;P today</span></div>
+      <div class="kpi"><b>${cashes.length?fmt$(cashTotal,0):"—"}</b><span>cash ready</span></div>
       <div class="kpi"><b class="${cls(gain)}">${gain==null?"—":fmtPct(gain,1)}</b><span>gain vs your cost</span></div>
     </div>
     <div class="alloc">${alloc}</div><div class="legend">${legend}</div>
-    <div class="toolbar"><span class="muted" style="font-size:11px;flex:1">Tap a holding for details</span>
+    <div class="toolbar"><span style="flex:1"></span>
       <div class="seg" id="sortSeg">${[["value","Value"],["day","Today"],["name","A–Z"]].map(([k,l])=>`<button data-sort="${k}" class="${settings.sort===k?"on":""}">${l}</button>`).join("")}</div></div>
     ${grpHtml}${fixedHtml}
     ${P.missing && any ? `<div class="note">${P.missing} holding(s) had no live price this round.</div>` : ""}`;
@@ -750,7 +773,7 @@ function holdRow(r, total){
       ${m.hi?`<span>From 52w high <b class="down">${fmtPct((q.c/m.hi-1)*100,1)}</b></span>`:""}${pctFor(r.sym,"YTD")!=null?`<span>YTD <b class="${cls(pctFor(r.sym,"YTD"))}">${fmtPct(pctFor(r.sym,"YTD"),1)}</b></span>`:""}
       ${q?rangeBar(q.l,q.h,q.c,"Day low","high"):""}
       ${m.hi&&m.lo&&q?rangeBar(m.lo,m.hi,q.c,"52w low","high"):""}
-      <span style="grid-column:1/-1;text-align:right"><button class="rbtn" data-ref="${esc(r.sym)}">↻ Refresh ${esc(r.sym)} only</button></span>
+      <span style="grid-column:1/-1;text-align:right"><button class="rbtn" data-ref="${esc(r.sym)}">↻ Refresh</button></span>
     </div>`;
   }
   return `<div class="hrow" role="button" tabindex="0" data-row="h:${esc(r.sym)}:${esc(r.h.acct||"")}">
@@ -793,7 +816,7 @@ function renderMarkets(){
     ${secP.length?`<div class="breadth"><span>${upN} of ${secP.length} sectors up today</span><span class="bar"><i style="width:${(upN/secP.length*100).toFixed(0)}%"></i></span></div>`:""}
     ${oth.length?`<div class="toolbar" style="margin-top:10px"><span class="sec-t" style="font-size:11px">Other markets</span></div><div class="heat">${tiles(oth)}</div>`:""}
     ${anyPeriod?"":`<div class="note">${per} isn't loaded yet. ${settings.tdKey?"History loads in the background (about 3 minutes the first time each day).":"Add a free Twelve Data key in Settings to unlock 1M, 3Y and 5Y and make every time frame exact."}</div>`}
-    ${per!=="1D"&&refDate(per)?`<div class="note">${per}: change from the ${(d=>(+d.slice(5,7))+"/"+(+d.slice(8,10))+"/"+d.slice(0,4))(refDate(per))} close to the latest price.</div>`:""}`;
+    ${per!=="1D"&&refDate(per)?`<div class="note">${per} change since ${(d=>(+d.slice(5,7))+"/"+(+d.slice(8,10))+"/"+d.slice(2,4))(refDate(per))}</div>`:""}`;
 }
 
 /* ---------- watchlist ---------- */
@@ -803,7 +826,7 @@ function renderWatch(){
     const sym = (w.sym||"").toUpperCase(), q = quotes[sym], m = metrics[sym] || {}, lv = effLevels(w), off = w.on===false;
     const chips = [];
     if (off) chips.push(`<span class="chip off">alerts off</span>`);
-    if (m.hi && q){ const d = (1 - q.c/m.hi)*100; chips.push(`<span class="chip ${off||w.offOn===false?"off":d>=w.offHigh?"hit":d>=w.offHigh*0.8?"near":""}">${d.toFixed(1)}% below 52w high</span>`); }
+    if (m.hi && q){ const d = (1 - q.c/m.hi)*100; chips.push(`<span class="chip ${off||w.offOn===false?"off":d>=w.offHigh?"hit":d>=w.offHigh*0.8?"near":""}">−${d.toFixed(1)}% from high</span>`); }
     lv.forEach(L=>{
       const st = q ? (q.c<=L ? "hit" : (w.near && q.c<=L*(1+w.near/100)) ? "near" : "") : "";
       if (!off && w.levelsOn!==false){ if (st==="hit") hits++; else if (st==="near") nears++; }
@@ -820,7 +843,7 @@ function renderWatch(){
       ${sparkSvg(sym, lv)}
       <div class="v num" style="text-align:right">${q?fmt$(q.c):"—"}</div>
       <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}</div></div>
-      ${ladder}<div class="chips">${chips.join("")}<button class="rbtn" data-ref="${esc(sym)}" title="Refresh just ${esc(sym)}" style="margin-left:auto">↻ ${esc(sym)}</button></div></div>`;
+      ${ladder}<div class="chips">${chips.join("")}<button class="rbtn" data-ref="${esc(sym)}" title="Refresh just ${esc(sym)}" style="margin-left:auto" aria-label="Refresh ${esc(sym)}">↻</button></div></div>`;
   }).join("");
   $("wl-body").innerHTML = html || `<div class="empty">No tickers yet. <button data-open="alerts">Add one</button></div>`;
   $("wl-sum").innerHTML = settings.allOff ? `<span class="muted">alerts paused</span>` : (hits?`<span class="down" style="font-weight:600">${hits} at level</span>`:"") + (nears?`<span style="color:var(--warn);font-weight:600">${nears} near</span>`:"") + (!hits&&!nears?`<span class="muted">${cfg.watch.length} watching</span>`:"");
