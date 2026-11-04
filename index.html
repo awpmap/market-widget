@@ -326,7 +326,7 @@ textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
 
 <script>
 "use strict";
-const APP_VERSION = "2.4.0";
+const APP_VERSION = "2.4.1";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -909,7 +909,7 @@ function renderLog(){
 function renderAll(){
   const ses = session();
   $("mkt").className = "pill " + (ses.s==="open"?"open":ses.s==="ext"?"ext":"");
-  $("mkt").lastElementChild.textContent = ses.label;
+  $("mkt").lastElementChild.textContent = ses.s==="open" ? ses.label : ses.label + " · 4 PM prices"; $("mkt").title = ses.s==="open" ? "" : "The free data feeds only carry regular-hours prices (9:30 AM to 4 PM ET). Pre-market and after-hours moves show up at the next open.";
   document.body.classList.toggle("compact", !!settings.compact);
   document.querySelectorAll(".sec").forEach(s => s.classList.toggle("collapsed", !!settings.collapsed[s.dataset.sec]));
   renderPortfolio(); renderMarkets(); renderWatch(); renderLog();
@@ -947,7 +947,7 @@ document.addEventListener("keydown", e=>{
   else if ((e.key==="Enter"||e.key===" ") && e.target.dataset && e.target.dataset.row){ e.preventDefault(); e.target.click(); }
 });
 $("bCompact").onclick = ()=>{ settings.compact = !settings.compact; saveSettings(); renderAll(); toast(settings.compact ? "Compact view" : "Full view"); };
-$("bRefresh").onclick = ()=> schedule(true);
+$("bRefresh").onclick = ()=>{ schedule(true); if (session().s !== "open") toast("Showing 4 PM close prices · after-hours isn't in the free data"); };
 $("bAlerts").onclick = ()=>{ markSeen(); settings.collapsed.log = false; settings.compact = false; saveSettings(); renderAll(); $("log-sec").scrollIntoView({behavior:"smooth", block:"start"}); };
 $("bSettings").onclick = ()=> openSheet("general");
 $("banner").onclick = ()=>{ $("banner").classList.remove("show"); markSeen(); };
