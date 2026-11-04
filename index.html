@@ -423,7 +423,7 @@ body.native #titlebar .logo *{pointer-events:none}
 
 <script>
 "use strict";
-const APP_VERSION = "3.3.0";
+const APP_VERSION = "3.4.0";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -595,10 +595,15 @@ function marketSyms(){ return [...cfg.myMk, ...[...MARKETS.indices, ...MARKETS.s
 function mySyms(){ const s = new Set(); cfg.watch.forEach(w=>w.sym && s.add(w.sym.toUpperCase())); cfg.holdings.forEach(h=>h.sym && s.add(h.sym.toUpperCase())); return [...s]; }
 const health = {ok:0, total:0, fail:[], backup:[], bad:[], err:"", at:0};
 /* reject obviously bad prints: zero/negative, or a >25% jump from this session's last price */
+const pendingPx = {};   // a big jump is held once; if the next refresh agrees, it's real (a crash, not a bad print)
 function badPrint(sym, q){
   if (!(q.c > 0)) return true;
   const prev = quotes[sym];
-  return !!(prev && prev.c > 0 && prev.at && etDateOf(prev.at) === etNow().date && Math.abs(q.c/prev.c - 1) > 0.25);
+  const jump = !!(prev && prev.c > 0 && prev.at && etDateOf(prev.at) === etNow().date && Math.abs(q.c/prev.c - 1) > 0.25);
+  if (!jump){ delete pendingPx[sym]; return false; }
+  const p = pendingPx[sym];
+  if (p && Math.abs(q.c/p - 1) < 0.05){ delete pendingPx[sym]; return false; }   // confirmed by a second refresh
+  pendingPx[sym] = q.c; return true;
 }
 /* timestamped prices for today (for the "fast drop" rule); kept for the day */
 let ticks = store.get("ticks", {});
@@ -888,7 +893,15 @@ function checkAlerts(){
   const rank = {level:0, fast:1, red:1, sig:1, hd:2, off:3, near:5};
   if (!pausedNow()) cfg.watch.forEach(w => {
     const sym = (w.sym||"").toUpperCase(); if (snoozed(sym)) return;
-    const news = evaluate(w).filter(a => !f.ids[a.id]); if (!news.length) return;
+    const news = evaluate(w).filter(a => !f.ids[a.id]);
+    // still sliding after its last alert: each further leg down (fast-drop %, default 2%) is news on its own
+    const lq = quotes[sym], lb = f.lastBy[sym], legPct = w.fastDrop || 2;
+    if (!news.length && lb && lb.px && Date.now() - lb.t >= BUNDLE_MS && alertable(lq) && w.on!==false && !settings.allOff && lq.c <= lb.px*(1 - legPct/100)){
+      const n = (lb.legs||0) + 1, id = `${sym}-leg-${n}`;
+      news.push({id, kind:"fast", sym, msg:`${sym} is down another ${((1-lq.c/lb.px)*100).toFixed(1)}% since the ${timeStr(lb.t)} alert (${fmt$(lb.px)} → ${fmt$(lq.c)})`});
+      lb.legs = n;
+    }
+    if (!news.length) return;
     news.forEach(a => { f.ids[a.id] = 1; (a.also||[]).forEach(id => f.ids[id] = 1); });
     news.sort((a,b)=>(rank[a.kind]??4)-(rank[b.kind]??4));
     const main = Object.assign({}, news[0]), others = news.slice(1).filter(a => a.kind !== "near").map(a => SHORT[a.kind] || a.kind);
@@ -897,7 +910,7 @@ function checkAlerts(){
     const loud = main.kind === "level" || !last || Date.now() - last.t > BUNDLE_MS || (px && last.px && px <= last.px*(1-leg));
     f.log.unshift({t:Date.now(), msg:main.msg, kind:main.kind, sym, quiet:!loud});
     if (!loud) return;   // logged quietly; no sound, pop-up or badge
-    if (main.kind !== "near"){ f.lastBy[sym] = {t:Date.now(), px}; if (!f.unseenSyms.includes(sym)) f.unseenSyms.push(sym); }
+    if (main.kind !== "near"){ f.lastBy[sym] = {t:Date.now(), px, legs:(last && last.legs)||0}; if (!f.unseenSyms.includes(sym)) f.unseenSyms.push(sym); }
     fresh.push(main);
   });
   f.unseen = f.unseenSyms.length;   // unseen tickers, not alerts
@@ -911,7 +924,7 @@ function updateBadge(){
   updateTray();
 }
 function markSeen(){ const f = firedToday(); f.unseen = 0; f.unseenSyms = []; store.set("fired", f); updateBadge(); }
-let bannerSyms = [], bannerDay = "", lastLoud = 0, lastToast = 0, heldToasts = [];
+let bannerSyms = [], bannerDay = "", lastLoud = 0, lastToast = 0, lastAlertAt = 0, heldToasts = [];   // held: {sym, msg}
 const QUIET_MS = 5*60e3;   // in a flush: at most one sound and one pop-up every 5 minutes (new levels always get through)
 function notify(list){
   const rank = {level:0, fast:1, red:1, sig:1, hd:2, off:3, near:5, test:6};
@@ -921,25 +934,29 @@ function notify(list){
   const b = $("banner"); bannerSyms = syms; bannerDay = etNow().date;
   b.className = "k-" + (main.kind==="near" ? "near" : main.kind==="test" ? "test" : "hit");
   const who = syms.length === 1 ? syms[0] : syms.length > 1 ? "these " + syms.length : "";
-  b.innerHTML = esc(main.msg) + (list.length > 1 ? `<small>+${list.length-1} more: ${esc(syms.filter(x=>x!==main.sym).join(", ") || "same ticker")}</small>` : "") +
+  const rest = list.slice(1).map(a => (a.sym||"") + (a.kind==="level" ? " (level)" : ""));
+  b.innerHTML = esc(main.msg) + (rest.length ? `<small>+${rest.length} more: ${esc([...new Set(rest)].join(", "))}</small>` : "") +
     `<div class="acts">${who?`<button data-snz="30">Snooze ${esc(who)} 30m</button><button data-snz="day">Mute ${esc(who)} today</button>`:""}<button data-snz="ok">OK</button></div>`;
   b.classList.remove("show"); void b.offsetWidth; b.classList.add("show");
   const now = Date.now(), hasLevel = list.some(a => a.kind === "level"), isTest = main.kind === "test";
-  // sound: levels always; other alerts at most once per 2 minutes
+  lastAlertAt = Date.now();
+  // sound: levels always; other alerts at most once per QUIET_MS
   if (!urgent.length) return;   // heads-ups stay in the window: banner only, no sound or pop-up
   if (settings.sound === "on" && (hasLevel || isTest || now - lastLoud > QUIET_MS)){ beep(main.kind === "near" ? 1 : 3); lastLoud = now; }
   // one Windows pop-up per batch; heads-ups never ride along with urgent alerts
   const body = urgent.map(a => a.msg);
-  heldToasts.push(...body);
   if (hasLevel || isTest || now - lastToast > QUIET_MS){
-    const lines = heldToasts.splice(0); lastToast = now;
-    showToast("Market alert", lines[0] + (lines.length > 1 ? `\n+${lines.length-1} more in MW` : ""), (main.id||"x") + "@" + bannerDay, !!urgent.length);
-  } else setTimeout(flushToasts, QUIET_MS - (now - lastToast) + 500);
+    // newest (and most important) line leads; anything held earlier rides along as "+N more"
+    const lines = [...body, ...takeHeld().map(h => h.msg)]; lastToast = now;
+    showToast("Market alert", lines[0] + (lines.length > 1 ? `\n+${lines.length-1} more in MW` : ""), (main.id||"x") + "@" + bannerDay, true);
+  } else { heldToasts.push(...urgent.map(a => ({sym:a.sym, msg:a.msg}))); setTimeout(flushToasts, QUIET_MS - (now - lastToast) + 500); }
   if (settings.ntfy) fetch("https://ntfy.sh/" + encodeURIComponent(settings.ntfy), {method:"POST", body:body.join("\n"), headers:{"Title":"Market alert","Priority":"high","Tags":"chart_with_downwards_trend"}}).catch(()=>{});
 }
+// held lines skip tickers you have since snoozed or muted, and everything while alerts are paused
+function takeHeld(){ const h = heldToasts.splice(0); return pausedNow() ? [] : h.filter(x => !x.sym || !snoozed(x.sym)); }
 function flushToasts(){
   if (!heldToasts.length || Date.now() - lastToast < QUIET_MS) return;
-  const lines = heldToasts.splice(0); lastToast = Date.now();
+  const lines = takeHeld().map(h => h.msg); if (!lines.length) return; lastToast = Date.now();
   showToast("Market alert", lines[0] + (lines.length > 1 ? `\n+${lines.length-1} more in MW` : ""), "held@" + lastToast, true);
 }
 function minsToMidnightET(){ return 1440 - etNow().mins; }
@@ -1248,12 +1265,13 @@ function watchInfo(w){
   return {sym, q, m, off, lv, useLv, px, hitL, next, dist, vol, red, st};
 }
 /* what to say about a ticker's level position (row, compact strip, tray) */
+const fmtL = L => fmt$(L, L < 100 ? 2 : 0);   // levels under $100 keep their cents
 function levelText(I, short){
   const deep = I.hitL[I.hitL.length-1];
   if (deep != null){
     const below = (I.px/deep - 1)*100;
-    if (!I.next && below < -0.5) return short ? `${below.toFixed(1)}% < ${fmt$(deep,0)}` : `${below.toFixed(1)}% below ${fmt$(deep,0)}, your last level`;
-    return short ? "at " + fmt$(deep,0) : "At buy level " + fmt$(deep,0);
+    if (!I.next && below < -0.5) return short ? `${fmtPct(below,1)} < ${fmtL(deep)}` : `${fmtPct(below,1)} below ${fmtL(deep)}, your last level`;
+    return short ? "at " + fmtL(deep) : "At buy level " + fmtL(deep);
   }
   return null;
 }
@@ -1266,7 +1284,7 @@ function ladder(lv, px){
   const order = [next, hit[hit.length-1], ...lv].filter((v,i,a)=>v!=null && a.indexOf(v)===i);
   const placed = [];
   order.forEach(L => { const p = pos(L), wPct = 12 + String(Math.round(L)).length*2.2; if (placed.every(o => Math.abs(o.p - p) > (o.w + wPct)/2)) placed.push({L, p, w:wPct}); });
-  return `<div class="lad" title="Buy levels (orange): ${lv.map(L=>fmt$(L,0)).join(", ")}. Blue dot = price now."><div class="track"></div>${zone}${lv.map(L=>`<div class="tk" style="left:${pos(L).toFixed(1)}%"></div>`).join("")}${placed.map(o=>`<div class="tl num" style="left:${o.p.toFixed(1)}%">${fmt$(o.L,0)}</div>`).join("")}<div class="now" style="left:${pos(px).toFixed(1)}%"></div></div>`;
+  return `<div class="lad" title="Buy levels (orange): ${lv.map(L=>fmt$(L,0)).join(", ")}. Blue dot = price now."><div class="track"></div>${zone}${lv.map(L=>`<div class="tk" style="left:${pos(L).toFixed(1)}%"></div>`).join("")}${placed.map(o=>`<div class="tl num" style="left:${o.p.toFixed(1)}%">${fmtL(o.L)}</div>`).join("")}<div class="now" style="left:${pos(px).toFixed(1)}%"></div></div>`;
 }
 function renderWatch(){
   let hits = 0, nears = 0;
@@ -1276,8 +1294,8 @@ function renderWatch(){
     const fromHi = m.hi && px ? (1 - px/m.hi)*100 : null;
     const parts = [];
     if (useLv && px){
-      if (hitL.length) parts.push(`<span class="st hit">${levelText(I)}</span>${next?`<span>· next ${fmt$(next,0)}</span>`:""}`);
-      else if (next) parts.push(`<span>Next buy <b>${fmt$(next,0)}</b></span><span class="st ${I.st}">${dist.toFixed(1)}% away${vol && dist/vol < 15 ?` · ${(dist/vol).toFixed(1)}σ`:""}</span>`);
+      if (hitL.length) parts.push(`<span class="st hit">${levelText(I)}</span>${next?`<span>· next ${fmtL(next)}</span>`:""}`);
+      else if (next) parts.push(`<span>Next buy <b>${fmtL(next)}</b></span><span class="st ${I.st}">${dist.toFixed(1)}% away${vol && dist/vol < 15 ?` · ${(dist/vol).toFixed(1)}σ`:""}</span>`);
       else parts.push(`<span class="muted">Below all your levels</span>`);
     }
     if (I.red) parts.push(`<span class="st hit">Red day ${fmtPct(q.dp,1)}</span>`);
@@ -1310,21 +1328,25 @@ function renderWatch(){
   }).join("");
   // cash vs buy plan: walk the untouched levels from closest to furthest
   const cash = cfg.fixed.filter(f=>!f.sym).reduce((a,f)=>a+(+f.value||0),0);
-  const plan = []; cfg.watch.forEach(w => { const I = watchInfo(w); if (!(+w.buyAmt > 0) || !I.px || I.off) return; I.lv.filter(L => L < I.px).forEach(L => plan.push({sym:I.sym, L, amt:+w.buyAmt, d:(I.px/L-1)*100})); });
+  const firedIds0 = firedToday().ids || {};
+  const plan = []; cfg.watch.forEach(w => { const I = watchInfo(w); if (!(+w.buyAmt > 0) || !I.px || I.off) return; I.lv.filter(L => L < I.px && !firedIds0[`${I.sym}-L${L}`]).forEach(L => plan.push({sym:I.sym, L, amt:+w.buyAmt, d:(I.px/L-1)*100})); });
   plan.sort((a,b)=>a.d-b.d);
-  let trig0 = 0; cfg.watch.forEach(w => { const I = watchInfo(w); if (+w.buyAmt > 0 && I.px && !I.off) trig0 += I.hitL.length * +w.buyAmt; });
+  let trig0 = 0; cfg.watch.forEach(w => { const I = watchInfo(w); if (+w.buyAmt > 0 && I.px && !I.off) trig0 += I.lv.filter(L => firedIds0[`${I.sym}-L${L}`] || I.px <= L).length * +w.buyAmt; });
   const left = Math.max(0, cash - trig0);
   let cum = 0, covered = 0; plan.forEach(x => { cum += x.amt; if (cum <= left + 0.5) covered++; });
-  let trig = 0; cfg.watch.forEach(w => { const I = watchInfo(w); if (+w.buyAmt > 0 && I.px && !I.off) trig += I.hitL.length * +w.buyAmt; });
+  // triggered = levels that alerted today (stays counted if the price bounces back above)
+  const firedIds = firedToday().ids || {};
+  const firedLv = (I) => I.lv.filter(L => firedIds[`${I.sym}-L${L}`] || I.px <= L);
+  let trig = 0; cfg.watch.forEach(w => { const I = watchInfo(w); if (+w.buyAmt > 0 && I.px && !I.off) trig += firedLv(I).length * +w.buyAmt; });
   const over = trig > cash + 0.5;
   const trigHtml = trig ? `<div class="note" style="margin:0 0 4px;font-size:11.5px;color:${over?"var(--warn)":"var(--fg-2)"}">Buys triggered today: <b>${fmt$(trig,0)}</b> of ${fmt$(cash,0)} cash${over?` · <b>${fmt$(trig-cash,0)} more than you have</b>`:` · ${fmt$(cash-trig,0)} left`}</div>` : "";
-  const planHtml = trigHtml + (plan.length ? `<div class="note" style="margin:0 0 6px;font-size:11.5px;color:var(--fg-2)" title="${esc(plan.map(x=>`${x.sym} ${fmt$(x.L,0)}: ${fmt$(x.amt,0)}`).join(" · "))}">${trig0 ? "What's left" : "Cash " + fmt$(cash,0)} covers <b style="color:${covered<plan.length?"var(--warn)":"var(--up)"}">${covered} of ${plan.length}</b> planned buys (${fmt$(cum,0)} total)${plan[0]?` · next: ${esc(plan[0].sym)} ${fmt$(plan[0].L,0)}`:""}</div>` : "");
+  const planHtml = trigHtml + (plan.length ? `<div class="note" style="margin:0 0 6px;font-size:11.5px;color:var(--fg-2)" title="${esc(plan.map(x=>`${x.sym} ${fmt$(x.L,0)}: ${fmt$(x.amt,0)}`).join(" · "))}">${trig0 ? "What's left" : "Cash " + fmt$(cash,0)} covers <b style="color:${covered<plan.length?"var(--warn)":"var(--up)"}">${covered} of ${plan.length}</b> planned buys (${fmt$(cum,0)} total)${plan[0]?` · next: ${esc(plan[0].sym)} ${fmtL(plan[0].L)}`:""}</div>` : "");
   $("wl-body").innerHTML = html ? planHtml + html : `<div class="empty">No tickers yet. <button data-open="alerts">Add one</button></div>`;
   $("wl-sum").innerHTML = settings.allOff ? `<span class="muted">alerts off</span>` : pausedNow() ? `<span style="color:var(--warn);font-weight:600">paused</span>` : (hits?`<span class="down" style="font-weight:600">${hits} at level</span>`:"") + (nears?`<span style="color:var(--warn);font-weight:600">${nears} near</span>`:"") + (!hits&&!nears?`<span class="muted">${cfg.watch.length} watching</span>`:"");
   // compact strip: closest to a buy level first
   const rows = cfg.watch.map(watchInfo).filter(I => I.px).sort((a,b) => (a.hitL.length?-1e9:0) - (b.hitL.length?-1e9:0) || (a.dist ?? 1e9) - (b.dist ?? 1e9));
   $("strip").innerHTML = rows.map(I => `<div class="srow num"><span class="s">${esc(I.sym)}${erChip(I.sym)}</span><span>${fmt$(I.px)}</span><span class="${cls(I.q.dp)}">${fmtPct(I.q.dp,1)}</span>
-    <span class="d ${I.hitL.length||I.red?"hit":I.st}">${I.hitL.length ? levelText(I, true) : I.next ? `${I.dist.toFixed(1)}% → ${fmt$(I.next,0)}` : I.red ? "red day" : "—"}</span></div>`).join("") || `<div class="muted" style="font-size:11.5px">No watchlist prices yet.</div>`;
+    <span class="d ${I.hitL.length||I.red?"hit":I.st}">${I.hitL.length ? levelText(I, true) : I.next ? `${I.dist.toFixed(1)}% → ${fmtL(I.next)}` : I.red ? "red day" : "—"}</span></div>`).join("") || `<div class="muted" style="font-size:11.5px">No watchlist prices yet.</div>`;
 }
 function renderLog(){
   const f = firedToday();
@@ -1351,7 +1373,7 @@ function renderFrame(){
   const age = lastUpdate ? Math.round((Date.now()-lastUpdate)/60000) : null;
   $("upd").textContent = lastUpdate ? (ses.s==="open" ? `Updated ${dateTime(lastUpdate)}${age>=3 ? ` (${age} min ago)` : ""}` : `Last close prices · checked ${dateTime(lastUpdate)}`) : "";
   const b = $("banner");
-  if (b.classList.contains("show") && bannerDay && (bannerDay !== etNow().date || (ses.s !== "open" && lastLoud && Date.now() - lastLoud > 30*60e3))) b.classList.remove("show");
+  if (b.classList.contains("show") && bannerDay && (bannerDay !== etNow().date || (ses.s !== "open" && lastAlertAt && Date.now() - lastAlertAt > 30*60e3))) b.classList.remove("show");
   const sn = $("since");
   if (sn.classList.contains("show") && (Date.now() - (+sn.dataset.at||0) > 15*60e3 || sn.dataset.day !== etNow().date)) sn.classList.remove("show");
   const p = $("paused");
@@ -1414,7 +1436,7 @@ function updateTray(){
   if (cfg.holdings.length && Object.keys(quotes).length) parts.push(`${fmt$(P.total,0)} ${fmtPct(P.dayPct)}`);
   const b = quotes[settings.bench]; if (b) parts.push(`${settings.bench} ${fmtPct(b.dp,1)}`);
   const near = cfg.watch.map(watchInfo).filter(I => I.px && (I.hitL.length || I.dist!=null)).sort((a,b)=>(a.hitL.length?-1e9:a.dist)-(b.hitL.length?-1e9:b.dist))[0];
-  if (near) parts.push(near.hitL.length ? `${near.sym} ${levelText(near, true)}` : `${near.sym} ${near.dist.toFixed(1)}% to ${fmt$(near.next,0)}`);
+  if (near) parts.push(near.hitL.length ? `${near.sym} ${levelText(near, true)}` : `${near.sym} ${near.dist.toFixed(1)}% to ${fmtL(near.next)}`);
   const ds = dataState(); if (ds.k !== "ok") parts.push(ds.why);
   if (pausedNow()) parts.push("alerts paused");
   const alert = (firedToday().unseen || 0) > 0, stale = ds.k !== "ok", paused = !!pausedNow(), tip = parts.join(" · "), key = [tip, alert, stale, paused].join("|");
