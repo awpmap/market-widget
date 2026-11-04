@@ -423,7 +423,7 @@ body.native #titlebar .logo *{pointer-events:none}
 
 <script>
 "use strict";
-const APP_VERSION = "3.1.1";
+const APP_VERSION = "3.2.0";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -594,6 +594,15 @@ const xaOn = ()=> !cfg.hiddenMk.includes("__xa");
 function marketSyms(){ return [...cfg.myMk, ...[...MARKETS.indices, ...MARKETS.sectors, ...MARKETS.other].map(m=>m.sym).filter(s=>!cfg.hiddenMk.includes(s)), ...(xaOn()?XASSET.map(x=>x.sym):[])]; }
 function mySyms(){ const s = new Set(); cfg.watch.forEach(w=>w.sym && s.add(w.sym.toUpperCase())); cfg.holdings.forEach(h=>h.sym && s.add(h.sym.toUpperCase())); return [...s]; }
 const health = {ok:0, total:0, fail:[], backup:[], err:"", at:0};
+/* timestamped prices for today (for the "fast drop" rule); kept for the day */
+let ticks = store.get("ticks", {});
+function pushTick(sym, q){
+  const day = etNow().date; if (ticks.day !== day) ticks = {day, s:{}};
+  if (session().s !== "open") return;
+  const a = ticks.s[sym] || (ticks.s[sym] = []); const t = Date.now();
+  if (!a.length || t - a[a.length-1][0] > 20e3) a.push([t, q.c]); else a[a.length-1] = [t, q.c];
+  while (a.length && t - a[0][0] > 125*60e3) a.shift();
+}
 async function refreshOne(sym){
   if (!settings.key) return;
   toast("Updating " + sym + "…");
@@ -601,7 +610,7 @@ async function refreshOne(sym){
     let q = null;
     try{ q = await limited(()=>api("quote?symbol=" + encodeURIComponent(sym)), "top"); }catch(e){}
     if (!(q && q.c)) q = await backupQuote(sym).catch(()=>null);
-    if (q && q.c){ q.at = Date.now(); quotes[sym] = q; store.set("lastQuotes", quotes);
+    if (q && q.c){ q.at = Date.now(); quotes[sym] = q; pushTick(sym, q); store.set("lastQuotes", quotes); store.set("ticks", ticks);
       const day = etNow().date; if (session().s !== "closed"){ if (!spark[day]) spark = {[day]:{}}; const a = spark[day][sym] || (spark[day][sym] = []); if (a[a.length-1] !== q.c) a.push(q.c); store.set("spark", spark); }
       renderAll(); checkAlerts(); toast(sym + " updated · " + fmt$(q.c));
     } else toast("No price for " + sym);
@@ -793,13 +802,13 @@ async function tick(){
         try{ q = await api("quote?symbol=" + encodeURIComponent(sym)); }catch(e){ lastErr = e.message; }
         if (!(q && q.c)){ try{ q = await backupQuote(sym); if (q && q.c) backup.push(sym); }catch(e){} }
         if (!(q && q.c)) fail.push(sym);
-        if (q && q.c){ q.at = Date.now(); quotes[sym] = q; ok++;
+        if (q && q.c){ q.at = Date.now(); quotes[sym] = q; pushTick(sym, q); ok++;
           if (ses !== "closed"){ const a = spark[day][sym] || (spark[day][sym] = []); if (!a.length || a[a.length-1] !== q.c){ a.push(q.c); if (a.length > 480) a.shift(); } }
         }
       }catch(e){ lastErr = e.message; }
     })));
     Object.assign(health, {ok, total:syms.length, fail, backup, err:lastErr, at:Date.now()});
-    if (ok){ lastUpdate = Date.now(); store.set("lastUpdate", lastUpdate); store.set("lastQuotes", quotes); store.set("spark", spark); }
+    if (ok){ lastUpdate = Date.now(); store.set("lastUpdate", lastUpdate); store.set("lastQuotes", quotes); store.set("spark", spark); store.set("ticks", ticks); }
     renderAll(); checkAlerts();
     loadMarketStatus().then(renderFrame);
     loadNavs(false);
@@ -829,10 +838,21 @@ function evaluate(w){
   const sym = (w.sym||"").toUpperCase(), q = quotes[sym];
   if (!alertable(q) || settings.allOff || w.on===false) return [];
   const out = [], px = q.c, er = erInfo(sym), erTxt = er && er.days <= 7 ? ` · earnings ${er.days===0?"today":er.days===1?"tomorrow":er.label.slice(3)}` : "";
-  if (w.redOn!==false && w.dayDrop && q.dp <= -w.dayDrop) out.push({id:`${sym}-red`, kind:"red", sym, msg:`${sym} is down ${Math.abs(q.dp).toFixed(1)}% today at ${fmt$(px)}${erTxt}`});
+  // optional filter for the dip rules: only when this name is falling harder than the benchmark
+  const bq = quotes[settings.bench], lag = bq && bq.dp!=null ? q.dp - bq.dp : null;
+  const lagOk = !(w.lagOn && w.lagBy) || (lag != null && lag <= -w.lagBy) || sym === settings.bench;
+  const lagTxt = w.lagOn && w.lagBy && lag != null && sym !== settings.bench ? ` · ${fmtPct(lag,1)} vs ${settings.bench}` : "";
+  const dip = [];
+  if (w.fastOn!==false && w.fastDrop){
+    const mins = w.fastMins || 15, a = (ticks.day === etNow().date && ticks.s[sym]) || [], since = Date.now() - mins*60e3;
+    const recent = a.filter(x => x[0] >= since), top = recent.length ? Math.max(...recent.map(x=>x[1])) : null;
+    if (top && recent[0][0] <= since + mins*30e3 && px <= top*(1 - w.fastDrop/100)) dip.push({id:`${sym}-fast-${Math.floor(etNow().mins/60)}`, kind:"fast", sym, msg:`${sym} dropped ${((1-px/top)*100).toFixed(1)}% in the last ${mins} min (from ${fmt$(top)} to ${fmt$(px)})`});
+  }
+  if (w.redOn!==false && w.dayDrop && q.dp <= -w.dayDrop) dip.push({id:`${sym}-red`, kind:"red", sym, msg:`${sym} is down ${Math.abs(q.dp).toFixed(1)}% today at ${fmt$(px)}${erTxt}`});
   const vol = volOf(sym);
-  if (w.sigOn!==false && w.sigDrop && vol && q.dp/vol <= -w.sigDrop) out.push({id:`${sym}-sig`, kind:"sig", sym, msg:`${sym} is down ${Math.abs(q.dp/vol).toFixed(1)}σ today (${fmtPct(q.dp,1)}, a normal day is ±${vol.toFixed(1)}%)${erTxt}`});
-  if (w.hiOn!==false && w.hiDrop && q.h && px <= q.h*(1 - w.hiDrop/100)) out.push({id:`${sym}-hd`, kind:"hd", sym, msg:`${sym} is ${((1-px/q.h)*100).toFixed(1)}% below today's high (${fmt$(q.h)}), now ${fmt$(px)}${erTxt}`});
+  if (w.sigOn!==false && w.sigDrop && vol && q.dp/vol <= -w.sigDrop) dip.push({id:`${sym}-sig`, kind:"sig", sym, msg:`${sym} is down ${Math.abs(q.dp/vol).toFixed(1)}σ today (${fmtPct(q.dp,1)}, a normal day is ±${vol.toFixed(1)}%)${erTxt}`});
+  if (w.hiOn!==false && w.hiDrop && q.h && px <= q.h*(1 - w.hiDrop/100)) dip.push({id:`${sym}-hd`, kind:"hd", sym, msg:`${sym} is ${((1-px/q.h)*100).toFixed(1)}% below today's high (${fmt$(q.h)}), now ${fmt$(px)}${erTxt}`});
+  if (lagOk) dip.forEach(a => { a.msg += lagTxt; out.push(a); });
   const hi = metrics[sym] && metrics[sym].hi;
   if (hi && w.offHigh && w.offOn!==false){
     const off = (1 - px/hi)*100, st = store.get("offState", {}), inZone = off >= w.offHigh;
@@ -866,7 +886,7 @@ function updateBadge(){
 function markSeen(){ const f = firedToday(); f.unseen = 0; store.set("fired", f); updateBadge(); }
 let bannerSym = "";
 function notify(list){
-  const rank = {level:0, red:1, sig:1, hd:2, off:3, near:5, test:6};
+  const rank = {level:0, fast:1, red:1, sig:1, hd:2, off:3, near:5, test:6};
   list = list.slice().sort((a,b)=>(rank[a.kind]??4)-(rank[b.kind]??4));
   const main = list[0];
   const b = $("banner"); bannerSym = main.sym || "";
@@ -1009,6 +1029,8 @@ function renderPortfolio(){
   const merged = {}; byVal.forEach(r => merged[r.sym] = (merged[r.sym]||0) + r.val);
   const top = Object.entries(merged).sort((a,b)=>b[1]-a[1]);
   const top3 = P.total ? top.slice(0,3).reduce((a,x)=>a+x[1],0)/P.total*100 : null;
+  let hv = 0, hw = 0; P.rows.forEach(r => { const m = metrics[r.sym]; if (r.val && m && m.hi && r.q && r.q.c){ hv += r.val*(r.q.c/m.hi - 1); hw += r.val; } });
+  const offHi = hw ? hv/hw*100 : null;
   const gain = P.cost ? (P.costVal/P.cost - 1)*100 : null;
 
   // allocation by account (+ funds & cash)
@@ -1069,7 +1091,7 @@ function renderPortfolio(){
     </div>
     ${any && top.length ? `<div class="risk num" title="Beta is from Finnhub (how much each holding tends to move with the market). Holdings without one, and mutual funds, count as 1.0; cash as 0.">
       ${beta!=null?`<span title="${bEst ? bEst + " holding(s) have no published beta (common for ETFs) and count as 1.0" : ""}">Beta <b>${beta.toFixed(2)}</b>${bEst?`<span class="muted">*</span>`:""}</span><span>S&amp;P −1% ≈ <b class="down">${fmtS$(-perSpy)}</b></span>`:""}
-      <span>Largest <b>${esc(top[0][0])} ${(top[0][1]/P.total*100).toFixed(0)}%</b></span>${top.length>3?`<span>Top 3 <b>${top3.toFixed(0)}%</b></span>`:""}</div>` : ""}
+      <span>Largest <b>${esc(top[0][0])} ${(top[0][1]/P.total*100).toFixed(0)}%</b></span>${top.length>3?`<span>Top 3 <b>${top3.toFixed(0)}%</b></span>`:""}${offHi!=null?`<span title="Value-weighted distance of your stocks and ETFs from their 52-week highs">From 52w highs <b class="${cls(offHi)}">${fmtPct(offHi,1)}</b></span>`:""}</div>` : ""}
     <div class="alloc">${alloc}</div><div class="legend">${legend}</div>
     <div class="toolbar"><span style="flex:1"></span>
       <div class="seg" id="sortSeg">${[["value","Value"],["day","Today"],["name","A–Z"]].map(([k,l])=>`<button data-sort="${k}" class="${settings.sort===k?"on":""}">${l}</button>`).join("")}</div></div>
@@ -1159,10 +1181,11 @@ function renderMarkets(){
     ${bell.length ? `<div class="note" style="margin:0 0 8px">Chip earnings this week: ${bell.map(x=>`<b>${x.sym}</b> ${x.e.label.slice(3)}`).join(" · ")}</div>` : ""}
     <div class="seg perseg" id="perSeg">${PERIODS.map(p=>`<button data-per="${p.k}" class="${per===p.k?"on":""}">${p.label}</button>`).join("")}</div>
     <div class="idx num">${idx.map(m=>{ const q = quotes[m.sym], p = pctFor(m.sym, per); return `<button class="c ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" title="Click to refresh just ${m.sym}"><span>${esc(m.name)}</span><b class="${cls(p)}">${fmtPct(p, dec)}</b><em>${q?fmt$(q.c):"—"}</em></button>`; }).join("")}</div>
-    ${my.length?`<div class="toolbar"><span class="sec-t" style="flex:1;font-size:11px">My list</span><button class="rbtn" data-open="markets">Edit</button></div><div class="heat" style="margin-bottom:10px">${tiles(my)}</div>`:""}
-    <div class="toolbar"><span class="sec-t" style="flex:1;font-size:11px">Sectors</span>
+    ${my.length?`<div class="toolbar"><span class="sec-t" style="flex:1;font-size:11px">My list</span><button class="rbtn" data-open="markets">Edit</button></div><div class="heat" style="margin-bottom:10px">${tiles(my)}</div>`
+      :`<div class="toolbar"><span class="sec-t" style="flex:1;font-size:11px">My list</span><button class="rbtn" data-act="chipleaders" title="Adds ${BELLWETHERS.join(", ")} as tiles (6 calls per refresh)">+ Chip leaders</button><button class="rbtn" data-open="markets">+ Add</button></div>`}
+    <div class="toolbar"><button class="sec-t" data-act="sectors" style="flex:1;font-size:11px;text-align:left;display:flex;align-items:center;gap:4px" title="Show or hide the sector tiles"><svg class="chev" style="width:11px;height:11px;${settings.secHide?"transform:rotate(-90deg)":""}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>Sectors</button>
       <div class="seg" id="ordSeg"><button data-ord="fixed" class="${settings.heatOrder!=="rank"?"on":""}" title="Tiles stay in the same place">Fixed</button><button data-ord="rank" class="${settings.heatOrder==="rank"?"on":""}" title="Best to worst">Ranked</button></div></div>
-    <div class="heat">${tiles(sec)}</div>
+    ${settings.secHide ? "" : `<div class="heat">${tiles(sec)}</div>`}
     ${secP.length?`<div class="breadth"><span>${upN} of ${secP.length} up today${above.length?` · ${aboveN} of ${above.length} above 50-day`:""}</span><span class="bar"><i style="width:${(upN/secP.length*100).toFixed(0)}%"></i></span></div>`:""}
     ${oth.length?`<div class="toolbar" style="margin-top:10px"><span class="sec-t" style="font-size:11px">Other markets</span></div><div class="heat">${tiles(oth)}</div>`:""}
     ${anyPeriod?"":`<div class="note">${per} isn't loaded yet. ${settings.tdKey?"History loads in the background (about 3 minutes the first time each day).":"Add a free Twelve Data key in Settings to unlock 1M, 3Y and 5Y and make every time frame exact."}</div>`}
@@ -1230,7 +1253,13 @@ function renderWatch(){
       <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}</div></div>
       ${useLv && px ? ladder(lv, px) : ""}<div class="wmeta">${parts.join("")}${right}</div>${det}</div>`;
   }).join("");
-  $("wl-body").innerHTML = html || `<div class="empty">No tickers yet. <button data-open="alerts">Add one</button></div>`;
+  // cash vs buy plan: walk the untouched levels from closest to furthest
+  const cash = cfg.fixed.filter(f=>!f.sym).reduce((a,f)=>a+(+f.value||0),0);
+  const plan = []; cfg.watch.forEach(w => { const I = watchInfo(w); if (!(+w.buyAmt > 0) || !I.px || I.off) return; I.lv.filter(L => L < I.px).forEach(L => plan.push({sym:I.sym, L, amt:+w.buyAmt, d:(I.px/L-1)*100})); });
+  plan.sort((a,b)=>a.d-b.d);
+  let cum = 0, covered = 0; plan.forEach(x => { cum += x.amt; if (cum <= cash + 0.5) covered++; });
+  const planHtml = plan.length ? `<div class="note" style="margin:0 0 6px;font-size:11.5px;color:var(--fg-2)" title="${esc(plan.map(x=>`${x.sym} ${fmt$(x.L,0)}: ${fmt$(x.amt,0)}`).join(" · "))}">Cash ${fmt$(cash,0)} covers <b style="color:${covered<plan.length?"var(--warn)":"var(--up)"}">${covered} of ${plan.length}</b> planned buys (${fmt$(cum,0)} total)${plan[0]?` · next: ${esc(plan[0].sym)} ${fmt$(plan[0].L,0)}`:""}</div>` : "";
+  $("wl-body").innerHTML = html ? planHtml + html : `<div class="empty">No tickers yet. <button data-open="alerts">Add one</button></div>`;
   $("wl-sum").innerHTML = settings.allOff ? `<span class="muted">alerts off</span>` : pausedNow() ? `<span style="color:var(--warn);font-weight:600">paused</span>` : (hits?`<span class="down" style="font-weight:600">${hits} at level</span>`:"") + (nears?`<span style="color:var(--warn);font-weight:600">${nears} near</span>`:"") + (!hits&&!nears?`<span class="muted">${cfg.watch.length} watching</span>`:"");
   // compact strip: closest to a buy level first
   const rows = cfg.watch.map(watchInfo).filter(I => I.px).sort((a,b) => (a.hitL.length?-1e9:0) - (b.hitL.length?-1e9:0) || (a.dist ?? 1e9) - (b.dist ?? 1e9));
@@ -1332,6 +1361,8 @@ function updateTray(){
 document.addEventListener("click", e=>{
   const sz = e.target.closest("[data-snzsym]"); if (sz){ e.stopPropagation(); snooze(sz.dataset.snzsym, sz.dataset.how); return; }
   if (e.target.closest("[data-act=resume]")){ togglePause(); return; }
+  if (e.target.closest("[data-act=sectors]")){ settings.secHide = !settings.secHide; saveSettings(); renderMarkets(); return; }
+  if (e.target.closest("[data-act=chipleaders]")){ BELLWETHERS.forEach(x => { if (!cfg.myMk.includes(x)) cfg.myMk.push(x); }); store.set("cfg", cfg); renderAll(); schedule(true); toast("Chip leaders added to My list"); return; }
   // desktop app: open web links in the default browser
   const a = e.target.closest("a[href^='http']");
   if (a && NATIVE){ e.preventDefault(); e.stopPropagation(); (TAURI.opener ? TAURI.opener.openUrl(a.href) : nat.invoke("plugin:opener|open_url", {url:a.href})).catch(()=>{}); return; }
@@ -1494,7 +1525,7 @@ function showTab(tab){
   else if (tab==="alerts"){
     B.innerHTML = `
       <div class="rule" style="display:flex;align-items:center;gap:10px"><label class="sw"><input type="checkbox" id="aAll" ${settings.allOff?"":"checked"}><span></span></label><div><b>All alerts</b><div class="muted" style="font-size:11px">Master switch. Changes save as you click.</div></div></div>
-      ${cfg.watch.some(w => !w.hiDrop || !w.sigDrop) ? `<div class="rule" style="display:flex;align-items:center;gap:10px"><div style="flex:1"><b>New dip rules</b><div class="muted" style="font-size:11px">"Off today's high" (4%) and "Unusual drop" (2σ) catch fast intraday flushes.</div></div><button class="btn" id="aNewRules">Turn on for all</button></div>` : ""}
+      ${cfg.watch.some(w => !w.hiDrop || !w.sigDrop || !w.fastDrop) ? `<div class="rule" style="display:flex;align-items:center;gap:10px"><div style="flex:1"><b>Intraday dip rules</b><div class="muted" style="font-size:11px">"Fast drop" (2% in 15 min), "Off today's high" (4%) and "Unusual drop" (2σ) catch flushes that a −3% day rule misses.</div></div><button class="btn" id="aNewRules">Turn on for all</button></div>` : ""}
       <div id="aList">${cfg.watch.map((w,i)=>{
         const on = w.on!==false, ck = k => w[k]!==false ? "checked" : "", ck2 = (k, v) => (w[k]===true || (w[k]!==false && w[v])) ? "checked" : "";
         return `<div class="rule" data-i="${i}">
@@ -1506,17 +1537,21 @@ function showTab(tab){
             <label><input type="checkbox" data-k="offOn" ${ck("offOn")}> Falls below 52-week high by</label><span><input type="number" step="1" min="1" data-n="offHigh" value="${w.offHigh??10}"> %</span>
             <label title="A fast drop from today's high, even if the day is only slightly red"><input type="checkbox" data-k="hiOn" ${ck2("hiOn","hiDrop")}> Off today's high by</label><span><input type="number" step="0.5" min="0.5" data-n="hiDrop" value="${w.hiDrop??4}"> %</span>
             <label title="Scaled to how much this stock normally moves in a day (needs a Twelve Data key)"><input type="checkbox" data-k="sigOn" ${ck2("sigOn","sigDrop")}> Unusual drop: at least</label><span><input type="number" step="0.5" min="0.5" data-n="sigDrop" value="${w.sigDrop??2}"> σ</span>
-            <label title="Prices, and 50d / 200d for the moving averages"><input type="checkbox" data-k="levelsOn" ${ck("levelsOn")}> Buy levels</label><span><input type="text" data-l="1" value="${esc([...(w.levels||[]), ...(w.ma||[]).map(n=>n+"d")].join(", "))}" placeholder="e.g. 150, 140, 200d"></span>
+            <label title="Price fell this much from its highest point in the last N minutes (a flush), even if the day is barely red"><input type="checkbox" data-k="fastOn" ${ck2("fastOn","fastDrop")}> Fast drop: down</label><span><input type="number" step="0.5" min="0.5" data-n="fastDrop" value="${w.fastDrop??2}"> % in <input type="number" step="5" min="5" max="120" data-n="fastMins" value="${w.fastMins??15}" style="width:48px"> min</span>
+            <label title="The dip rules above only fire when this stock is falling harder than your benchmark, so a sector-wide dip doesn't trigger them. Buy levels always fire."><input type="checkbox" data-k="lagOn" ${w.lagOn?"checked":""}> Dip rules only if lagging ${esc(settings.bench)} by</label><span><input type="number" step="0.5" min="0.5" data-n="lagBy" value="${w.lagBy??2}"> %</span>
+            <label title="Prices, and 20d / 50d / 100d / 200d for moving averages"><input type="checkbox" data-k="levelsOn" ${ck("levelsOn")}> Buy levels</label><span><input type="text" data-l="1" value="${esc([...(w.levels||[]), ...(w.ma||[]).map(n=>n+"d")].join(", "))}" placeholder="e.g. 150, 140, 200d"></span>
             <label><input type="checkbox" data-k="nearOn" ${ck("nearOn")}> Heads-up within</label><span><input type="number" step="0.5" min="0" data-n="near" value="${w.near??1.5}"> %</span>
+            <label title="How much you plan to buy at each level. The Watchlist then shows how many levels your cash covers.">Plan to buy per level</label><span>$ <input type="number" step="50" min="0" data-n="buyAmt" value="${w.buyAmt??""}" placeholder="—" style="width:70px"></span>
           </div></div>`; }).join("")}</div>
       <div style="display:flex;gap:6px;margin-top:4px"><input id="aSym" placeholder="Add a ticker, e.g. NVDA" maxlength="10" style="flex:1;text-transform:uppercase"><button class="btn primary" id="aAdd">Add</button></div>`;
-    if ($("aNewRules")) $("aNewRules").onclick = ()=>{ cfg.watch.forEach(w => { if (!w.hiDrop){ w.hiDrop = 4; w.hiOn = true; } if (!w.sigDrop){ w.sigDrop = 2; w.sigOn = true; } }); store.set("cfg", cfg); renderAll(); showTab("alerts"); toast("Dip rules on for every ticker"); };
+    if ($("aNewRules")) $("aNewRules").onclick = ()=>{ cfg.watch.forEach(w => { if (!w.hiDrop){ w.hiDrop = 4; w.hiOn = true; } if (!w.sigDrop){ w.sigDrop = 2; w.sigOn = true; } if (!w.fastDrop){ w.fastDrop = 2; w.fastMins = 15; w.fastOn = true; } }); store.set("cfg", cfg); renderAll(); showTab("alerts"); toast("Dip rules on for every ticker"); };
     $("aAll").onchange = e=>{ settings.allOff = !e.target.checked; saveSettings(); renderAll(); };
     const save = ()=>{ store.set("cfg", cfg); renderAll(); };
     $("aList").onchange = e=>{
       const r = e.target.closest(".rule"); if (!r) return; const w = cfg.watch[+r.dataset.i], t = e.target;
       if (t.dataset.k){ w[t.dataset.k] = t.checked; if (t.dataset.k==="on") r.querySelector(".opts").classList.toggle("dis", !t.checked);
-        const nf = {hiOn:"hiDrop", sigOn:"sigDrop"}[t.dataset.k]; if (nf && t.checked && !w[nf]) w[nf] = +r.querySelector(`[data-n=${nf}]`).value || (nf==="hiDrop"?4:2); }
+        const nf = {hiOn:"hiDrop", sigOn:"sigDrop", fastOn:"fastDrop", lagOn:"lagBy"}[t.dataset.k]; if (nf && t.checked && !w[nf]) w[nf] = +r.querySelector(`[data-n=${nf}]`).value || 2;
+        if (t.dataset.k==="fastOn" && t.checked && !w.fastMins) w.fastMins = +r.querySelector(`[data-n=fastMins]`).value || 15; }
       if (t.dataset.n){ const v = parseFloat(t.value); if (isFinite(v) && v>=0) w[t.dataset.n] = v; }
       if (t.dataset.l){ const toks = t.value.split(/[ ,;$]+/).filter(Boolean);
         w.levels = toks.map(Number).filter(x=>x>0).sort((a,b)=>b-a);
@@ -1525,7 +1560,7 @@ function showTab(tab){
       save();
     };
     $("aList").onclick = e=>{ const d = e.target.closest("[data-wdel]"); if (!d) return; const w = cfg.watch[+d.dataset.wdel]; if (confirm(`Remove ${w.sym} from your watchlist?`)){ cfg.watch.splice(+d.dataset.wdel,1); save(); showTab("alerts"); } };
-    const add = ()=>{ const sym = $("aSym").value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,""); if (!sym) return; if (!cfg.watch.some(w=>w.sym.toUpperCase()===sym)){ cfg.watch.push({sym, note:"", dayDrop:3, offHigh:10, levels:[], near:1.5, hiDrop:4, sigDrop:2}); save(); schedule(true); } showTab("alerts"); };
+    const add = ()=>{ const sym = $("aSym").value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,""); if (!sym) return; if (!cfg.watch.some(w=>w.sym.toUpperCase()===sym)){ cfg.watch.push({sym, note:"", dayDrop:3, offHigh:10, levels:[], near:1.5, hiDrop:4, sigDrop:2, fastDrop:2, fastMins:15}); save(); schedule(true); } showTab("alerts"); };
     $("aAdd").onclick = add; $("aSym").onkeydown = e=>{ if (e.key==="Enter") add(); };
   }
   else if (tab==="background"){
