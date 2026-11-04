@@ -1326,21 +1326,18 @@ function renderWatch(){
       <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}</div></div>
       ${useLv && px ? ladder(lv, px) : ""}<div class="wmeta">${parts.join("")}${right}</div>${det}</div>`;
   }).join("");
-  // cash vs buy plan: walk the untouched levels from closest to furthest
+  // cash vs buy plan. "Triggered today" = levels that alerted today (stays counted if the price bounces);
+  // the plan walks the levels still below the price, closest first, against the cash that's left
   const cash = cfg.fixed.filter(f=>!f.sym).reduce((a,f)=>a+(+f.value||0),0);
-  const firedIds0 = firedToday().ids || {};
-  const plan = []; cfg.watch.forEach(w => { const I = watchInfo(w); if (!(+w.buyAmt > 0) || !I.px || I.off) return; I.lv.filter(L => L < I.px && !firedIds0[`${I.sym}-L${L}`]).forEach(L => plan.push({sym:I.sym, L, amt:+w.buyAmt, d:(I.px/L-1)*100})); });
-  plan.sort((a,b)=>a.d-b.d);
-  let trig0 = 0; cfg.watch.forEach(w => { const I = watchInfo(w); if (+w.buyAmt > 0 && I.px && !I.off) trig0 += I.lv.filter(L => firedIds0[`${I.sym}-L${L}`] || I.px <= L).length * +w.buyAmt; });
-  const left = Math.max(0, cash - trig0);
-  let cum = 0, covered = 0; plan.forEach(x => { cum += x.amt; if (cum <= left + 0.5) covered++; });
-  // triggered = levels that alerted today (stays counted if the price bounces back above)
   const firedIds = firedToday().ids || {};
-  const firedLv = (I) => I.lv.filter(L => firedIds[`${I.sym}-L${L}`] || I.px <= L);
-  let trig = 0; cfg.watch.forEach(w => { const I = watchInfo(w); if (+w.buyAmt > 0 && I.px && !I.off) trig += firedLv(I).length * +w.buyAmt; });
-  const over = trig > cash + 0.5;
+  let trig = 0; const plan = [];
+  cfg.watch.forEach(w => { const I = watchInfo(w); if (!(+w.buyAmt > 0) || !I.px || I.off) return;
+    I.lv.forEach(L => { if (firedIds[`${I.sym}-L${L}`]) trig += +w.buyAmt; else if (L < I.px) plan.push({sym:I.sym, L, amt:+w.buyAmt, d:(I.px/L-1)*100}); }); });
+  plan.sort((a,b)=>a.d-b.d);
+  const left = Math.max(0, cash - trig), over = trig > cash + 0.5;
+  let cum = 0, covered = 0; plan.forEach(x => { cum += x.amt; if (cum <= left + 0.5) covered++; });
   const trigHtml = trig ? `<div class="note" style="margin:0 0 4px;font-size:11.5px;color:${over?"var(--warn)":"var(--fg-2)"}">Buys triggered today: <b>${fmt$(trig,0)}</b> of ${fmt$(cash,0)} cash${over?` · <b>${fmt$(trig-cash,0)} more than you have</b>`:` · ${fmt$(cash-trig,0)} left`}</div>` : "";
-  const planHtml = trigHtml + (plan.length ? `<div class="note" style="margin:0 0 6px;font-size:11.5px;color:var(--fg-2)" title="${esc(plan.map(x=>`${x.sym} ${fmt$(x.L,0)}: ${fmt$(x.amt,0)}`).join(" · "))}">${trig0 ? "What's left" : "Cash " + fmt$(cash,0)} covers <b style="color:${covered<plan.length?"var(--warn)":"var(--up)"}">${covered} of ${plan.length}</b> planned buys (${fmt$(cum,0)} total)${plan[0]?` · next: ${esc(plan[0].sym)} ${fmtL(plan[0].L)}`:""}</div>` : "");
+  const planHtml = trigHtml + (plan.length ? `<div class="note" style="margin:0 0 6px;font-size:11.5px;color:var(--fg-2)" title="${esc(plan.map(x=>`${x.sym} ${fmtL(x.L)}: ${fmt$(x.amt,0)}`).join(" · "))}">${trig ? "What's left" : "Cash " + fmt$(cash,0)} covers <b style="color:${covered<plan.length?"var(--warn)":"var(--up)"}">${covered} of ${plan.length}</b> planned buys (${fmt$(cum,0)} total)${plan[0]?` · next: ${esc(plan[0].sym)} ${fmtL(plan[0].L)}`:""}</div>` : "");
   $("wl-body").innerHTML = html ? planHtml + html : `<div class="empty">No tickers yet. <button data-open="alerts">Add one</button></div>`;
   $("wl-sum").innerHTML = settings.allOff ? `<span class="muted">alerts off</span>` : pausedNow() ? `<span style="color:var(--warn);font-weight:600">paused</span>` : (hits?`<span class="down" style="font-weight:600">${hits} at level</span>`:"") + (nears?`<span style="color:var(--warn);font-weight:600">${nears} near</span>`:"") + (!hits&&!nears?`<span class="muted">${cfg.watch.length} watching</span>`:"");
   // compact strip: closest to a buy level first
