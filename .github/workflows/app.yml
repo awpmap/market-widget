@@ -1,7 +1,8 @@
 name: Build Windows app
 
 # Builds the MW desktop app (a small tray shell around the hosted widget).
-# Push a tag like app-v1.0.0 to publish an installer on the Releases page.
+# When app/src-tauri/tauri.conf.json carries a version that has no release yet,
+# the build is published as release app-v<version> with the installer attached.
 on:
   push:
     tags: ['app-v*']
@@ -33,14 +34,27 @@ jobs:
       - name: Install build tools
         working-directory: app
         run: npm ci
-      - name: Build (and publish when this is a release tag)
+      - name: Publish this version?
+        id: rel
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          v=$(node -p "require('./app/src-tauri/tauri.conf.json').version")
+          if gh release view "app-v$v" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release app-v$v already exists; building only."; echo "tag=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing app-v$v."; echo "tag=app-v$v" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build (and publish a new version)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: app
-          tagName: ${{ startsWith(github.ref, 'refs/tags/app-v') && github.ref_name || '' }}
-          releaseName: 'MW for Windows ${{ github.ref_name }}'
+          tagName: ${{ steps.rel.outputs.tag }}
+          releaseName: 'MW for Windows ${{ steps.rel.outputs.tag }}'
+          releaseCommitish: ${{ github.sha }}
           releaseBody: |
             **Install:** download `Market Widget_..._x64-setup.exe` below and run it. Windows may say "Windows protected your PC" because the app isn't code-signed: click **More info → Run anyway**.
 
@@ -51,7 +65,7 @@ jobs:
           releaseDraft: false
           prerelease: false
       - name: Keep the installer from this build
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ steps.rel.outputs.tag == '' }}
         uses: actions/upload-artifact@v4
         with:
           name: mw-windows-installer
