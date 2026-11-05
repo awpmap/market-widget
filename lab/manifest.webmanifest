@@ -1,6 +1,6 @@
 {
-  "name": "MW Lab",
-  "short_name": "MW Lab",
+  "name": "MW Beta",
+  "short_name": "MW Beta",
   "description": "Test copy of Market Widget with the review board's recommendations built in. Information only; it never trades.",
   "id": "./",
   "start_url": "./",
