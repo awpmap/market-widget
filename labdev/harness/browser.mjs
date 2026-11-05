@@ -209,6 +209,7 @@ await p2.goto(LIVE); await p2.waitForURL(/\/lab\//); await p2.waitForTimeout(800
 check(/\/lab\//.test(p2.url()), "after opting in, opening MW opens the beta");
 await p2.evaluate(() => openSheet("general"));
 check(/Switch back to regular MW/.test(await p2.locator("#sChannel").innerText()), "the beta offers Switch back");
+check(await p2.locator("#bLeave").evaluate(b => !b.hidden && getComputedStyle(b).display !== "none"), "the beta's ⋯ menu has Switch back to regular MW too");
 p2.once("dialog", d => d.accept());
 await p2.locator("#sChannel").click(); await p2.waitForURL(u => !/\/lab\//.test(String(u))); await p2.waitForTimeout(800);
 check(!/\/lab\//.test(p2.url()) && await ls("mw_channel") === "stable", "Switch back returns to regular MW and stays there");
@@ -222,6 +223,34 @@ check(/Try the beta again/.test(await p2.locator("#sBeta").innerText()), "and of
 await p2.goto(LIVE + "?stable"); await p2.waitForTimeout(500);
 check(await ls("mw_channel") === "stable", "?stable turns the beta off");
 check(errs2.length === 0, "no page errors in the beta switch" + (errs2.length ? ": " + errs2.slice(0, 4).join(" | ") : ""));
+
+/* ---------- MW 4: someone who was using the beta lands on the regular MW with the beta's setup ---------- */
+console.log("Beta becomes the regular MW");
+const ctx3 = await browser.newContext({viewport:{width:420, height:900}, timezoneId:"America/Chicago"});
+const p3 = await ctx3.newPage(); await mock(p3);
+const errs3 = []; p3.on("pageerror", e => errs3.push(e.message));
+const betaCfg = JSON.parse(JSON.stringify(liveCfg)); betaCfg.watch = (betaCfg.watch || []).concat([{sym:"ZZB", levels:[], dayDrop:3, offHigh:10}]);
+await p3.addInitScript(([live, beta]) => {
+  if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1");
+  localStorage.clear(); localStorage.setItem("mw_cfg", JSON.stringify(live)); localStorage.setItem("mw_settings", JSON.stringify({key:"old", tdKey:"old"}));
+  localStorage.setItem("mwlab_cfg", JSON.stringify(beta)); localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", tdKey:"test", compact:false}));
+  localStorage.setItem("mw_channel", "beta"); localStorage.setItem("mw_betaOk", String(Date.now()));
+}, [liveCfg, betaCfg]);
+await p3.goto(LIVE + "lab/"); await p3.waitForURL(u => !/\/lab\//.test(String(u))); await p3.waitForTimeout(1500);
+const ls3 = k => p3.evaluate(k => localStorage.getItem(k), k);
+check(!/\/lab\//.test(p3.url()), "an open beta page goes back to MW once so the setup can move");
+check(await ls3("mw_channel") === "stable" && await ls3("mw_v4") === "1", "MW stops opening the beta after the move");
+check(JSON.parse(await ls3("mw_cfg")).watch.some(w => w.sym === "ZZB"), "MW now has the beta's setup");
+check(JSON.parse(await ls3("mw_settings")).key === "test", "and the beta's keys and settings");
+check(JSON.parse(await ls3("mw_pre4_cfg") || "{}").watch !== undefined, "the old regular setup is kept as a backup");
+check(await p3.title() === "MW" || /MW/.test(await p3.title()), "the page is called MW");
+check(!(await p3.locator("#titlebar .labtag").count()), "no BETA tag in the title bar");
+await p3.evaluate(() => openSheet("general"));
+check(/Try the beta/.test(await p3.locator("#sBeta").innerText()) && !(await p3.locator("#sChannel").count()), "Settings offers Try the beta, not Switch back");
+check(await p3.locator("#bLeave").evaluate(b => getComputedStyle(b).display === "none"), "the regular MW's menu has no Switch back");
+await p3.goto(LIVE); await p3.waitForTimeout(800);
+check(!/\/lab\//.test(p3.url()), "and MW keeps opening itself after that");
+check(errs3.length === 0, "no page errors in the move" + (errs3.length ? ": " + errs3.slice(0, 4).join(" | ") : ""));
 
 await browser.close(); server.close();
 console.log(fail.length ? `\n${fail.length} check(s) failed` : "\nAll browser checks passed");
