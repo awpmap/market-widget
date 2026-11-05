@@ -4,8 +4,11 @@ name: Build MW Lab Windows app
 # its own name, app ID, settings and Ctrl+Alt+L hotkey, and it opens /market-widget/lab/.
 # Published only as a PRE-release named lab-app-v<version>, so the live app's update check
 # (which reads the latest full release) never offers it.
+# Runs when labapp/ changes on the lab branch; a version that already has a release is built but not published.
 on:
   push:
+    branches: [lab]
+    paths: ['labapp/**', '.github/workflows/lab-app.yml']
     tags: ['lab-app-v*']
   workflow_dispatch:
 
