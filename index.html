@@ -81,6 +81,8 @@ body.wco main{margin-top:env(titlebar-area-height,40px)}
 .pill i{width:7px;height:7px;border-radius:50%;background:var(--muted)}
 .pill.open i{background:var(--up);box-shadow:0 0 0 3px color-mix(in srgb,var(--up) 25%,transparent)}
 .pill.ext i{background:var(--warn)}
+.pill span{font-variant-numeric:tabular-nums}
+.pill.open.closing{color:var(--warn)}
 .spacer{flex:1}
 .tb-btn{app-region:no-drag;-webkit-app-region:no-drag;width:30px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--fg-2);position:relative}
 .tb-btn:hover{background:var(--surface-2);color:var(--fg)}
@@ -94,7 +96,7 @@ body.wco .menu{top:calc(env(titlebar-area-height,40px) + 4px);right:calc(100vw -
 .menu kbd{font:10.5px var(--mono);color:var(--muted);background:var(--surface-2);border-radius:4px;padding:1px 5px}
 .msep{height:1px;background:var(--line);margin:4px 6px}
 /* desktop app (Tauri): own window buttons, drag by the title bar */
-.winbtns{display:none;margin-right:-8px}
+.winbtns{display:none}
 body.native .winbtns{display:flex}
 body.native #titlebar{padding-right:0}
 /* Windows 11 caption buttons: 46 px wide, full bar height, 10 px hairline glyphs, red close */
@@ -119,7 +121,8 @@ body:not(.native) .tb-btn.pin{display:none}
 .pop h4{margin:0 0 6px;font:600 12px var(--font-d)}
 .pop .kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-top:1px dashed var(--line)}
 .pop .kv:first-of-type{border-top:0}
-.pop .kv span:first-child{color:var(--muted)}
+.pop .kv span:first-child{color:var(--muted);white-space:nowrap}
+.pop .kv span:last-child{text-align:right}
 /* since-you-last-looked strip */
 #since{display:none;align-items:center;gap:8px;margin:0 0 8px;padding:7px 10px;border-radius:var(--r-sm);background:var(--surface-2);font-size:11.5px;color:var(--fg-2);cursor:pointer}
 #since.show{display:flex}
@@ -181,6 +184,12 @@ body.compact #strip{display:block;padding:0 12px 8px}
 #bMore.has-upd::after{content:"";position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--bg)}
 #titlebar{container-type:inline-size}
 @container (max-width:250px){ .pill span{display:none} .pill{padding:4px} }
+/* desktop app: the window buttons take 92px, so tighten up before anything can be pushed off the edge */
+body.native #titlebar{gap:4px}
+.pill{min-width:0;flex:0 1 auto}
+.pill span{overflow:hidden;text-overflow:ellipsis}
+@container (max-width:430px){ body.native .appname{display:none} }
+@container (max-width:380px){ body.native #bPin{display:none} }
 @container (max-width:200px){ .appname{display:none} }
 .tb-btn .badge{position:absolute;top:2px;right:2px;min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:var(--down);color:#fff;font-size:9.5px;line-height:14px;font-weight:700}
 .tb-btn.spin svg{animation:spin .8s linear infinite}
@@ -358,6 +367,7 @@ textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
 .sh-f{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);justify-content:flex-end}
 @media (max-width:360px){ .kpi{padding:6px 7px} .kpi b{font-size:13px} .kpi span{font-size:10px} .idx{grid-template-columns:1fr 1fr} .hrow{grid-template-columns:minmax(56px,1fr) 58px 80px} .wtop{grid-template-columns:minmax(56px,1fr) auto 58px} .hrow > .spark,.wtop > .spark{display:none} .wdet{grid-template-columns:1fr} }
 @media (max-width:400px){ .mk-up,.mk-nq{display:none} }
+input::placeholder{text-transform:none;letter-spacing:normal}
 .pill:focus{outline:none} .pill:focus-visible{outline:2px solid var(--accent)}
 body.native #titlebar .logo *{pointer-events:none}
 .er{display:inline-block;white-space:nowrap}
@@ -396,7 +406,7 @@ body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !importa
   <button id="mkt" class="pill" title="Data status"><i></i><span>—</span></button>
   <span class="spacer" data-tauri-drag-region></span>
   <button class="tb-btn" id="bRefresh" title="Refresh now (R)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg></button>
-  <button class="tb-btn" id="bAlerts" title="Alerts"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8z"/><path d="M6.5 14h3"/></svg><span class="badge hide" id="badge">0</span></button>
+  <button class="tb-btn" id="bAlerts" title="Today's alerts (A marks them seen)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8z"/><path d="M6.5 14h3"/></svg><span class="badge hide" id="badge">0</span></button>
   <button class="tb-btn pin" id="bPin" title="Keep on top (T)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M6 2.5h4l-.6 4 2.1 2.2H4.5l2.1-2.2z"/><path d="M8 8.7V14"/></svg></button>
   <button class="tb-btn" id="bMore" title="Menu" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg></button>
   <span class="winbtns"><button class="wb" id="wMin" aria-label="Minimize" data-tip="Minimize"><svg viewBox="0 0 10 10" stroke="currentColor"><path d="M0 5.5h10"/></svg></button><button class="wb close" id="wClose" aria-label="Close to tray" data-tip="Close to the tray (Esc). MW keeps watching your alerts. Quit from the tray icon."><svg viewBox="0 0 10 10" stroke="currentColor"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"/></svg></button></span>
@@ -404,7 +414,7 @@ body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !importa
 <div id="statusPop" class="pop hide" role="dialog" aria-label="Data status"></div>
 <div id="menu" class="menu hide" role="menu">
   <button role="menuitem" id="bCompact"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5h10M3 8h10M3 11h10"/></svg><span id="mCompactLbl">Compact view</span><kbd>C</kbd></button>
-  <button role="menuitem" data-open="alerts"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8z"/></svg><span>Alert rules</span></button>
+  <button role="menuitem" data-open="alerts" data-tip="Your tickers and their alert rules"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8z"/></svg><span>Watchlist</span></button>
   <button role="menuitem" data-open="holdings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="4" width="11" height="9" rx="1.5"/><path d="M5.5 4V2.8h5V4"/></svg><span>Holdings</span></button>
   <button role="menuitem" id="bPause"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4v8M10 4v8"/></svg><span id="mPauseLbl">Pause alerts</span><kbd>P</kbd></button>
   <button role="menuitem" data-open="background"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 9.5a5.5 5.5 0 0 1 11 0"/><path d="M8 9.5v3.5M6 13h4"/></svg><span>Background alerts</span></button>
@@ -472,8 +482,8 @@ body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !importa
   <div class="tabs" id="tabs">
     <button data-tab="general" class="on">General</button>
     <button data-tab="holdings">Holdings</button>
-    <button data-tab="alerts">Alerts</button>
-    <button data-tab="background">Background</button>
+    <button data-tab="alerts">Watchlist</button>
+    <button data-tab="background">Background alerts</button>
     <button data-tab="markets">Markets</button>
     <button data-tab="layout">Layout</button>
     <button data-tab="backup">Backup</button>
@@ -487,7 +497,7 @@ body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !importa
 
 <script>
 "use strict";
-const APP_VERSION = "3.7.0";
+const APP_VERSION = "3.8.0";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -648,7 +658,7 @@ normCfg(cfg);
   if (location.hash) try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
 })();
 
-let settings = Object.assign({key:"", tdKey:"", ntfy:"", sound:"on", theme:"auto", refresh:60, compact:false, collapsed:{}, allOff:false, period:"1D", sort:"value", grpCollapsed:{}, heatOrder:"fixed", focus:"", bench:"SMH", pauseUntil:0, snooze:{}, layout:null, hideSec:{}, sentryDsn:""}, store.get("settings", {}));
+let settings = Object.assign({key:"", tdKey:"", ntfy:"", sound:"on", theme:"auto", refresh:60, compact:false, collapsed:{}, allOff:false, period:"1D", sort:"value", grpCollapsed:{}, heatOrder:"fixed", focus:"", bench:"SMH", pauseUntil:0, snooze:{}, layout:null, hideSec:{}, sentryDsn:"", tz:"auto"}, store.get("settings", {}));
 const DEFAULT_LAYOUT = ["portfolio","markets","watch","log"];
 const SEC_NAMES = {portfolio:"Portfolio", markets:"Markets", watch:"Watchlist", log:"Today's alerts"};
 function layoutOrder(){ const L = (Array.isArray(settings.layout) ? settings.layout : []).filter(k => DEFAULT_LAYOUT.includes(k)); DEFAULT_LAYOUT.forEach(k => { if (!L.includes(k)) L.push(k); }); return L; }
@@ -670,7 +680,15 @@ const fmt$ = (n, d=2) => (n==null||!isFinite(n)) ? "—" : (n<0?"−":"") + "$" 
 const fmtS$ = (n, d=0) => (n==null||!isFinite(n)) ? "—" : (n>=0?"+":"−") + "$" + Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
 const fmtPct = (n, d=2) => (n==null||!isFinite(n)) ? "—" : (n>=0?"+":"−") + Math.abs(n).toFixed(d) + "%";
 const cls = n => (n==null||!isFinite(n)) ? "" : n>=0 ? "up" : "down";
-const timeStr = t => new Date(t).toLocaleTimeString("en-US", {hour:"numeric", minute:"2-digit", timeZone:"America/New_York"});   // ET, like the rest of the app
+/* ---------- time zone: market math always runs on New York time; times are SHOWN in the zone you pick ---------- */
+const ET_TZ = "America/New_York";
+const TZ_CHOICES = [["auto","This PC's time zone"],["America/New_York","Eastern (market time)"],["America/Chicago","Central"],["America/Denver","Mountain"],["America/Phoenix","Arizona"],["America/Los_Angeles","Pacific"],["America/Anchorage","Alaska"],["Pacific/Honolulu","Hawaii"],["UTC","UTC"],["Europe/London","London"]];
+const sysTz = () => { try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || ET_TZ; }catch(e){ return ET_TZ; } };
+const tzName = () => { const z = settings && settings.tz; if (!z || z === "auto") return sysTz(); try{ new Intl.DateTimeFormat("en-US", {timeZone:z}); return z; }catch(e){ return sysTz(); } };
+const tzAbbr = (t = Date.now(), z = tzName()) => { try{ return new Intl.DateTimeFormat("en-US", {timeZone:z, timeZoneName:"short"}).formatToParts(new Date(t)).find(x=>x.type==="timeZoneName").value; }catch(e){ return ""; } };
+const timeStr = t => new Date(t).toLocaleTimeString("en-US", {hour:"numeric", minute:"2-digit", timeZone:tzName()});
+const timeTz = t => timeStr(t) + " " + tzAbbr(t);
+const dayOf = (t, z = tzName()) => new Intl.DateTimeFormat("en-CA", {timeZone:z, year:"numeric", month:"2-digit", day:"2-digit"}).format(new Date(t));
 /* ---------- desktop app bridge (Tauri). In a browser all of this stays off. ---------- */
 const TAURI = window.__TAURI__ || null;
 const NATIVE = !!(TAURI && TAURI.core && TAURI.core.invoke);
@@ -688,9 +706,59 @@ function etNow(){
   return {day:o.weekday, date:`${o.year}-${o.month}-${o.day}`, mins:(+o.hour%24)*60 + (+o.minute)};
 }
 const etDateOf = ms => new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(ms));
+/* ET wall-clock time on a date → epoch ms (handles daylight saving) */
+function etMs(date, mins){
+  const [y, mo, d] = date.split("-").map(Number), want = Date.UTC(y, mo-1, d, Math.floor(mins/60), mins%60);
+  let g = want + 5*3600e3;
+  for (let i = 0; i < 3; i++){
+    const p = {}; new Intl.DateTimeFormat("en-US",{timeZone:ET_TZ,hour12:false,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}).formatToParts(new Date(g)).forEach(x=>p[x.type]=x.value);
+    const wall = Date.UTC(+p.year, +p.month-1, +p.day, (+p.hour)%24, +p.minute);
+    if (wall === want) break; g += want - wall;
+  }
+  return g;
+}
+const addDays = (date, n) => { const [y, mo, d] = date.split("-").map(Number); return new Date(Date.UTC(y, mo-1, d + n, 12)).toISOString().slice(0, 10); };
+const isTradingDay = date => { const wd = new Date(date + "T12:00:00Z").getUTCDay(); return wd !== 0 && wd !== 6 && !HOLIDAYS.has(date); };
+const closeMins = date => EARLY_CLOSE[date] || 960;
+const nextTradingDay = date => { let d = addDays(date, 1); for (let i = 0; i < 15 && !isTradingDay(d); i++) d = addDays(d, 1); return d; };
+/* Nasdaq 23/5 starts Sun Dec 6, 2026 9 pm ET: an overnight session 9 pm – 4 am ET belongs to the next trading day, with a pause 8–9 pm. Regular hours and the 4 pm close don't change. */
+const OVERNIGHT_FROM = Date.UTC(2026, 11, 7, 2);   // 2026-12-06 21:00 ET
+/* Where the US market is in its day, and what's next. All times are real instants (ms), so they display in any zone. */
+function marketClock(now = Date.now()){
+  const t = etNow(), d = t.date, m = t.mins, trading = isTradingDay(d);
+  const openAt = date => etMs(date, 570), closeAt = date => etMs(date, closeMins(date));
+  const nextOpenDay = (trading && m < 570) ? d : nextTradingDay(d);
+  const nextOpen = openAt(nextOpenDay);
+  const after = date => closeMins(date) === 960 ? 1200 : closeMins(date) + 240;   // after-hours ends 8 pm (5 pm on half days)
+  const overnightOn = now >= OVERNIGHT_FROM;
+  const base = {nextOpen, nextOpenDay, early: trading && closeMins(d) < 960, closeTime: trading ? closeAt(d) : null};
+  if (trading && m >= 570 && m < closeMins(d)) return {...base, ph:"open", label:"Market open", until: closeAt(d), untilWhat:"close"};
+  if (trading && m >= 240 && m < 570) return {...base, ph:"pre", label:"Pre-market", until: nextOpen, untilWhat:"open"};
+  if (trading && m >= closeMins(d) && m < after(d)) return {...base, ph:"after", label:"After hours", until: nextOpen, untilWhat:"open", extEnds: etMs(d, after(d))};
+  if (overnightOn){
+    // overnight belongs to the next trading day: from 9 pm the evening before (calendar day) until 4 am
+    const nt = trading && m < 240 ? d : nextTradingDay(d), eveDay = addDays(nt, -1);
+    const start = etMs(eveDay, 1260), end = etMs(nt, 240);
+    if (now >= start && now < end) return {...base, ph:"overnight", label:"Overnight", until: nextOpen, untilWhat:"open", extEnds: end};
+    if (trading && m >= 1200 && m < 1260 && nextTradingDay(d) === addDays(d, 1)) return {...base, ph:"pause", label:"Nightly pause", until: nextOpen, untilWhat:"open", extStarts: start};
+  }
+  const wd = new Date(d + "T12:00:00Z").getUTCDay();
+  return {...base, ph:"closed", label: HOLIDAYS.has(d) ? "Holiday" : (wd === 0 || wd === 6) ? "Weekend" : "Closed", until: nextOpen, untilWhat:"open"};
+}
+/* "2h 05m", "45m", "1d 14h" */
+function fmtLeft(ms){
+  const mins = Math.max(0, Math.ceil(ms / 60e3));
+  if (mins < 60) return mins + "m";
+  const h = Math.floor(mins / 60), mm = mins % 60;
+  if (h < 24) return h + "h " + String(mm).padStart(2, "0") + "m";
+  return Math.floor(h / 24) + "d " + (h % 24) + "h";
+}
+/* "Mon 8:30 AM" in your zone, or just the time when it's today */
+const whenStr = t => dayOf(t) === dayOf(Date.now()) ? timeStr(t) : dayOf(t) === dayOf(Date.now() + 864e5) ? "tomorrow " + timeStr(t) : new Date(t).toLocaleDateString("en-US", {weekday:"short", timeZone:tzName()}) + " " + timeStr(t);
 let mstat = store.get("mstat", null);   // Finnhub market status: {at, isOpen, holiday}
 function session(){
   const t = etNow();
+  if (marketClock().ph === "overnight") return {s:"ext", label:"Overnight"};
   if (t.day==="Sat"||t.day==="Sun") return {s:"closed", label:"Weekend"};
   if (HOLIDAYS.has(t.date)) return {s:"closed", label:"Holiday", why:"Market holiday"};
   const close = EARLY_CLOSE[t.date] || 960;
@@ -701,7 +769,7 @@ function session(){
     return {s:"open", label:"Market open", early: close < 960};
   }
   if (t.mins>=240 && t.mins<570) return {s:"ext", label:"Pre-market"};
-  if (t.mins>=close && t.mins<1200) return {s:"ext", label:"After hours"};
+  if (t.mins>=close && t.mins<(close===960?1200:close+240)) return {s:"ext", label:"After hours"};
   return {s:"closed", label:"Closed"};
 }
 /* Each refresh prices every symbol once; stretch the interval so it stays under ~45 calls a minute. */
@@ -1415,7 +1483,7 @@ function renderMarkets(){
   const anyPeriod = per==="1D" || sec.some(m => pctFor(m.sym, per) != null);
   const bell = BELLWETHERS.map(sym => ({sym, e:erInfo(sym)})).filter(x => x.e && x.e.days <= 7);
   $("mk-body").innerHTML = `
-    ${rg ? `<div class="regime num" title="${esc(rg.label + ": " + (rg.why.join(", ") || "no strong signal either way") + "\n\n" + RG_TIP)}"><span class="muted" style="font-size:10.5px">${esc(rg.why.join(", ") || "No strong signal")}</span>${rg.chips.map(([n,v,minor,inv])=>`<span class="xa ${minor?"mk-up":""}" title="${esc(XA_TIPS[n]||"")}">${esc(n)} <b class="${cls(inv ? -v : v)}">${fmtPct(v,1)}</b></span>`).join("")}</div>` : ""}
+    ${rg ? `<div class="regime num" title="${esc(rg.label + ": " + (rg.why.join(", ") || "no strong signal either way") + "\n\n" + RG_TIP)}"><span class="muted" style="font-size:10.5px">${esc((w => w ? w[0].toUpperCase() + w.slice(1) : "No strong signal")(rg.why.join(", ")))}</span>${rg.chips.map(([n,v,minor,inv])=>`<span class="xa ${minor?"mk-up":""}" title="${esc(XA_TIPS[n]||"")}">${esc(n)} <b class="${cls(inv ? -v : v)}">${fmtPct(v,1)}</b></span>`).join("")}</div>` : ""}
     ${bell.length ? `<div class="note" style="margin:0 0 8px">Chip earnings this week: ${bell.map(x=>`<b>${x.sym}</b> ${x.e.label.slice(3)}`).join(" · ")}</div>` : ""}
     <div class="seg perseg" id="perSeg">${PERIODS.map(p=>`<button data-per="${p.k}" class="${per===p.k?"on":""}" title="Show the change over ${p.label === "1D" ? "today" : p.label === "YTD" ? "this year so far" : "the last " + p.label}">${p.label}</button>`).join("")}</div>
     <div class="idx num">${idx.map(m=>{ const q = quotes[m.sym], p = pctFor(m.sym, per); return `<button class="c ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" title="Click to refresh just ${m.sym}"><span>${esc(m.name)}</span><b class="${cls(p)}">${fmtPct(p, dec)}</b><em>${q?fmt$(q.c):"—"}</em></button>`; }).join("")}</div>
@@ -1472,7 +1540,7 @@ function renderWatch(){
     const parts = [];
     if (useLv && px){
       if (hitL.length) parts.push(`<span class="st hit">${levelText(I)}</span>${next?`<span>· next ${fmtL(next)}</span>`:""}`);
-      else if (next) parts.push(`<span title="Your next buy level below today's price (from Settings → Alerts).">Next buy <b>${fmtL(next)}</b></span><span class="st ${I.st}" title="How far the price has to fall to reach that level. σ = how many normal days' moves away it is for this stock (1σ ≈ one typical day).">${dist.toFixed(1)}% away${vol && dist/vol < 15 ?` · ${(dist/vol).toFixed(1)}σ`:""}</span>`);
+      else if (next) parts.push(`<span title="Your next buy level below today's price (from Settings → Watchlist).">Next buy <b>${fmtL(next)}</b></span><span class="st ${I.st}" title="How far the price has to fall to reach that level. σ = how many normal days' moves away it is for this stock (1σ ≈ one typical day).">${dist.toFixed(1)}% away${vol && dist/vol < 15 ?` · ${(dist/vol).toFixed(1)}σ`:""}</span>`);
       else parts.push(`<span class="muted">Below all your levels</span>`);
     }
     if (I.red) parts.push(`<span class="st hit">Red day ${fmtPct(q.dp,1)}</span>`);
@@ -1530,7 +1598,7 @@ function renderLog(){
 }
 
 /* ---------- frame ---------- */
-const dateTime = t => { const d = new Date(t); return etDateOf(t) === etNow().date ? timeStr(t) : d.toLocaleDateString([], {weekday:"short", month:"numeric", day:"numeric"}) + " " + timeStr(t); };
+const dateTime = t => dayOf(t) === dayOf(Date.now()) ? timeStr(t) : new Date(t).toLocaleDateString("en-US", {weekday:"short", month:"numeric", day:"numeric", timeZone:tzName()}) + " " + timeStr(t);
 function dataState(){
   const ses = session(), ms = refreshMs(), age = lastUpdate ? Date.now() - lastUpdate : Infinity;
   if (!settings.key) return {k:"bad", why:"No market-data key yet"};
@@ -1539,12 +1607,30 @@ function dataState(){
   if (health.fail.length) return {k:"stale", why:`${health.fail.length} symbol(s) didn't update`};
   return {k:"ok", why:""};
 }
+/* status pill: open → time left to the close; otherwise → time to the next open */
+function clockText(mc, now = Date.now(), short = false){
+  const left = mc.until - now;
+  if (mc.ph === "open") return (short ? "" : "Open · ") + fmtLeft(left) + " left";
+  if (left < 24*3600e3) return (short ? "Opens " : "Opens in ") + fmtLeft(left);
+  return short ? "Opens " + new Date(mc.until).toLocaleDateString("en-US", {weekday:"short", timeZone:tzName()}) : "Opens " + whenStr(mc.until);
+}
+function clockSentence(mc, now = Date.now()){
+  const left = fmtLeft(mc.until - now);
+  if (mc.ph === "open") return `Market open. Closes at ${timeTz(mc.until)}${mc.early ? " (half day)" : ""}, in ${left}.`;
+  const lead = {pre:"Pre-market.", after:"After hours.", overnight:"Overnight session.", pause:`Nightly pause; overnight trading resumes at ${mc.extStarts ? timeTz(mc.extStarts) : "9 PM ET"}.`, closed: mc.label === "Holiday" ? "Market holiday." : mc.label === "Weekend" ? "Weekend." : "Market closed."}[mc.ph];
+  return `${lead} Opens ${whenStr(mc.until)} ${tzAbbr(mc.until)}, in ${left}.`;
+}
+function renderPill(ses = session(), ds = dataState()){
+  const mc = marketClock(), ageMin = lastUpdate ? Math.round((Date.now()-lastUpdate)/60000) : 0;
+  $("mkt").className = "pill " + (ses.s==="open"?"open":ses.s==="ext"?"ext":"") + (ds.k!=="ok" ? " " + ds.k : "") + (mc.ph==="open" && mc.until - Date.now() <= 15*60e3 ? " closing" : "");
+  $("mkt").lastElementChild.textContent = ds.k==="stale" && ses.s==="open" && ageMin >= 2 ? `${ageMin}m old` : ds.k==="bad" ? "No data" : clockText(mc, Date.now(), $("titlebar").clientWidth < (document.body.classList.contains("native") ? 440 : 340));
+  $("mkt").title = (ds.why ? ds.why + ". " : "") + clockSentence(mc) + (ses.s==="open" ? " Prices are live." : " Showing the last close: the free price feeds only cover regular hours.") + " Click for details.";
+}
 function renderFrame(){
   const ses = session(), ds = dataState();
   $("mkt").className = "pill " + (ses.s==="open"?"open":ses.s==="ext"?"ext":"") + (ds.k!=="ok" ? " " + ds.k : "");
   const ageMin = lastUpdate ? Math.round((Date.now()-lastUpdate)/60000) : 0;
-  $("mkt").lastElementChild.textContent = ds.k==="stale" && ses.s==="open" && ageMin >= 2 ? `${ageMin}m old` : ds.k==="bad" ? "No data" : {"Market open":"Open","Pre-market":"Pre-market","After hours":"After hours","Closed":"Closed","Weekend":"Weekend","Holiday":"Holiday"}[ses.label] || ses.label;
-  $("mkt").title = (ds.why ? ds.why + ". " : "") + (ses.s==="open" ? "Market open · live prices" + (ses.early ? " · closes at 1 pm today." : ".") : ses.label + (ses.why && ses.why!=="Market holiday" ? " (" + ses.why + ")" : "") + " · showing the last close. The free data feeds don't carry pre-market or after-hours prices.") + " Click for data status.";
+  renderPill(ses, ds);
   const age = lastUpdate ? Math.round((Date.now()-lastUpdate)/60000) : null;
   $("upd").textContent = lastUpdate ? (ses.s==="open" ? `Updated ${dateTime(lastUpdate)}${age>=3 ? ` (${age} min ago)` : ""}` : `Last close prices · checked ${dateTime(lastUpdate)}`) : "";
   const b = $("banner");
@@ -1572,7 +1658,12 @@ function renderStatus(){
   const now = Date.now(), perMin = RL.times.filter(t => now - t < 60000).length, ms = refreshMs();
   const kv = (k, v) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`;
   $("statusPop").innerHTML = `<h4>${ds.k==="ok" ? "✓ Data is live" : ds.k==="stale" ? "⚠ " + esc(ds.why) : "✕ " + esc(ds.why)}</h4>
-    ${kv("Market", esc(ses.label) + (ses.early ? " (1 pm close)" : "") + (mstat && mstat.date===d ? " · exchange-checked" : ""))}
+    ${(()=>{ const mc = marketClock(), today = etNow().date, td = isTradingDay(today) ? today : mc.nextOpenDay, o = etMs(td, 570), c = etMs(td, closeMins(td));
+      return kv("Market", esc(mc.ph === "open" ? "Open" : mc.label) + (mstat && mstat.date===d ? " · exchange-checked" : ""))
+        + kv(mc.ph === "open" ? "Closes" : "Opens", `${esc(mc.ph === "open" ? timeStr(mc.until) : whenStr(mc.until))} ${esc(tzAbbr(mc.until))} · in ${fmtLeft(mc.until - now)}`)
+        + kv(td === today ? "Hours today" : "Hours " + new Date(o).toLocaleDateString("en-US", {weekday:"short", timeZone:tzName()}), `${timeStr(o)} – ${timeStr(c)} ${esc(tzAbbr(o))}${closeMins(td) < 960 ? " (half day)" : ""}`)
+        + (now < OVERNIGHT_FROM ? kv("From Dec 6", `Nasdaq goes to 23 hours a day (overnight ${timeStr(etMs("2026-12-07", 1260))} – ${timeStr(etMs("2026-12-08", 240))}). The open, the close and these timers stay on regular hours.`)
+          : kv("Extended", `Pre-market from ${timeStr(etMs(td, 240))}, after hours to ${timeStr(etMs(td, closeMins(td) === 960 ? 1200 : closeMins(td) + 240))}, overnight ${timeStr(etMs(td, 1260))} – ${timeStr(etMs(td, 240 + 1440))}. Timers count to the regular open and close.`)); })()}
     ${kv("Last update", lastUpdate ? dateTime(lastUpdate) : "never")}
     ${kv("Symbols priced", health.total ? `${health.ok} of ${health.total}` : "—")}
     ${health.fail.length ? kv("Didn't update", esc(health.fail.slice(0,8).join(", "))) : ""}
@@ -1608,7 +1699,7 @@ document.addEventListener("visibilitychange", ()=>{ document.hidden ? snapLook()
 let trayLast = "";
 function updateTray(){
   if (!NATIVE) return;
-  const P = portfolioCalc(), parts = ["MW"];
+  const P = portfolioCalc(), parts = ["MW · " + (m => m.ph === "open" ? "closes in " + fmtLeft(m.until - Date.now()) : "opens " + (m.until - Date.now() < 24*3600e3 ? "in " + fmtLeft(m.until - Date.now()) : whenStr(m.until)))(marketClock())];
   if (cfg.holdings.length && Object.keys(quotes).length) parts.push(`${fmt$(P.total,0)} ${fmtPct(P.dayPct)}`);
   const b = quotes[settings.bench]; if (b) parts.push(`${settings.bench} ${fmtPct(b.dp,1)}`);
   const near = cfg.watch.map(watchInfo).filter(I => I.px && (I.hitL.length || I.dist!=null)).sort((a,b)=>(a.hitL.length?-1e9:a.dist)-(b.hitL.length?-1e9:b.dist))[0];
@@ -1765,6 +1856,8 @@ function showTab(tab){
         <div class="field"><label for="sTheme">Theme</label><select id="sTheme"><option value="auto">Match Windows</option><option value="dark">Dark</option><option value="light">Light</option></select></div>
         <div class="field"><label for="sRefresh">Refresh while open</label><select id="sRefresh"><option value="30">Every 30 sec</option><option value="60">Every minute</option><option value="120">Every 2 min</option><option value="300">Every 5 min</option><option value="0">Off (manual only)</option></select></div>
       </div>
+      <div class="field"><label for="sTz">Time zone</label><select id="sTz">${TZ_CHOICES.map(([v, n]) => `<option value="${v}">${esc(n)}${v === "auto" ? (z => { const known = TZ_CHOICES.find(c => c[0] === z), nm = known ? known[1].replace(/ \(.*\)/, "") : z.replace(/_/g, " ").split("/").pop(), ab = tzAbbr(Date.now(), z); return " (" + esc(nm) + (ab && ab !== nm ? " · " + esc(ab) : "") + ")"; })(sysTz()) : ""}</option>`).join("")}</select>
+        <p>Every time MW shows (updates, alerts, open and close) uses this zone. Market hours themselves follow New York.</p></div>
       <div class="row2">
         <div class="field"><label for="sSound">Alert sound</label><select id="sSound"><option value="on">On</option><option value="off">Off</option></select></div>
         <div class="field"><label>Windows pop-ups</label>${NATIVE ? `<button class="btn" style="width:100%;cursor:default" title="Use 'Send a test alert' below to check. If nothing shows, turn on notifications for Market Widget in Windows Settings → System → Notifications.">Windows notifications</button>` : `<button class="btn" id="sNotif" style="width:100%">${"Notification" in window ? (Notification.permission==="granted"?"✓ Allowed":Notification.permission==="denied"?"Blocked by the browser":"Allow pop-ups") : "Not supported"}</button>`}</div>
@@ -1782,7 +1875,7 @@ function showTab(tab){
       <div id="keyRes" class="note" style="white-space:pre-line"></div>
       <p class="note">Data use: Finnhub allows 60 calls a minute with no daily cap, so refreshing everything is fine. Twelve Data allows 800 a day; used today: ${(()=>{const u=store.get("tdUsed",{});return u.date===etNow().date?u.n:0;})()}.</p>
       <p class="note" style="margin-top:14px">Shortcuts: R refresh · C compact · A mark alerts seen · P pause alerts · / add a ticker · 1–4 jump to a section · , settings · Esc close${NATIVE?" or hide to tray · T keep on top":""}. ${esc(verLine())}.</p>`;
-    $("sTheme").value = settings.theme; $("sRefresh").value = String(settings.refresh); $("sSound").value = settings.sound;
+    $("sTheme").value = settings.theme; $("sTz").value = TZ_CHOICES.some(c => c[0] === settings.tz) ? settings.tz : "auto"; $("sRefresh").value = String(settings.refresh); $("sSound").value = settings.sound;
     if (NATIVE){
       const box = $("appOpts");
       nat.invoke("shell_state").then(st => { nat.state = st; box.querySelectorAll("[data-shell]").forEach(i => i.checked = !!st[i.dataset.shell]); $("appVer").textContent = "App version " + st.version + "." + (st.hotkey && !st.hotkey_ok ? " Ctrl+Alt+M is taken by another app, so the hotkey is off." : ""); }).catch(()=>{});
@@ -1791,8 +1884,8 @@ function showTab(tab){
     if ($("sNotif")) $("sNotif").onclick = async ()=>{ try{ const r = await Notification.requestPermission(); toast(r==="granted"?"Pop-ups allowed":"Pop-ups not allowed"); showTab("general"); }catch(e){} };
     $("sSave").onclick = ()=>{
       const tdChanged = $("sTd").value.trim() !== settings.tdKey;
-      Object.assign(settings, {key:$("sKey").value.trim(), tdKey:$("sTd").value.trim(), theme:$("sTheme").value, refresh:+$("sRefresh").value, sound:$("sSound").value, ntfy:$("sNtfy").value.trim()});
-      saveSettings(); document.documentElement.dataset.theme = settings.theme; toast("Saved");
+      Object.assign(settings, {key:$("sKey").value.trim(), tdKey:$("sTd").value.trim(), theme:$("sTheme").value, refresh:+$("sRefresh").value, sound:$("sSound").value, tz:$("sTz").value, ntfy:$("sNtfy").value.trim()});
+      saveSettings(); document.documentElement.dataset.theme = settings.theme; toast("Saved"); safe("redraw", renderAll);
       try{ if ("Notification" in window && Notification.permission==="default") Notification.requestPermission(); }catch(e){}
       closeSheet(); schedule(true); if (tdChanged){ hist = {}; loadHist.day = null; loadNavs(true); loadHist(marketSyms()); }
     };
@@ -1929,7 +2022,7 @@ function showTab(tab){
     const grp = (title, arr) => `<div class="field"><label>${title}</label><div class="mk-list">${arr.map(m=>`<label><input type="checkbox" data-mk="${m.sym}" ${cfg.hiddenMk.includes(m.sym)?"":"checked"}> ${esc(m.name)} <span class="muted">${m.sym}</span></label>`).join("")}</div></div>`;
     B.innerHTML = `<p class="muted" style="margin-top:0;font-size:12px">Choose what the Markets panel shows. Sectors are tracked with ETFs (e.g. XLV for healthcare).</p>
       <div class="field"><label>My list</label><p style="margin:0 0 6px">Your own tiles, shown first (stocks or ETFs, up to 12). Each one adds a call per refresh.</p>
-        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px">${cfg.myMk.map(x=>`<span class="chip">${esc(x)} <button class="x" data-mydel="${esc(x)}" style="width:16px;height:16px" title="Remove">✕</button></span>`).join("") || `<span class="muted" style="font-size:11.5px">Empty</span>`}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px">${cfg.myMk.map(x=>`<span class="chip">${esc(x)} <button class="x" data-mydel="${esc(x)}" style="width:16px;height:16px" title="Remove">✕</button></span>`).join("") || `<span class="muted" style="font-size:11.5px">No tiles yet. Add a ticker below.</span>`}</div>
         <div style="display:flex;gap:6px"><input id="myAdd" placeholder="e.g. SOXX" maxlength="10" style="flex:1;text-transform:uppercase"><button class="btn" id="myAddB">Add</button></div></div>
       <div class="field"><label class="mk-list" style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="xaOn" ${xaOn()?"checked":""}> Risk-on / risk-off read</label><p>Uses volatility, credit, Treasury, dollar and equal-weight ETFs (VIXY, HYG, IEF, UUP, RSP). 5 calls per refresh.</p></div>
       <div class="field"><label for="bench">Compare watchlist moves against</label><select id="bench">${["SMH","SOXX","QQQ","SPY","XLK"].map(x=>`<option ${settings.bench===x?"selected":""}>${x}</option>`).join("")}</select><p>Shows "vs ${esc(settings.bench)}" on each watchlist row, to tell a sector-wide dip from a stock-specific drop.</p></div>
@@ -1950,7 +2043,7 @@ function showTab(tab){
         <button class="x" data-lymv="${i}:up" title="Move up" ${i===0?"disabled":""}>↑</button><button class="x" data-lymv="${i}:down" title="Move down" ${i===L.length-1?"disabled":""}>↓</button>
         <label class="sw" title="Show or hide this section"><input type="checkbox" data-lyshow="${k}" ${(settings.hideSec||{})[k]?"":"checked"}><span></span></label></div>`).join("")}</div>
       <div style="display:flex;gap:8px;margin-top:10px"><button class="btn" id="lyReset">Reset to default</button></div>
-      <p class="note">Default: Portfolio, Markets, Watchlist, Today's alerts. Watchlist order: drag a row by its ⠿ grip, or use ↑ ↓ in Settings → Alerts.</p>`;
+      <p class="note">Default: Portfolio, Markets, Watchlist, Today's alerts. Watchlist order: drag a row by its ⠿ grip, or use ↑ ↓ in Settings → Watchlist.</p>`;
     const setL = L2 => { settings.layout = L2; saveSettings(); safe("layout", applyLayout); showTab("layout"); };
     B.onclick = e=>{
       const mv = e.target.closest("[data-lymv]"); if (mv){ const [i, dir] = mv.dataset.lymv.split(":"); const L2 = layoutOrder(), j = +i + (dir==="up"?-1:1); if (j<0||j>=L2.length) return; const [k] = L2.splice(+i,1); L2.splice(j,0,k); setL(L2); return; }
@@ -2160,7 +2253,9 @@ if (NATIVE){
   window.__mwWake = why => { mwLog("info", "woken by " + why); alive(); if (refreshMs() && (!lastUpdate || Date.now() - lastUpdate > refreshMs())) schedule(true); safe("frame", renderFrame); };
 }
 renderVersion(); setTimeout(()=>checkUpdates(), 4000); setInterval(()=>checkUpdates(), 60*60e3);   // am I on the latest version?
-setInterval(()=>{ renderFrame(); updateTray(); }, 30e3);   // keeps the status light and "x min ago" honest between refreshes
+setInterval(()=>{ renderFrame(); updateTray(); }, 30e3);
+setInterval(()=>{ try{ renderPill(); }catch(e){} }, 10e3);
+addEventListener("resize", ()=>{ clearTimeout(renderPill._r); renderPill._r = setTimeout(()=>{ try{ renderPill(); }catch(e){} }, 120); });   // keeps the countdown to the minute   // keeps the status light and "x min ago" honest between refreshes
 
 mwLog("info", "MW " + APP_VERSION + " started" + (NATIVE ? " in the desktop app" : " in the browser"));
 safe("sentry", initSentry);
