@@ -195,7 +195,7 @@ function saveCfg(why){ cfg.v = E.CFG_V; store.set("cfg", cfg); snapCfg(why || "e
   if (location.hash) try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
 })();
 
-let settings = Object.assign({key:"", tdKey:"", ntfy:"", ntfyFull:false, hcUrl:"", sound:"on", theme:"auto", refresh:60, compact:false, collapsed:{}, allOff:false, period:"1D", sort:"value", grpCollapsed:{}, heatOrder:"fixed", focus:"", bench:"SMH", pauseUntil:0, snooze:{}, layout:null, hideSec:{}, sentryDsn:"", tz:"auto", overnight:false, sizing:false, refVol:2, concCap:25, record:false}, store.get("settings", {}));
+let settings = Object.assign({key:"", tdKey:"", ntfy:"", ntfyFull:false, hcUrl:"", sound:"on", theme:"auto", refresh:60, compact:false, collapsed:{}, allOff:false, period:"1D", sort:"value", grpCollapsed:{}, heatOrder:"fixed", focus:"", bench:"SMH", pauseUntil:0, snooze:{}, layout:null, hideSec:{}, sentryDsn:"", tz:"auto", overnight:false, sizing:false, refVol:2, concCap:25, record:false, showZeroCash:false}, store.get("settings", {}));
 const DEFAULT_LAYOUT = ["portfolio","markets","watch","log"];
 const SEC_NAMES = {portfolio:"Portfolio", markets:"Markets", watch:"Watchlist", log:"Today's alerts"};
 function layoutOrder(){ const L = (Array.isArray(settings.layout) ? settings.layout : []).filter(k => DEFAULT_LAYOUT.includes(k)); DEFAULT_LAYOUT.forEach(k => { if (!L.includes(k)) L.push(k); }); return L; }
@@ -1081,12 +1081,14 @@ function renderPortfolio(){
           <div class="v num">${fmt$(x.value,0)}<small>${x.live ? fmt$(x.nav) : "—"}</small></div>
           ${x.live && x.chgPct!=null ? `<div class="dp num ${cls(x.chgPct)}">${fmtPct(x.chgPct)}</div>` : `<div class="dp num muted" style="font-weight:400">${x.err ? "⚠" : "—"}</div>`}</div>`; }).join("")}</div></div>`;
   }
-  if (cashes.length){
-    const cv = cashes.reduce((a,f)=>a+(+f.value||0),0);
+  // a cash row at $0 stays out of the way; it shows again as soon as it's above $0 (Settings → Holdings can show them)
+  const cashShown = settings.showZeroCash ? cashes : cashes.filter(f => (+f.value||0) > 0);
+  if (cashShown.length){
+    const cv = cashShown.reduce((a,f)=>a+(+f.value||0),0);
     const label = f => { const n = String(f.name||"").replace(/\s*\(.*?\)\s*/g," ").replace(/^cash[\s,:-]*/i,"").trim(); return n ? n.charAt(0).toUpperCase() + n.slice(1) : "Cash"; };
     cashHtml = `<div class="grp ${settings.grpCollapsed.__cash?"collapsed":""}">
       <button class="grp-h" data-grp="__cash">${chev}<b>Cash</b><span class="muted">ready to invest</span><span class="r num"><span>${fmt$(cv,0)}</span></span></button>
-      <div class="grp-rows">${cashes.map(f=>`<div class="hrow" style="cursor:default"><div class="s">${esc(label(f))}<small>${((+f.value||0)/tot*100).toFixed(1)}%</small></div><span class="spark"></span><div class="v num">${fmt$(+f.value||0,0)}</div><div class="dp"></div></div>`).join("")}</div></div>`;
+      <div class="grp-rows">${cashShown.map(f=>`<div class="hrow" style="cursor:default"><div class="s">${esc(label(f))}<small>${((+f.value||0)/tot*100).toFixed(1)}%</small></div><span class="spark"></span><div class="v num">${fmt$(+f.value||0,0)}</div><div class="dp"></div></div>`).join("")}</div></div>`;
   }
   const fixedHtml = fundsHtml + cashHtml;
   const cashTotal = cashes.reduce((a,f)=>a+(+f.value||0),0);
@@ -1677,13 +1679,15 @@ function showTab(tab){
       <tbody id="hBody">${draft.holdings.map((h,i)=>`<tr data-i="${i}"><td><input data-f="sym" value="${esc(h.sym)}" style="text-transform:uppercase"></td><td><input data-f="shares" type="number" step="any" min="0" value="${h.shares??""}"></td><td><input data-f="avg" type="number" step="any" min="0" value="${h.avg??""}" placeholder="—"></td>
         <td>${h._newAcct ? `<input data-f="acct" value="${esc(h.acct||"")}" placeholder="Account name" autofocus>` : `<select data-f="acct">${[...new Set([...accts, h.acct||"Taxable"])].map(a=>`<option ${a===(h.acct||"Taxable")?"selected":""}>${esc(a)}</option>`).join("")}<option value="__new">+ New account…</option></select>`}</td><td><button class="x" data-del="${i}" title="Remove">✕</button></td></tr>`).join("")}</tbody></table>
       <button class="btn" id="hAdd" style="margin:8px 0 18px">+ Add holding</button>
-      <div class="field"><label>Mutual funds &amp; cash</label><p>For a mutual fund, enter its ticker and shares: with a Twelve Data key (General tab) it updates daily. For cash, leave the ticker blank and type the value.</p></div>
+      <div class="field"><label>Mutual funds &amp; cash</label><p>For a mutual fund, enter its ticker and shares: with a Twelve Data key (General tab) it updates daily. For cash, leave the ticker blank and type the value. A cash row at $0 is hidden on the main screen and comes back on its own once it's above $0.</p>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:12px;color:var(--fg-2);cursor:pointer"><input type="checkbox" id="fZero" ${settings.showZeroCash?"checked":""}> Show cash rows at $0 anyway</label></div>
       <table class="ed"><thead><tr><th>Name</th><th style="width:19%">Ticker</th><th style="width:18%">Shares</th><th style="width:21%">Value ($)</th><th></th></tr></thead>
       <tbody id="fBody">${draft.fixed.map((f,i)=>`<tr data-i="${i}"><td><input data-g="name" value="${esc(f.name)}"></td><td><input data-g="sym" value="${esc(f.sym||"")}" style="text-transform:uppercase" placeholder="—"></td><td><input data-g="shares" type="number" step="any" min="0" value="${f.shares??""}" placeholder="—"></td><td><input data-g="value" type="number" step="any" value="${f.value??""}"></td><td><button class="x" data-fdel="${i}" title="Remove">✕</button></td></tr>`).join("")}</tbody></table>
       <button class="btn" id="fAdd" style="margin:8px 0 14px">+ Add fund or cash</button>
       <div class="err" id="hErr"></div>
       <div class="sh-f" style="padding:10px 0 0;border:0"><button class="btn" id="hCancel">Cancel</button><button class="btn primary" id="hSave">Save holdings</button></div>`;
     B.onchange = e=>{
+      if (e.target.id === "fZero"){ settings.showZeroCash = e.target.checked; saveSettings(); renderAll(); toast(e.target.checked ? "Cash rows at $0 shown" : "Cash rows at $0 hidden"); return; }
       if (!draft) return;
       if (e.target.tagName === "SELECT" && e.target.dataset.f === "acct"){ const i = +e.target.closest("tr").dataset.i;
         if (e.target.value === "__new"){ draft.holdings[i]._newAcct = true; draft.holdings[i].acct = ""; showTab("holdings"); }
