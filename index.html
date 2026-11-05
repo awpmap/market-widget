@@ -469,7 +469,7 @@ body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !importa
 
 <script>
 "use strict";
-const APP_VERSION = "3.6.1";
+const APP_VERSION = "3.6.2";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -587,9 +587,28 @@ function initSentry(){
   sc.src = "https://cdn.jsdelivr.net/npm/@sentry/browser@8.55.2/build/bundles/bundle.min.js"; sc.crossOrigin = "anonymous";
   sc.onload = ()=>{ try{ window.Sentry.init({ dsn, release: "mw@" + APP_VERSION, environment: NATIVE ? "desktop" : "browser", sendDefaultPii: false,
       beforeBreadcrumb: () => null, beforeSend: ev => { try{ return JSON.parse(scrubKeys(JSON.stringify(ev))); }catch(e){ return null; } } });
-      mwLog("info", "Sentry connected"); const st = document.getElementById("dSentryState"); if (st) st.textContent = "Connected: crash reports are on."; }catch(e){ mwLog("warn", "Sentry failed to start: " + e.message); } };
+      window.Sentry.setTag("shell", NATIVE ? "desktop-app" : "browser");
+      mwLog("info", "Sentry connected"); const st = document.getElementById("dSentryState"); if (st) st.textContent = "Connected: crash reports are on.";
+      forwardShellIncidents(); }catch(e){ mwLog("warn", "Sentry failed to start: " + e.message); } };
   sc.onerror = ()=>{ initSentry.loading = false; mwLog("warn", "Sentry script couldn't load"); };
   document.head.appendChild(sc);
+}
+/* the desktop app's own problems (watchdog reloads, crashed page) live in its log file; send new ones to Sentry */
+function forwardShellIncidents(){
+  if (!NATIVE || !window.Sentry) return;
+  nat.invoke("shell_logs").then(text => {
+    let seen = ""; try{ seen = localStorage.getItem("mw_sentryShellSeen") || ""; }catch(e){}
+    const re = /^\[(\d{4}-\d\d-\d\d)\]\[(\d\d:\d\d:\d\d)\]\[(ERROR|WARN)\]\[[^\]]*\] (.*)$/;
+    let last = seen, n = 0;
+    String(text || "").split("\n").forEach(line => {
+      const m = line.match(re); if (!m || m[4].startsWith("page:")) return;
+      const stamp = m[1] + " " + m[2]; if (stamp <= seen || n >= 20) return;
+      n++; last = stamp > last ? stamp : last;
+      window.Sentry.captureMessage("desktop app: " + m[4].replace(/\d+s\b/g, "Ns").slice(0, 200), {level: m[3] === "ERROR" ? "error" : "warning", tags: {source: "desktop-shell"}, extra: {logLine: scrubKeys(line), at: stamp}});
+    });
+    try{ if (last) localStorage.setItem("mw_sentryShellSeen", last); }catch(e){}
+    if (n) mwLog("info", "sent " + n + " desktop app incident(s) to Sentry");
+  }).catch(()=>{});
 }
 const report = e => { try{ if (window.Sentry && e) window.Sentry.captureException(e); }catch(_){} };
 /* run one piece of the UI; if it throws, log it and keep the rest of the app working */
@@ -1953,7 +1972,7 @@ function showTab(tab){
     $("dClear").onclick = ()=>{ logBuf = []; try{ localStorage.removeItem("mw_diag"); }catch(e){} showTab("diag"); };
     $("dSentryTest").onclick = ()=>{
       if (!window.Sentry){ $("dSentryState").textContent = settings.sentryDsn ? "Still connecting. Try again in a few seconds." : "Paste your DSN and click Save first."; if (settings.sentryDsn) initSentry(); return; }
-      try{ window.Sentry.captureMessage("MW test report (" + APP_VERSION + (NATIVE && nat.state ? " / app " + nat.state.version : "") + ")", "info"); $("dSentryState").textContent = "Test report sent. It should appear in Sentry under Issues within a minute."; mwLog("info", "Sentry test report sent"); }
+      try{ window.Sentry.captureException(new Error("MW test report (" + APP_VERSION + (NATIVE && nat.state ? " / app " + nat.state.version : "") + "): this is a test, nothing is wrong")); $("dSentryState").textContent = "Test report sent. It should appear in Sentry under Issues within a minute."; mwLog("info", "Sentry test report sent"); }
       catch(e){ $("dSentryState").textContent = "Couldn't send: " + e.message; } };
     $("dSentrySave").onclick = ()=>{ const v = $("dSentry").value.trim();
       if (v && !/^https:\/\/[^@\s]+@[^\s\/]+\/\d+$/.test(v)){ $("dSentryState").textContent = "That doesn't look like a Sentry DSN (it starts with https:// and ends with a number)."; return; }

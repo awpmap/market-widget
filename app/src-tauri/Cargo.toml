@@ -1,6 +1,6 @@
 [package]
 name = "mw-desktop"
-version = "1.1.0"
+version = "1.1.1"
 description = "Market Widget (MW) for Windows: tray app around the hosted widget. Info only, never trades."
 edition = "2021"
 publish = false
