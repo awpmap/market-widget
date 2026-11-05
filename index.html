@@ -46,6 +46,17 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:13px/1.
 body{overflow:hidden;display:flex;flex-direction:column;user-select:none}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 input,select,textarea{font:inherit;color:var(--fg);background:var(--surface-2);border:1px solid var(--line-2);border-radius:7px;padding:6px 8px;user-select:text}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 25%,transparent)}
+/* dropdowns: same look as the rest of MW (no Windows-style box), list follows the theme */
+select{appearance:none;-webkit-appearance:none;padding-right:26px;cursor:pointer;color-scheme:dark;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b95a5' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 9px center;background-size:10px 6px}
+select option{background:var(--surface);color:var(--fg)}
+[data-theme="light"] select{color-scheme:light}
+@media (prefers-color-scheme: light){ [data-theme="auto"] select{color-scheme:light} }
+/* number boxes without the tiny Windows spinner arrows */
+input[type=number]{-moz-appearance:textfield}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
 .num{font-variant-numeric:tabular-nums}
 .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)}
@@ -195,14 +206,18 @@ body.compact #log-sec, body.compact footer{display:none}
 .grp{margin-top:6px}
 .grp-h{display:flex;align-items:center;gap:6px;width:100%;padding:7px 2px;font-size:11.5px;color:var(--fg-2);border-top:1px solid var(--line)}
 .grp-h b{color:var(--fg);font-weight:600;white-space:nowrap}
-.grp-h .r{margin-left:auto;display:flex;gap:10px}
+.grp-h .r{margin-left:auto;display:flex;flex-direction:row-reverse;gap:10px;align-items:baseline}
+.grp-h .r > span:first-child{min-width:86px;text-align:right;color:var(--fg)}
 .grp.collapsed .grp-rows{display:none}
 .grp.collapsed .chev{transform:rotate(-90deg)}
-.hrow{display:grid;grid-template-columns:minmax(64px,1fr) 64px minmax(70px,auto) 62px;gap:8px;align-items:center;padding:7px 2px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);width:100%;text-align:left;border-radius:6px}
+/* portfolio rows: name · sparkline · today's % · value. Fixed column widths so every value lines up on the right */
+.hrow{display:grid;grid-template-columns:minmax(64px,1fr) 64px 64px 86px;gap:8px;align-items:center;padding:7px 2px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);width:100%;text-align:left;border-radius:6px}
 .hrow:hover{background:var(--surface-2)}
 .hrow .s{font-weight:600}
 .hrow .s small{display:block;font-weight:400;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hrow .v{text-align:right}
+.hrow .v{text-align:right;order:4}
+.hrow > .dp{order:3}
+.hrow > .detail{order:5}
 .hrow .v small{display:block;font-size:10.5px;color:var(--muted)}
 .spark{width:64px;height:26px;display:block}
 .dp{justify-self:end;font-weight:600;font-size:12px;padding:3px 6px;border-radius:6px;min-width:58px;text-align:right}
@@ -290,7 +305,8 @@ footer{font-size:10.5px;color:var(--muted);padding:2px 4px 6px;display:flex;just
 body.wco #sheet{top:env(titlebar-area-height,40px)}
 .sh-h{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
 .sh-h b{font:600 14px var(--font-d);flex:1}
-.tabs{display:flex;gap:2px;padding:6px 10px 0;border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs{display:flex;flex-wrap:wrap;gap:2px;padding:6px 10px 0;border-bottom:1px solid var(--line)}
+body.native .tabs button[data-tab="background"]{display:none}
 .tabs button{padding:7px 10px;font-size:12px;color:var(--fg-2);border-bottom:2px solid transparent;white-space:nowrap}
 .tabs button.on{color:var(--fg);border-bottom-color:var(--accent);font-weight:600}
 .sh-b{flex:1;overflow:auto;padding:12px;user-select:text}
@@ -324,7 +340,7 @@ input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);margin:0}
 .mk-list label{display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 0}
 textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
 .sh-f{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);justify-content:flex-end}
-@media (max-width:360px){ .kpi{padding:6px 7px} .kpi b{font-size:13px} .kpi span{font-size:10px} .idx{grid-template-columns:1fr 1fr} .hrow,.wtop{grid-template-columns:minmax(56px,1fr) auto 58px} .hrow > .spark,.wtop > .spark{display:none} .wdet{grid-template-columns:1fr} }
+@media (max-width:360px){ .kpi{padding:6px 7px} .kpi b{font-size:13px} .kpi span{font-size:10px} .idx{grid-template-columns:1fr 1fr} .hrow{grid-template-columns:minmax(56px,1fr) 58px 80px} .wtop{grid-template-columns:minmax(56px,1fr) auto 58px} .hrow > .spark,.wtop > .spark{display:none} .wdet{grid-template-columns:1fr} }
 @media (max-width:400px){ .mk-up,.mk-nq{display:none} }
 .pill:focus{outline:none} .pill:focus-visible{outline:2px solid var(--accent)}
 body.native #titlebar .logo *{pointer-events:none}
@@ -338,6 +354,20 @@ body.native #titlebar .logo *{pointer-events:none}
 /* info boxes: every [title] / [data-tip] shows this styled box instead of the plain Windows tooltip */
 #tip{position:fixed;z-index:99;max-width:min(270px,calc(100vw - 16px));background:var(--surface);border:1px solid var(--line-2);color:var(--fg);font-size:11.5px;line-height:1.45;font-weight:400;padding:7px 10px;border-radius:8px;box-shadow:var(--shadow);pointer-events:none;opacity:0;transform:translateY(-2px);transition:opacity .12s,transform .12s;white-space:pre-line;text-align:left}
 #tip.show{opacity:1;transform:none}
+.grip{display:inline-block;width:12px;margin-left:-4px;margin-right:2px;color:var(--muted);cursor:grab;opacity:0;font-weight:400;transition:opacity .1s;user-select:none}
+.wrow:hover .grip,.wrow:focus-within .grip{opacity:.8}
+.wrow.dragging{opacity:.45}
+.wrow.drop-b{box-shadow:inset 0 2px 0 var(--accent)}
+.wrow.drop-a{box-shadow:inset 0 -2px 0 var(--accent)}
+.ly-row{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:6px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;cursor:grab}
+.ly-row b{flex:1;font-weight:600}
+.ly-row .grip{opacity:.8;margin:0}
+.ly-row.dragging{opacity:.45}
+.ly-row.drop-b{box-shadow:inset 0 2px 0 var(--accent)}
+.ly-row.drop-a{box-shadow:inset 0 -2px 0 var(--accent)}
+.kvs{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px}
+.kvs span{color:var(--muted)}
+.x:disabled{opacity:.3;cursor:default}
 #tip b{font-weight:600}
 </style>
 </head>
@@ -426,7 +456,9 @@ body.native #titlebar .logo *{pointer-events:none}
     <button data-tab="alerts">Alerts</button>
     <button data-tab="background">Background</button>
     <button data-tab="markets">Markets</button>
+    <button data-tab="layout">Layout</button>
     <button data-tab="backup">Backup</button>
+    <button data-tab="diag">Diagnostics</button>
   </div>
   <div class="sh-b" id="shBody"></div>
 </div>
@@ -436,7 +468,7 @@ body.native #titlebar .logo *{pointer-events:none}
 
 <script>
 "use strict";
-const APP_VERSION = "3.5.0";
+const APP_VERSION = "3.6.0";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -546,8 +578,21 @@ function fetchT(url, opts, ms){
   ["mousedown","keydown","scroll","blur","wheel"].forEach(k => window.addEventListener(k, hide, true));
 })();
 
+/* optional crash reports: only when a Sentry DSN is saved in Settings → Diagnostics. Keys are scrubbed; no breadcrumbs (they'd hold URLs). */
+function initSentry(){
+  const dsn = (settings && settings.sentryDsn || "").trim(); if (!dsn || window.Sentry || initSentry.loading) return;
+  initSentry.loading = true;
+  const sc = document.createElement("script");
+  sc.src = "https://cdn.jsdelivr.net/npm/@sentry/browser@8.55.2/build/bundles/bundle.min.js"; sc.crossOrigin = "anonymous";
+  sc.onload = ()=>{ try{ window.Sentry.init({ dsn, release: "mw@" + APP_VERSION, environment: NATIVE ? "desktop" : "browser", sendDefaultPii: false,
+      beforeBreadcrumb: () => null, beforeSend: ev => { try{ return JSON.parse(scrubKeys(JSON.stringify(ev))); }catch(e){ return null; } } });
+      mwLog("info", "Sentry connected"); }catch(e){ mwLog("warn", "Sentry failed to start: " + e.message); } };
+  sc.onerror = ()=>{ initSentry.loading = false; mwLog("warn", "Sentry script couldn't load"); };
+  document.head.appendChild(sc);
+}
+const report = e => { try{ if (window.Sentry && e) window.Sentry.captureException(e); }catch(_){} };
 /* run one piece of the UI; if it throws, log it and keep the rest of the app working */
-function safe(name, fn){ try{ return fn(); }catch(e){ errCount++; mwLog("error", name + ": " + (e && e.message || e) + (e && e.stack ? " | " + String(e.stack).split("\n").slice(1,2).join(" ").trim() : "")); } }
+function safe(name, fn){ try{ return fn(); }catch(e){ errCount++; report(e); mwLog("error", name + ": " + (e && e.message || e) + (e && e.stack ? " | " + String(e.stack).split("\n").slice(1,2).join(" ").trim() : "")); } }
 
 let cfg = store.get("cfg", null) || JSON.parse(JSON.stringify(DEFAULT_CFG));
 function normCfg(c){ c.holdings = c.holdings || []; c.fixed = c.fixed || []; c.watch = c.watch || []; c.hiddenMk = c.hiddenMk || []; c.myMk = c.myMk || []; return c; }
@@ -565,7 +610,14 @@ normCfg(cfg);
   if (location.hash) try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
 })();
 
-let settings = Object.assign({key:"", tdKey:"", ntfy:"", sound:"on", theme:"auto", refresh:60, compact:false, collapsed:{}, allOff:false, period:"1D", sort:"value", grpCollapsed:{}, heatOrder:"fixed", focus:"", bench:"SMH", pauseUntil:0, snooze:{}}, store.get("settings", {}));
+let settings = Object.assign({key:"", tdKey:"", ntfy:"", sound:"on", theme:"auto", refresh:60, compact:false, collapsed:{}, allOff:false, period:"1D", sort:"value", grpCollapsed:{}, heatOrder:"fixed", focus:"", bench:"SMH", pauseUntil:0, snooze:{}, layout:null, hideSec:{}, sentryDsn:""}, store.get("settings", {}));
+const DEFAULT_LAYOUT = ["portfolio","markets","watch","log"];
+const SEC_NAMES = {portfolio:"Portfolio", markets:"Markets", watch:"Watchlist", log:"Today's alerts"};
+function layoutOrder(){ const L = (Array.isArray(settings.layout) ? settings.layout : []).filter(k => DEFAULT_LAYOUT.includes(k)); DEFAULT_LAYOUT.forEach(k => { if (!L.includes(k)) L.push(k); }); return L; }
+function applyLayout(){
+  const main = $("main"), anchor = $("err"); if (!main || !anchor) return;
+  layoutOrder().forEach(k => { const el = document.querySelector(`.sec[data-sec="${k}"]`); if (el){ main.insertBefore(el, anchor); el.classList.toggle("hide", !!(settings.hideSec||{})[k]); } });
+}
 if (!PERIODS.some(p=>p.k===settings.period)) settings.period = settings.period==="MTD" ? "1M" : "1D";
 /* funds typed as "ABCDX (12.3 sh ...)" get their ticker and shares picked up automatically */
 cfg.fixed.forEach(f=>{ if (!f.sym){ const m = String(f.name||"").match(/^([A-Z]{3,5})\s*\(\s*([\d.]+)\s*sh/); if (m){ f.sym = m[1]; f.shares = +m[2]; } } });
@@ -1214,22 +1266,22 @@ function renderPortfolio(){
     const label = f => { const n = String(f.name||"").replace(/\s*\(.*?\)\s*/g," ").replace(/^cash[\s,:-]*/i,"").trim(); return n ? n.charAt(0).toUpperCase() + n.slice(1) : "Cash"; };
     cashHtml = `<div class="grp ${settings.grpCollapsed.__cash?"collapsed":""}">
       <button class="grp-h" data-grp="__cash">${chev}<b>Cash</b><span class="muted">ready to invest</span><span class="r num"><span>${fmt$(cv,0)}</span></span></button>
-      <div class="grp-rows">${cashes.map(f=>`<div class="hrow" style="cursor:default"><div class="s">${esc(label(f))}<small>${((+f.value||0)/tot*100).toFixed(1)}%</small></div><span class="spark"></span><div class="v num">${fmt$(+f.value||0,0)}</div><div></div></div>`).join("")}</div></div>`;
+      <div class="grp-rows">${cashes.map(f=>`<div class="hrow" style="cursor:default"><div class="s">${esc(label(f))}<small>${((+f.value||0)/tot*100).toFixed(1)}%</small></div><span class="spark"></span><div class="v num">${fmt$(+f.value||0,0)}</div><div class="dp"></div></div>`).join("")}</div></div>`;
   }
   const fixedHtml = fundsHtml + cashHtml;
   const cashTotal = cashes.reduce((a,f)=>a+(+f.value||0),0);
 
   body.innerHTML = `
-    <div class="hero"><div><div class="val num">${any?fmt$(P.total,0):"—"}</div></div>
-      <div class="chg num ${cls(P.dayUsd)}">${any?fmtS$(P.dayUsd):"—"} <span>${any?fmtPct(P.dayPct):""}</span><small>${dayWord()}</small></div></div>
+    <div class="hero"><div><div class="val num" title="Everything you own here: stocks, ETFs, mutual funds and cash, at the latest prices.">${any?fmt$(P.total,0):"—"}</div></div>
+      <div class="chg num ${cls(P.dayUsd)}" title="How much the whole portfolio moved today in dollars and percent. When the market is closed, this is the last trading day.">${any?fmtS$(P.dayUsd):"—"} <span>${any?fmtPct(P.dayPct):""}</span><small>${dayWord()}</small></div></div>
     <div class="kpis num">
       <div class="kpi" title="Your stocks and ETFs today minus the S&amp;P 500 (cash and funds left out)"><b class="${cls(vs)}">${vs==null?"—":fmtPct(vs)}</b><span>stocks vs S&amp;P</span></div>
-      <div class="kpi"><b>${cashes.length?fmt$(cashTotal,0):"—"}</b><span>cash ready</span></div>
-      <div class="kpi"><b class="${cls(gain)}">${gain==null?"—":fmtPct(gain,1)}</b><span>gain vs your cost</span></div>
+      <div class="kpi" title="Cash you listed in Settings → Holdings (rows with no ticker). It's what you have ready for red-day buys."><b>${cashes.length?fmt$(cashTotal,0):"—"}</b><span>cash ready</span></div>
+      <div class="kpi" title="Your stocks and ETFs now compared with what you paid for them. Needs the Avg cost column in Settings → Holdings."><b class="${cls(gain)}">${gain==null?"—":fmtPct(gain,1)}</b><span>gain vs your cost</span></div>
     </div>
     ${any && top.length ? `<div class="risk num" title="Beta is from Finnhub (how much each holding tends to move with the market). Holdings without one, and mutual funds, count as 1.0; cash as 0.">
-      ${beta!=null?`<span title="${bEst ? bEst + " holding(s) have no published beta (common for ETFs) and count as 1.0" : ""}">Beta <b>${beta.toFixed(2)}</b>${bEst?`<span class="muted">*</span>`:""}</span><span>S&amp;P −1% ≈ <b class="down">${fmtS$(-perSpy)}</b></span>`:""}
-      <span>Largest <b>${esc(top[0][0])} ${(top[0][1]/P.total*100).toFixed(0)}%</b></span>${top.length>3?`<span>Top 3 <b>${top3.toFixed(0)}%</b></span>`:""}${offHi!=null?`<span title="Value-weighted distance of your stocks and ETFs from their 52-week highs">From 52w highs <b class="${cls(offHi)}">${fmtPct(offHi,1)}</b></span>`:""}</div>` : ""}
+      ${beta!=null?`<span title="${bEst ? bEst + " holding(s) have no published beta (common for ETFs) and count as 1.0" : ""}">Beta <b>${beta.toFixed(2)}</b>${bEst?`<span class="muted">*</span>`:""}</span><span title="Roughly what your portfolio would lose if the S&amp;P 500 fell 1% today, based on beta. A quick size-of-risk gauge.">S&amp;P −1% ≈ <b class="down">${fmtS$(-perSpy)}</b></span>`:""}
+      <span title="Your biggest single position as a share of everything you own.">Largest <b>${esc(top[0][0])} ${(top[0][1]/P.total*100).toFixed(0)}%</b></span>${top.length>3?`<span title="Your three biggest positions together, as a share of everything. Higher = more concentrated.">Top 3 <b>${top3.toFixed(0)}%</b></span>`:""}${offHi!=null?`<span title="Value-weighted distance of your stocks and ETFs from their 52-week highs">From 52w highs <b class="${cls(offHi)}">${fmtPct(offHi,1)}</b></span>`:""}</div>` : ""}
     <div class="alloc">${alloc}</div><div class="legend">${legend}</div>
     <div class="toolbar"><span style="flex:1"></span>
       <div class="seg" id="sortSeg">${[["value","Value"],["day","Today"],["name","A–Z"]].map(([k,l])=>`<button data-sort="${k}" class="${settings.sort===k?"on":""}">${l}</button>`).join("")}</div></div>
@@ -1299,6 +1351,14 @@ function regime(){
   if (rsp!=null) chips.push(["Equal-wt vs S&P", rsp - spy, true]);
   return {k, label: k==="off" ? "Risk-off" : k==="on" ? "Risk-on" : "Mixed", why, chips};
 }
+const XA_TIPS = {
+  "Vol (VIXY)": "A fund that tracks expected market swings (VIX). Up means traders are paying for protection: fear is rising.",
+  "Credit vs Tsy": "Riskier company bonds (HYG) compared with safe Treasuries (IEF). Down means lenders are getting nervous.",
+  "Dollar": "The US dollar (UUP). A jumping dollar often means money is running to safety.",
+  "Chips vs S&P": "Semiconductor stocks (SMH) compared with the S&P 500 today. Positive means chips are leading.",
+  "Equal-wt vs S&P": "The average stock (RSP) compared with the S&P 500, which is dominated by giants. Positive means the move is broad, not just a few big names."
+};
+const RG_TIP = "Market mood, not a buy or sell signal.\nRisk-on: investors are buying riskier things (stocks up, fear down).\nRisk-off: they're moving to safety (stocks down, fear and the dollar up).\nMixed: no clear lean.";
 function renderMarkets(){
   const per = settings.period, cap = HEAT_CAP[per] || 15, dec = per==="1D" ? 2 : 1;
   const vis = a => a.filter(m => !cfg.hiddenMk.includes(m.sym));
@@ -1310,23 +1370,23 @@ function renderMarkets(){
   const aboveN = above.filter(m => quotes[m.sym].c > hist[m.sym].sma50).length;
   const rg = xaOn() ? regime() : null;
   $("mk-sum").innerHTML = idx.slice(0,2).map((m,i)=>{ const p = pctFor(m.sym,"1D"); return `<span class="${i?"mk-nq":""}">${esc(m.name.replace(" 500","").replace(" 100",""))} <b class="${cls(p)}">${fmtPct(p,1)}</b></span>`; }).join("") +
-    (rg ? `<span class="rg ${rg.k}" title="${esc(rg.why.join(", ") || "No strong signal")}">${rg.label}</span>` : secP.length?`<span class="muted mk-up">${upN}/${secP.length} up</span>`:"");
+    (rg ? `<span class="rg ${rg.k}" title="${esc(RG_TIP + "\n\nRight now: " + (rg.why.join(", ") || "no strong signal"))}">${rg.label}</span>` : secP.length?`<span class="muted mk-up">${upN}/${secP.length} up</span>`:"");
   const tiles = arr => { let a = arr.map(m => ({...m, p: pctFor(m.sym, per)}));
     if (settings.heatOrder === "rank") a = a.sort((x,y)=>(y.p??-1e9)-(x.p??-1e9));
     return a.map(m => `<button class="tile ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" style="background:${heatColor(m.p, cap)}" title="${esc(m.name)} (${m.sym}). Click to highlight and refresh just this one."><span class="n">${esc(m.name)}${erChip(m.sym)}</span><span class="b"><span class="p num">${fmtPct(m.p, dec)}</span><span class="t">${m.sym===m.name?"":m.sym}</span></span></button>`).join(""); };
   const anyPeriod = per==="1D" || sec.some(m => pctFor(m.sym, per) != null);
   const bell = BELLWETHERS.map(sym => ({sym, e:erInfo(sym)})).filter(x => x.e && x.e.days <= 7);
   $("mk-body").innerHTML = `
-    ${rg ? `<div class="regime num" title="${esc(rg.why.length ? rg.label + " because: " + rg.why.join(", ") : "No strong signal either way")}"><span class="muted" style="font-size:10.5px">${esc(rg.why.join(", ") || "No strong signal")}</span>${rg.chips.map(([n,v,minor,inv])=>`<span class="xa ${minor?"mk-up":""}">${esc(n)} <b class="${cls(inv ? -v : v)}">${fmtPct(v,1)}</b></span>`).join("")}</div>` : ""}
+    ${rg ? `<div class="regime num" title="${esc(rg.label + ": " + (rg.why.join(", ") || "no strong signal either way") + "\n\n" + RG_TIP)}"><span class="muted" style="font-size:10.5px">${esc(rg.why.join(", ") || "No strong signal")}</span>${rg.chips.map(([n,v,minor,inv])=>`<span class="xa ${minor?"mk-up":""}" title="${esc(XA_TIPS[n]||"")}">${esc(n)} <b class="${cls(inv ? -v : v)}">${fmtPct(v,1)}</b></span>`).join("")}</div>` : ""}
     ${bell.length ? `<div class="note" style="margin:0 0 8px">Chip earnings this week: ${bell.map(x=>`<b>${x.sym}</b> ${x.e.label.slice(3)}`).join(" · ")}</div>` : ""}
-    <div class="seg perseg" id="perSeg">${PERIODS.map(p=>`<button data-per="${p.k}" class="${per===p.k?"on":""}">${p.label}</button>`).join("")}</div>
+    <div class="seg perseg" id="perSeg">${PERIODS.map(p=>`<button data-per="${p.k}" class="${per===p.k?"on":""}" title="Show the change over ${p.label === "1D" ? "today" : p.label === "YTD" ? "this year so far" : "the last " + p.label}">${p.label}</button>`).join("")}</div>
     <div class="idx num">${idx.map(m=>{ const q = quotes[m.sym], p = pctFor(m.sym, per); return `<button class="c ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" title="Click to refresh just ${m.sym}"><span>${esc(m.name)}</span><b class="${cls(p)}">${fmtPct(p, dec)}</b><em>${q?fmt$(q.c):"—"}</em></button>`; }).join("")}</div>
     ${my.length?`<div class="toolbar"><span class="sec-t" style="flex:1;font-size:11px">My list</span><button class="rbtn" data-open="markets">Edit</button></div><div class="heat" style="margin-bottom:10px">${tiles(my)}</div>`
       :`<div class="toolbar"><span class="sec-t" style="flex:1;font-size:11px">My list</span><button class="rbtn" data-act="chipleaders" title="Adds ${BELLWETHERS.join(", ")} as tiles (6 calls per refresh)">+ Chip leaders</button><button class="rbtn" data-open="markets">+ Add</button></div>`}
     <div class="toolbar"><button class="sec-t" data-act="sectors" style="flex:1;font-size:11px;text-align:left;display:flex;align-items:center;gap:4px" title="Show or hide the sector tiles"><svg class="chev" style="width:11px;height:11px;${settings.secHide?"transform:rotate(-90deg)":""}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>Sectors</button>
       <div class="seg" id="ordSeg"><button data-ord="fixed" class="${settings.heatOrder!=="rank"?"on":""}" title="Tiles stay in the same place">Fixed</button><button data-ord="rank" class="${settings.heatOrder==="rank"?"on":""}" title="Best to worst">Ranked</button></div></div>
     ${settings.secHide ? "" : `<div class="heat">${tiles(sec)}</div>`}
-    ${secP.length?`<div class="breadth"><span>${upN} of ${secP.length} up today${above.length?` · ${aboveN} of ${above.length} above 50-day`:""}</span><span class="bar"><i style="width:${(upN/secP.length*100).toFixed(0)}%"></i></span></div>`:""}
+    ${secP.length?`<div class="breadth" title="How many of the sector funds are up today, and how many trade above their 50-day average (a sign of a healthy trend)."><span>${upN} of ${secP.length} up today${above.length?` · ${aboveN} of ${above.length} above 50-day`:""}</span><span class="bar"><i style="width:${(upN/secP.length*100).toFixed(0)}%"></i></span></div>`:""}
     ${oth.length?`<div class="toolbar" style="margin-top:10px"><span class="sec-t" style="font-size:11px">Other markets</span></div><div class="heat">${tiles(oth)}</div>`:""}
     ${anyPeriod?"":`<div class="note">${per} isn't loaded yet. ${settings.tdKey?"History loads in the background (about 3 minutes the first time each day).":"Add a free Twelve Data key in Settings to unlock 1M, 3Y and 5Y and make every time frame exact."}</div>`}
     ${per!=="1D"&&refDate(per)?`<div class="note">${per} change since ${(d=>(+d.slice(5,7))+"/"+(+d.slice(8,10))+"/"+d.slice(2,4))(refDate(per))}</div>`:""}`;
@@ -1365,6 +1425,7 @@ function ladder(lv, px){
   return `<div class="lad" title="Buy levels (orange): ${lv.map(L=>fmt$(L,0)).join(", ")}. Blue dot = price now."><div class="track"></div>${zone}${lv.map(L=>`<div class="tk" style="left:${pos(L).toFixed(1)}%"></div>`).join("")}${placed.map(o=>`<div class="tl num" style="left:${o.p.toFixed(1)}%">${fmtL(o.L)}</div>`).join("")}<div class="now" style="left:${pos(px).toFixed(1)}%"></div></div>`;
 }
 function renderWatch(){
+  if (dragSym) return;   // don't redraw under a drag in progress
   let hits = 0, nears = 0;
   const bench = settings.bench, bq = quotes[bench];
   const html = cfg.watch.map(w=>{
@@ -1373,7 +1434,7 @@ function renderWatch(){
     const parts = [];
     if (useLv && px){
       if (hitL.length) parts.push(`<span class="st hit">${levelText(I)}</span>${next?`<span>· next ${fmtL(next)}</span>`:""}`);
-      else if (next) parts.push(`<span>Next buy <b>${fmtL(next)}</b></span><span class="st ${I.st}">${dist.toFixed(1)}% away${vol && dist/vol < 15 ?` · ${(dist/vol).toFixed(1)}σ`:""}</span>`);
+      else if (next) parts.push(`<span title="Your next buy level below today's price (from Settings → Alerts).">Next buy <b>${fmtL(next)}</b></span><span class="st ${I.st}" title="How far the price has to fall to reach that level. σ = how many normal days' moves away it is for this stock (1σ ≈ one typical day).">${dist.toFixed(1)}% away${vol && dist/vol < 15 ?` · ${(dist/vol).toFixed(1)}σ`:""}</span>`);
       else parts.push(`<span class="muted">Below all your levels</span>`);
     }
     if (I.red) parts.push(`<span class="st hit">Red day ${fmtPct(q.dp,1)}</span>`);
@@ -1394,11 +1455,12 @@ function renderWatch(){
         ${m.beta!=null?`<span>Beta <b>${m.beta.toFixed(2)}</b></span>`:""}${erInfo(sym)?`<span>Earnings <b>${erInfo(sym).label.slice(3)}</b> <span class="muted">${erInfo(sym).days}d</span></span>`:""}
         ${q?rangeBar(q.l,q.h,q.c,"Day low","high"):""}${m.hi&&m.lo&&px?rangeBar(m.lo,m.hi,px,"52w low","high"):""}
         ${newsHtml(sym)}
+        <span style="grid-column:1/-1;display:flex;gap:6px;justify-content:flex-start;flex-wrap:wrap"><button class="rbtn" data-wmove="${esc(sym)}:top" title="Put ${esc(sym)} first on your watchlist">⤒ Move to top</button><button class="rbtn" data-wmove="${esc(sym)}:up" title="Move up one">↑</button><button class="rbtn" data-wmove="${esc(sym)}:down" title="Move down one">↓</button></span>
         ${off?"":`<span style="grid-column:1/-1;display:flex;gap:6px;justify-content:flex-end"><button class="rbtn" data-snzsym="${esc(sym)}" data-how="30">Snooze 30m</button><button class="rbtn" data-snzsym="${esc(sym)}" data-how="day">Mute today</button></span>`}
       </div>`;
     }
     return `<div class="wrow ${off?"muted-row":I.st?"st-"+I.st:""}" data-row="w:${esc(sym)}" role="button" tabindex="0" aria-expanded="${open}"><div class="wtop">
-      <div class="s">${esc(sym)}${erChip(sym)}<small>${esc(w.note||"")}</small></div>
+      <div class="s"><span class="grip" data-grip="1" title="Drag to reorder your watchlist">⠿</span>${esc(sym)}${erChip(sym)}<small>${esc(w.note||"")}</small></div>
       ${sparkSvg(sym, lv)}
       <div class="v num" style="text-align:right">${px?fmt$(px):"—"}${heldChip(sym)?`<br>${heldChip(sym)}`:""}</div>
       <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}</div></div>
@@ -1460,6 +1522,7 @@ function renderFrame(){
 function renderAll(){
   $("mCompactLbl").textContent = settings.compact ? "Full view" : "Compact view";
   document.body.classList.toggle("compact", !!settings.compact);
+  safe("layout", applyLayout);
   document.querySelectorAll(".sec").forEach(s => s.classList.toggle("collapsed", !!settings.collapsed[s.dataset.sec]));
   safe("portfolio", renderPortfolio); safe("markets", renderMarkets); safe("watchlist", renderWatch); safe("alert log", renderLog); safe("status", renderFrame);
   safe("title", ()=>{ const P = portfolioCalc();
@@ -1520,7 +1583,26 @@ function updateTray(){
 }
 
 /* ---------- interactions ---------- */
+/* ---------- watchlist reorder: drag a row by its ⠿ grip, or the buttons in an open row ---------- */
+let dragSym = null;
+function moveWatch(sym, where, toSym, after){
+  const W = cfg.watch, i = W.findIndex(w => (w.sym||"").toUpperCase() === sym); if (i < 0) return;
+  const [w] = W.splice(i, 1); let j;
+  if (where === "top") j = 0; else if (where === "up") j = Math.max(0, i-1); else if (where === "down") j = Math.min(W.length, i+1);
+  else { j = W.findIndex(x => (x.sym||"").toUpperCase() === toSym); if (j < 0) j = W.length; else if (after) j++; }
+  W.splice(j, 0, w); store.set("cfg", cfg); safe("watchlist", renderWatch);
+}
+function endDrag(){ dragSym = null; document.querySelectorAll(".wrow").forEach(x => { x.draggable = false; x.classList.remove("dragging","drop-a","drop-b"); }); }
+document.addEventListener("mousedown", e => { const g = e.target.closest("[data-grip]"); if (g){ const row = g.closest(".wrow"); if (row) row.draggable = true; } });
+document.addEventListener("dragstart", e => { const row = e.target.closest && e.target.closest(".wrow[draggable=true]"); if (!row) return; dragSym = row.dataset.row.slice(2).toUpperCase(); row.classList.add("dragging"); try{ e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragSym); }catch(_){} });
+document.addEventListener("dragover", e => { if (!dragSym) return; const row = e.target.closest(".wrow"); if (!row) return; e.preventDefault(); const r = row.getBoundingClientRect(), after = e.clientY > r.top + r.height/2; document.querySelectorAll(".wrow.drop-a,.wrow.drop-b").forEach(x => x.classList.remove("drop-a","drop-b")); row.classList.add(after ? "drop-a" : "drop-b"); });
+document.addEventListener("drop", e => { if (!dragSym) return; e.preventDefault(); const row = e.target.closest(".wrow"), from = dragSym; const to = row && row.dataset.row.slice(2).toUpperCase(), after = row && row.classList.contains("drop-a"); endDrag(); if (to && to !== from) moveWatch(from, "to", to, after); });
+document.addEventListener("dragend", ()=>{ if (dragSym) endDrag(); });
+document.addEventListener("mouseup", e => { if (!dragSym) document.querySelectorAll(".wrow[draggable=true]").forEach(x => x.draggable = false); });
+
 document.addEventListener("click", e=>{
+  const wm = e.target.closest("[data-wmove]"); if (wm){ e.stopPropagation(); const [sym, where] = wm.dataset.wmove.split(":"); moveWatch(sym.toUpperCase(), where); return; }
+  if (e.target.closest("[data-grip]")){ e.stopPropagation(); return; }
   const sz = e.target.closest("[data-snzsym]"); if (sz){ e.stopPropagation(); snooze(sz.dataset.snzsym, sz.dataset.how); return; }
   if (e.target.closest("[data-act=resume]")){ togglePause(); return; }
   if (e.target.closest("[data-act=sectors]")){ settings.secHide = !settings.secHide; saveSettings(); renderMarkets(); return; }
@@ -1566,7 +1648,7 @@ document.addEventListener("keydown", e=>{
   else if (k==="p") togglePause();
   else if (k==="t" && NATIVE) $("bPin").click();
   else if (k==="/"){ e.preventDefault(); openSheet("alerts"); setTimeout(()=>{ const i = $("aSym"); if (i) i.focus(); }, 30); }
-  else if (["1","2","3","4"].includes(k)){ const sec = ["portfolio","markets","watch","log"][+k-1]; settings.compact = false; settings.collapsed[sec] = false; saveSettings(); renderAll(); document.querySelector(`[data-sec="${sec}"]`).scrollIntoView({behavior:"smooth", block:"start"}); }
+  else if (["1","2","3","4"].includes(k)){ const sec = layoutOrder()[+k-1]; settings.compact = false; settings.collapsed[sec] = false; saveSettings(); renderAll(); document.querySelector(`[data-sec="${sec}"]`).scrollIntoView({behavior:"smooth", block:"start"}); }
   else if (e.key===",") openSheet("general");
   else if ((e.key==="Enter"||e.key===" ") && e.target.dataset && e.target.dataset.row){ e.preventDefault(); e.target.click(); }
 });
@@ -1595,6 +1677,7 @@ function showTab(tab){
   curTab = tab;
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab===tab));
   const B = $("shBody");
+  B.onclick = B.oninput = B.onchange = null;   // each tab sets its own handlers
   if (tab==="general"){
     B.innerHTML = `
       <div class="field"><label for="sKey">Finnhub API key</label><input id="sKey" type="password" value="${esc(settings.key)}" placeholder="Paste your free key" autocomplete="off" spellcheck="false">
@@ -1658,26 +1741,42 @@ function showTab(tab){
       <div class="field"><label>Live holdings (ETFs and stocks)</label><p>Shares and average cost per share. Cost is optional; it powers the gain figures.</p></div>
       <table class="ed"><thead><tr><th style="width:24%">Ticker</th><th style="width:20%">Shares</th><th style="width:22%">Avg cost</th><th>Account</th><th></th></tr></thead>
       <tbody id="hBody">${draft.holdings.map((h,i)=>`<tr data-i="${i}"><td><input data-f="sym" value="${esc(h.sym)}" style="text-transform:uppercase"></td><td><input data-f="shares" type="number" step="any" min="0" value="${h.shares??""}"></td><td><input data-f="avg" type="number" step="any" min="0" value="${h.avg??""}" placeholder="—"></td>
-        <td><input data-f="acct" list="acctList" value="${esc(h.acct||"")}"></td><td><button class="x" data-del="${i}" title="Remove">✕</button></td></tr>`).join("")}</tbody></table>
-      <datalist id="acctList">${accts.map(a=>`<option value="${esc(a)}">`).join("")}</datalist>
+        <td>${h._newAcct ? `<input data-f="acct" value="${esc(h.acct||"")}" placeholder="Account name" autofocus>` : `<select data-f="acct">${[...new Set([...accts, h.acct||"Taxable"])].map(a=>`<option ${a===(h.acct||"Taxable")?"selected":""}>${esc(a)}</option>`).join("")}<option value="__new">+ New account…</option></select>`}</td><td><button class="x" data-del="${i}" title="Remove">✕</button></td></tr>`).join("")}</tbody></table>
       <button class="btn" id="hAdd" style="margin:8px 0 18px">+ Add holding</button>
       <div class="field"><label>Mutual funds &amp; cash</label><p>For a mutual fund, enter its ticker and shares: with a Twelve Data key (General tab) it updates daily. For cash, leave the ticker blank and type the value.</p></div>
       <table class="ed"><thead><tr><th>Name</th><th style="width:19%">Ticker</th><th style="width:18%">Shares</th><th style="width:21%">Value ($)</th><th></th></tr></thead>
       <tbody id="fBody">${draft.fixed.map((f,i)=>`<tr data-i="${i}"><td><input data-g="name" value="${esc(f.name)}"></td><td><input data-g="sym" value="${esc(f.sym||"")}" style="text-transform:uppercase" placeholder="—"></td><td><input data-g="shares" type="number" step="any" min="0" value="${f.shares??""}" placeholder="—"></td><td><input data-g="value" type="number" step="any" value="${f.value??""}"></td><td><button class="x" data-fdel="${i}" title="Remove">✕</button></td></tr>`).join("")}</tbody></table>
       <button class="btn" id="fAdd" style="margin:8px 0 14px">+ Add fund or cash</button>
+      <div class="err" id="hErr"></div>
       <div class="sh-f" style="padding:10px 0 0;border:0"><button class="btn" id="hCancel">Cancel</button><button class="btn primary" id="hSave">Save holdings</button></div>`;
+    B.onchange = e=>{
+      if (!draft) return;
+      if (e.target.tagName === "SELECT" && e.target.dataset.f === "acct"){ const i = +e.target.closest("tr").dataset.i;
+        if (e.target.value === "__new"){ draft.holdings[i]._newAcct = true; draft.holdings[i].acct = ""; showTab("holdings"); }
+        else draft.holdings[i].acct = e.target.value; }
+    };
     B.oninput = e=>{
-      const tr = e.target.closest("tr"); if (!tr) return; const i = +tr.dataset.i;
+      if (!draft) return;
+      const tr = e.target.closest("tr"); if (!tr || tr.dataset.i == null) return; const i = +tr.dataset.i;
+      if (e.target.tagName === "SELECT") return;
       if (e.target.dataset.f){ const k = e.target.dataset.f; let v = e.target.value; if (k==="sym") v = v.toUpperCase().trim(); if (k==="shares"||k==="avg") v = v==="" ? null : +v; draft.holdings[i][k] = v; }
       if (e.target.dataset.g){ const k = e.target.dataset.g, v = e.target.value; draft.fixed[i][k] = k==="value" ? +v : k==="shares" ? (v===""?null:+v) : k==="sym" ? v.toUpperCase().trim() : v; }
     };
     B.onclick = e=>{
+      if (!draft) return;
       if (e.target.id==="hAdd"){ draft.holdings.push({sym:"", shares:null, avg:null, acct:"Taxable"}); showTab("holdings"); }
       else if (e.target.id==="fAdd"){ draft.fixed.push({name:"", sym:"", shares:null, value:0}); showTab("holdings"); }
       else if (e.target.dataset.del){ draft.holdings.splice(+e.target.dataset.del,1); showTab("holdings"); }
       else if (e.target.dataset.fdel){ draft.fixed.splice(+e.target.dataset.fdel,1); showTab("holdings"); }
       else if (e.target.id==="hCancel") closeSheet();
       else if (e.target.id==="hSave"){
+        const probs = [];
+        draft.holdings.forEach(h => { if (h.sym && !(+h.shares > 0)) probs.push(`${h.sym}: enter how many shares`); });
+        draft.fixed.forEach(f => { if (!(f.name || f.sym)) return;
+          if (f.sym && !(+f.shares > 0) && !(+f.value > 0)) probs.push(`${f.sym}: enter the shares (or a dollar value)`);
+          if (!f.sym && !isFinite(+f.value)) probs.push(`${f.name}: the value should be a number`); });
+        if (probs.length){ $("hErr").textContent = "Not saved yet. " + probs.join(" · "); return; }
+        mwLog("info", "holdings saved (" + draft.holdings.length + " holdings, " + draft.fixed.length + " funds/cash)");
         cfg.holdings = draft.holdings.filter(h=>h.sym && +h.shares>0).map(h=>({sym:h.sym.toUpperCase(), shares:+h.shares, ...(h.avg?{avg:+h.avg}:{}), acct:h.acct||"Other"}));
         cfg.fixed = draft.fixed.filter(f=>(f.name||f.sym) && isFinite(+f.value||0)).map(f=>({name:f.name||f.sym, value:+f.value||0, ...(f.sym?{sym:f.sym.toUpperCase()}:{}), ...(+f.shares>0?{shares:+f.shares}:{})}));
         store.set("cfg", cfg); toast("Holdings saved"); closeSheet(); schedule(true);
@@ -1693,7 +1792,7 @@ function showTab(tab){
         return `<div class="rule" data-i="${i}">
           <div class="rule-h"><label class="sw"><input type="checkbox" data-k="on" ${on?"checked":""}><span></span></label>${esc(w.sym)}
             <input data-note="1" value="${esc(w.note||"")}" placeholder="note" style="flex:1;min-width:0;font-size:11px;padding:3px 6px;font-weight:400">
-            <button class="x" data-wdel="${i}" title="Remove">✕</button></div>
+            <button class="x" data-wmv="${i}:up" title="Move up the watchlist" ${i===0?"disabled":""}>↑</button><button class="x" data-wmv="${i}:down" title="Move down the watchlist" ${i===cfg.watch.length-1?"disabled":""}>↓</button><button class="x" data-wdel="${i}" title="Remove">✕</button></div>
           <div class="opts ${on?"":"dis"}">
             <label><input type="checkbox" data-k="redOn" ${ck("redOn")}> Red day: down at least</label><span><input type="number" step="0.5" min="0.5" data-n="dayDrop" value="${w.dayDrop??3}"> %</span>
             <label><input type="checkbox" data-k="offOn" ${ck("offOn")}> Falls below 52-week high by</label><span><input type="number" step="1" min="1" data-n="offHigh" value="${w.offHigh??10}"> %</span>
@@ -1721,7 +1820,9 @@ function showTab(tab){
       if (t.dataset.note) w.note = t.value;
       save();
     };
-    $("aList").onclick = e=>{ const d = e.target.closest("[data-wdel]"); if (!d) return; const w = cfg.watch[+d.dataset.wdel]; if (confirm(`Remove ${w.sym} from your watchlist?`)){ cfg.watch.splice(+d.dataset.wdel,1); save(); showTab("alerts"); } };
+    $("aList").onclick = e=>{
+      const mv = e.target.closest("[data-wmv]"); if (mv){ const [i, dir] = mv.dataset.wmv.split(":"); const j = +i + (dir==="up" ? -1 : 1); if (j < 0 || j >= cfg.watch.length) return; const [w] = cfg.watch.splice(+i, 1); cfg.watch.splice(j, 0, w); save(); showTab("alerts"); return; }
+      const d = e.target.closest("[data-wdel]"); if (!d) return; const w = cfg.watch[+d.dataset.wdel]; if (confirm(`Remove ${w.sym} from your watchlist?`)){ cfg.watch.splice(+d.dataset.wdel,1); save(); showTab("alerts"); } };
     const add = ()=>{ const sym = $("aSym").value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,""); if (!sym) return; if (!cfg.watch.some(w=>w.sym.toUpperCase()===sym)){ cfg.watch.push({sym, note:"", dayDrop:3, offHigh:10, levels:[], near:1.5, hiDrop:4, sigDrop:2, fastDrop:2, fastMins:15}); save(); schedule(true); } showTab("alerts"); };
     $("aAdd").onclick = add; $("aSym").onkeydown = e=>{ if (e.key==="Enter") add(); };
   }
@@ -1764,6 +1865,57 @@ function showTab(tab){
       if (e.target.id==="bench"){ settings.bench = e.target.value; saveSettings(); schedule(true); showTab("markets"); return; }
       const s = e.target.dataset.mk; if (!s) return; cfg.hiddenMk = cfg.hiddenMk.filter(x=>x!==s); if (!e.target.checked) cfg.hiddenMk.push(s); store.set("cfg", cfg); renderAll(); if (e.target.checked) schedule(true); };
   }
+  else if (tab==="layout"){
+    const L = layoutOrder();
+    B.innerHTML = `<div class="field"><label>Section order</label><p>Drag the rows, or use the arrows. Turn a section off to hide it. Keys 1 to 4 jump to the sections in this order.</p></div>
+      <div id="lyList">${L.map((k,i)=>`<div class="ly-row" draggable="true" data-ly="${k}">
+        <span class="grip" title="Drag to move">⠿</span><b>${SEC_NAMES[k]}</b>
+        <button class="x" data-lymv="${i}:up" title="Move up" ${i===0?"disabled":""}>↑</button><button class="x" data-lymv="${i}:down" title="Move down" ${i===L.length-1?"disabled":""}>↓</button>
+        <label class="sw" title="Show or hide this section"><input type="checkbox" data-lyshow="${k}" ${(settings.hideSec||{})[k]?"":"checked"}><span></span></label></div>`).join("")}</div>
+      <div style="display:flex;gap:8px;margin-top:10px"><button class="btn" id="lyReset">Reset to default</button></div>
+      <p class="note">Default: Portfolio, Markets, Watchlist, Today's alerts. Watchlist order: drag a row by its ⠿ grip, or use ↑ ↓ in Settings → Alerts.</p>`;
+    const setL = L2 => { settings.layout = L2; saveSettings(); safe("layout", applyLayout); showTab("layout"); };
+    B.onclick = e=>{
+      const mv = e.target.closest("[data-lymv]"); if (mv){ const [i, dir] = mv.dataset.lymv.split(":"); const L2 = layoutOrder(), j = +i + (dir==="up"?-1:1); if (j<0||j>=L2.length) return; const [k] = L2.splice(+i,1); L2.splice(j,0,k); setL(L2); return; }
+      if (e.target.id==="lyReset"){ settings.hideSec = {}; setL(DEFAULT_LAYOUT.slice()); toast("Layout reset"); }
+    };
+    B.onchange = e=>{ const k = e.target.dataset.lyshow; if (!k) return; settings.hideSec = Object.assign({}, settings.hideSec, {[k]: !e.target.checked}); saveSettings(); safe("layout", applyLayout); };
+    let dragK = null;
+    const list = $("lyList");
+    list.ondragstart = e=>{ const r = e.target.closest(".ly-row"); if (!r) return; dragK = r.dataset.ly; r.classList.add("dragging"); try{ e.dataTransfer.setData("text/plain", dragK); }catch(_){} };
+    list.ondragover = e=>{ if (!dragK) return; e.preventDefault(); const r = e.target.closest(".ly-row"); list.querySelectorAll(".ly-row").forEach(x=>x.classList.remove("drop-a","drop-b")); if (r){ const b = r.getBoundingClientRect(); r.classList.add(e.clientY > b.top + b.height/2 ? "drop-a" : "drop-b"); } };
+    list.ondrop = e=>{ e.preventDefault(); const r = e.target.closest(".ly-row"); if (!dragK || !r || r.dataset.ly === dragK){ dragK = null; showTab("layout"); return; }
+      const L2 = layoutOrder().filter(k=>k!==dragK); let j = L2.indexOf(r.dataset.ly); if (r.classList.contains("drop-a")) j++; L2.splice(j,0,dragK); dragK = null; setL(L2); };
+    list.ondragend = ()=>{ dragK = null; list.querySelectorAll(".ly-row").forEach(x=>x.classList.remove("dragging","drop-a","drop-b")); };
+  }
+  else if (tab==="diag"){
+    B.innerHTML = `<div class="field"><label>How MW is doing</label>
+        <div class="kvs">
+          <span>Widget version</span><b>${APP_VERSION}</b>
+          ${NATIVE?`<span>Desktop app</span><b id="dApp">…</b>`:""}
+          <span>Errors this session</span><b style="color:${errCount?"var(--warn)":"inherit"}">${errCount}</b>
+          <span>Last price update</span><b>${lastUpdate ? dateTime(lastUpdate) : "—"}</b>
+          <span>Data</span><b>${esc(health.err || (health.total ? health.ok + " of " + health.total + " prices" : "—"))}</b>
+        </div></div>
+      <div class="field"><label>Log</label><p>What MW did and any errors, newest at the bottom. It never contains your API keys. If something goes wrong, click Copy and paste it to me.</p>
+        <textarea class="code" id="dLog" readonly spellcheck="false" style="height:220px">${esc(logBuf.join("\n"))}</textarea></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="dCopy">Copy diagnostics</button>${NATIVE?`<button class="btn" id="dFolder">Open log folder</button>`:""}<button class="btn" id="dClear">Clear page log</button></div>
+      <div class="field" style="margin-top:18px"><label for="dSentry">Sentry crash reports (optional)</label>
+        <p>Sentry is a free service that collects crash reports from your PC so problems can be fixed even when you don't notice them. Make a free account at sentry.io, create a "Browser JavaScript" project, and paste its DSN here. Reports include the error and app version only: no keys, holdings or prices.</p>
+        <div style="display:flex;gap:6px"><input id="dSentry" type="text" value="${esc(settings.sentryDsn||"")}" placeholder="https://…@o123.ingest.sentry.io/456" spellcheck="false" style="flex:1"><button class="btn" id="dSentrySave">Save</button></div>
+        <p id="dSentryState" class="note">${window.Sentry ? "Connected: crash reports are on." : settings.sentryDsn ? "Saved. It connects the next time MW loads." : "Off."}</p></div>`;
+    const shellLog = ()=> NATIVE ? nat.invoke("shell_logs").catch(()=> "") : Promise.resolve("");
+    if (NATIVE){ nat.invoke("shell_state").then(st => { const el = $("dApp"); if (el) el.textContent = st.version; }).catch(()=>{});
+      shellLog().then(t => { const el = $("dLog"); if (el && t){ el.value = "— desktop app log —\n" + t.split("\n").slice(-120).join("\n") + "\n\n— page log —\n" + logBuf.join("\n"); el.scrollTop = el.scrollHeight; } }); }
+    setTimeout(()=>{ const el = $("dLog"); if (el) el.scrollTop = el.scrollHeight; }, 0);
+    $("dCopy").onclick = async ()=>{ const head = `MW ${APP_VERSION}${NATIVE && nat.state ? " / app " + nat.state.version : ""} · ${navigator.userAgent.match(/Edg\/[\d.]+|Chrome\/[\d.]+/)?.[0] || ""} · errors ${errCount}\n`;
+      const txt = scrubKeys(head + $("dLog").value); try{ await navigator.clipboard.writeText(txt); }catch(e){ $("dLog").select(); document.execCommand("copy"); } toast("Copied. Paste it into the chat"); };
+    if ($("dFolder")) $("dFolder").onclick = ()=> nat.invoke("shell_open_logs").catch(e => toast(String(e)));
+    $("dClear").onclick = ()=>{ logBuf = []; try{ localStorage.removeItem("mw_diag"); }catch(e){} showTab("diag"); };
+    $("dSentrySave").onclick = ()=>{ const v = $("dSentry").value.trim();
+      if (v && !/^https:\/\/[^@\s]+@[^\s\/]+\/\d+$/.test(v)){ $("dSentryState").textContent = "That doesn't look like a Sentry DSN (it starts with https:// and ends with a number)."; return; }
+      settings.sentryDsn = v; saveSettings(); initSentry(); $("dSentryState").textContent = v ? "Saved. Connecting…" : "Off."; mwLog("info", "Sentry " + (v ? "turned on" : "turned off")); };
+  }
   else if (tab==="backup"){
     B.innerHTML = `
       <div class="field"><label>Back up or move your setup</label><p>Holdings, funds and cash, watchlist and alert rules. Keep this private: it's your portfolio.</p>
@@ -1772,13 +1924,13 @@ function showTab(tab){
       <div style="display:flex;gap:8px;margin:8px 0 18px;flex-wrap:wrap"><button class="btn" id="bCopy">Copy</button><button class="btn" id="bDl">Download file</button></div>
       <div class="field"><label>Restore</label><p>Paste a backup above, then click Restore. This replaces your current list.</p></div>
       <button class="btn primary" id="bRestore">Restore from the box above</button><div class="err" id="bErr"></div>`;
-    $("bKeys").onchange = e=>{ const c = JSON.parse(JSON.stringify(cfg)); if (e.target.checked){ c._keys = {key:settings.key, tdKey:settings.tdKey}; c._settings = {ntfy:settings.ntfy, sound:settings.sound, refresh:settings.refresh, bench:settings.bench, theme:settings.theme, heatOrder:settings.heatOrder}; } $("bTxt").value = JSON.stringify(c); };
+    $("bKeys").onchange = e=>{ const c = JSON.parse(JSON.stringify(cfg)); if (e.target.checked){ c._keys = {key:settings.key, tdKey:settings.tdKey}; c._settings = {ntfy:settings.ntfy, sound:settings.sound, refresh:settings.refresh, bench:settings.bench, theme:settings.theme, heatOrder:settings.heatOrder, layout:settings.layout, hideSec:settings.hideSec, sentryDsn:settings.sentryDsn}; } $("bTxt").value = JSON.stringify(c); };
     $("bCopy").onclick = async ()=>{ try{ await navigator.clipboard.writeText($("bTxt").value); toast("Copied"); }catch(e){ $("bTxt").select(); document.execCommand("copy"); toast("Copied"); } };
     $("bDl").onclick = ()=>{ const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([$("bTxt").value], {type:"application/json"})); a.download = "market-widget-backup.json"; a.click(); };
     $("bRestore").onclick = ()=>{
       try{ const c = JSON.parse($("bTxt").value); if (!Array.isArray(c.holdings) || !Array.isArray(c.watch)) throw new Error("this doesn't look like a widget backup");
         if (c._keys){ if (c._keys.key) settings.key = String(c._keys.key); if (c._keys.tdKey) settings.tdKey = String(c._keys.tdKey); delete c._keys; hist = {}; loadHist.day = null; }
-        if (c._settings && typeof c._settings === "object"){ ["ntfy","sound","refresh","bench","theme","heatOrder"].forEach(k => { if (c._settings[k] != null) settings[k] = c._settings[k]; }); document.documentElement.dataset.theme = settings.theme; delete c._settings; }
+        if (c._settings && typeof c._settings === "object"){ ["ntfy","sound","refresh","bench","theme","heatOrder","layout","hideSec","sentryDsn"].forEach(k => { if (c._settings[k] != null) settings[k] = c._settings[k]; }); document.documentElement.dataset.theme = settings.theme; delete c._settings; }
         saveSettings();
         cfg = normCfg(c); store.set("cfg", cfg); toast("Restored"); closeSheet(); schedule(true);
       }catch(e){ $("bErr").textContent = "Couldn't restore: " + e.message; }
@@ -1791,7 +1943,7 @@ let timer = null;
 function schedule(now){
   clearTimeout(timer);
   const next = ()=>{ const ms = refreshMs(); if (ms) timer = setTimeout(run, ms); };
-  const run = async ()=>{ try{ await tick(); }catch(e){ mwLog("error", "refresh: " + (e && e.message || e)); } finally{ next(); } };
+  const run = async ()=>{ try{ await tick(); }catch(e){ report(e); mwLog("error", "refresh: " + (e && e.message || e)); } finally{ next(); } };
   if (now) run(); else next();
 }
 document.addEventListener("visibilitychange", ()=>{ if (!document.hidden && refreshMs() && lastUpdate && Date.now()-lastUpdate > refreshMs()) schedule(true); });
@@ -1848,6 +2000,7 @@ if (NATIVE){
 setInterval(()=>{ renderFrame(); updateTray(); }, 30e3);   // keeps the status light and "x min ago" honest between refreshes
 
 mwLog("info", "MW " + APP_VERSION + " started" + (NATIVE ? " in the desktop app" : " in the browser"));
+safe("sentry", initSentry);
 renderAll(); safe("badge", updateBadge);
 schedule(true);
 </script>
