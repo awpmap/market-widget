@@ -1,6 +1,6 @@
 "use strict";
 /* =====================================================================
-   MW Lab: a test copy of Market Widget with the review board's recommendations built in.
+   MW Beta: the beta version of Market Widget with the review board's recommendations built in.
    It keeps its own storage (keys start "mwlab_"), never writes to the live MW's storage, and only
    reads it when you click "Copy my setup from MW".
    Public build: NO personal data lives in this file.
@@ -9,7 +9,7 @@
    ===================================================================== */
 const E = window.MWE;
 const APP_VERSION = E.VERSION;
-const APP_NAME = "MW Lab";
+const APP_NAME = "MW Beta";
 const DEFAULT_CFG = { holdings: [], fixed: [], watch: [
   {sym:"QQQ", note:"Market check: big red day", dayDrop:2, offHigh:10, levels:[], near:0}
 ]};
@@ -66,6 +66,10 @@ const store = {
 };
 /* the live MW's storage, read-only: used once, when you copy your setup into the lab */
 const liveStore = { get(k){ try{ const v = localStorage.getItem("mw_"+k); return v!=null ? JSON.parse(v) : null; }catch(e){ return null; } } };
+/* beta channel: the regular MW opens this page when mw_channel is "beta". These are the only regular-MW keys the
+   beta ever writes: mw_channel (your choice) and mw_betaOk (the beta started fine, so MW doesn't fall back). */
+const raw = { get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }, set(k, v){ try{ localStorage.setItem(k, v); }catch(e){} } };
+const onBeta = () => raw.get("mw_channel") === "beta";
 /* ---------- diagnostics log: kept on this PC (last 300 lines) and, in the desktop app, in its log file ----------
    Never logs keys: URLs are scrubbed of token=/apikey= values before they are stored. */
 const scrubKeys = t => String(t).replace(/(token|apikey|apiKey|key)=[^&\s"')]*/g, "$1=***").replace(/#setup=\S*/g, "#setup=***");
@@ -157,6 +161,7 @@ const report = e => { try{ if (window.Sentry && e) window.Sentry.captureExceptio
 function safe(name, fn){ try{ return fn(); }catch(e){ errCount++; report(e); mwLog("error", name + ": " + (e && e.message || e) + (e && e.stack ? " | " + String(e.stack).split("\n").slice(1,2).join(" ").trim() : "")); } }
 
 const normCfg = c => E.migrate(c);
+const firstRun = store.get("cfg", null) == null;   // nothing saved yet in the beta
 let cfg = normCfg(store.get("cfg", null) || DEFAULT_CFG);
 /* config history (R16): every saved version of your setup (edits of the same kind within 10 minutes share one
    entry), plus a copy taken just before anything replaces it (a restore, a setup link, copying from MW).
@@ -181,7 +186,7 @@ function saveCfg(why){ cfg.v = E.CFG_V; store.set("cfg", cfg); snapCfg(why || "e
       const c = JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g,"+").replace(/_/g,"/")))));
       if (E.validCfg(c)){
         const nc = normCfg(c), empty = !cfg.holdings.length && cfg.watch.length <= 1;
-        if (empty || confirm("This setup link will replace your MW Lab setup:\n" + E.cfgDiff(cfg, nc) + "\n\nYour current setup is kept in Settings → Backup → History. Continue?")){
+        if (empty || confirm("This setup link will replace your MW Beta setup:\n" + E.cfgDiff(cfg, nc) + "\n\nYour current setup is kept in Settings → Backup → History. Continue?")){
           snapCfg("before a setup link", true); cfg = nc; saveCfg("setup link"); setTimeout(()=>{ try{ mwLog("info", "setup link applied"); }catch(e){} }, 0);
         }
       }
@@ -321,7 +326,7 @@ function heldChip(sym){
   const p = pendingPx[sym], prev = quotes[sym];
   if (!p || !prev || !(prev.c > 0)) return "";
   const ch = (p/prev.c - 1)*100;
-  return `<span class="chip" style="color:var(--warn);border-color:var(--warn)" title="A ${fmtPct(ch,0)} move came in. MW Lab holds it for one refresh to rule out a bad print, then shows it if the next price agrees.">${fmtPct(ch,0)}? confirming…</span>`;
+  return `<span class="chip" style="color:var(--warn);border-color:var(--warn)" title="A ${fmtPct(ch,0)} move came in. MW Beta holds it for one refresh to rule out a bad print, then shows it if the next price agrees.">${fmtPct(ch,0)}? confirming…</span>`;
 }
 /* timestamped prices for today (for the "fast drop" rule); kept for the day */
 let ticks = store.get("ticks", {});
@@ -652,18 +657,18 @@ function blindWhy(cov, verdicts){
   return Object.entries(reasons).map(([w, ss]) => `${ss.join(", ")}: ${w}`).join("; ");
 }
 function loudHealth(blind, cov, verdicts){
-  const msg = blind ? `MW Lab is NOT watching: only ${cov.ok} of ${cov.total} watchlist tickers have a fresh price. Dip alerts can't fire until prices come back.`
-                    : `MW Lab is watching again: ${cov.ok} of ${cov.total} watchlist tickers have fresh prices.`;
+  const msg = blind ? `MW Beta is NOT watching: only ${cov.ok} of ${cov.total} watchlist tickers have a fresh price. Dip alerts can't fire until prices come back.`
+                    : `MW Beta is watching again: ${cov.ok} of ${cov.total} watchlist tickers have fresh prices.`;
   mwLog(blind ? "warn" : "info", msg + (blind ? " (" + blindWhy(cov, verdicts) + ")" : ""));
-  showToast(blind ? "MW Lab can't see prices" : "MW Lab is watching again", msg, "health@" + Date.now(), blind);
+  showToast(blind ? "MW Beta can't see prices" : "MW Beta is watching again", msg, "health@" + Date.now(), blind);
   if (blind && settings.sound === "on") beep(2);
-  if (settings.ntfy) sendNtfy(blind ? "MW Lab can't see prices. Alerts are off until data returns." : "MW Lab is watching again.", blind ? "MW Lab problem" : "MW Lab OK", blind ? "high" : "default");
+  if (settings.ntfy) sendNtfy(blind ? "MW Beta can't see prices. Alerts are off until data returns." : "MW Beta is watching again.", blind ? "MW Beta problem" : "MW Beta OK", blind ? "high" : "default");
 }
 function renderBlind(ses = session()){
   const el = $("blind"); if (!el) return;
   let html = "";
-  if (ses.s === "unknown") html = `<b>Alerts are off: MW Lab's market calendar ends ${E.CAL_VALID_TO}.</b>MW Lab won't guess whether the market is open on dates it hasn't been told about. Update to a newer version to turn alerts back on.`;
-  else if (watchSt && watchSt.state === "blind" && health.cov) html = `<b>MW Lab is NOT watching since ${esc(timeTz(watchSt.since))}</b>Only ${health.cov.ok} of ${health.cov.total} watchlist tickers have a fresh price, so a dip would go unnoticed. ${esc(blindWhy(health.cov, health.verdicts || {}))}.`;
+  if (ses.s === "unknown") html = `<b>Alerts are off: MW Beta's market calendar ends ${E.CAL_VALID_TO}.</b>MW Beta won't guess whether the market is open on dates it hasn't been told about. Update to a newer version to turn alerts back on.`;
+  else if (watchSt && watchSt.state === "blind" && health.cov) html = `<b>MW Beta is NOT watching since ${esc(timeTz(watchSt.since))}</b>Only ${health.cov.ok} of ${health.cov.total} watchlist tickers have a fresh price, so a dip would go unnoticed. ${esc(blindWhy(health.cov, health.verdicts || {}))}.`;
   el.innerHTML = html; el.classList.toggle("show", !!html);
 }
 let hcLast = 0;
@@ -766,14 +771,14 @@ function notify(list){
   if (hasLevel || isTest || now - lastToast > QUIET_MS){
     // newest (and most important) line leads; anything held earlier rides along as "+N more"
     const lines = [...body, ...takeHeld().map(h => h.msg)]; lastToast = now;
-    showToast("Market alert", lines[0] + (lines.length > 1 ? `\n+${lines.length-1} more in MW Lab` : ""), (main.id||"x") + "@" + bannerDay, true);
+    showToast("Market alert", lines[0] + (lines.length > 1 ? `\n+${lines.length-1} more in MW Beta` : ""), (main.id||"x") + "@" + bannerDay, true);
   } else { heldToasts.push(...urgent.map(a => ({sym:a.sym, msg:a.msg}))); setTimeout(flushToasts, QUIET_MS - (now - lastToast) + 500); }
   // phone: by default only "MW has a new alert" goes to the public ntfy server; tickers and prices stay on this PC (R8)
-  if (settings.ntfy) sendNtfy(E.ntfyBody(isTest ? [{msg:main.msg}] : urgent, settings.ntfyFull, APP_NAME), isTest ? "MW Lab test" : "MW Lab alert", "high");
+  if (settings.ntfy) sendNtfy(E.ntfyBody(isTest ? [{msg:main.msg}] : urgent, settings.ntfyFull, APP_NAME), isTest ? "MW Beta test" : "MW Beta alert", "high");
 }
 function sendNtfy(body, title, prio){
   if (!settings.ntfy) return;
-  fetchT("https://ntfy.sh/" + encodeURIComponent(settings.ntfy), {method:"POST", body, headers:{"Title":title || "MW Lab alert", "Priority":prio || "high", "Tags":"chart_with_downwards_trend"}})
+  fetchT("https://ntfy.sh/" + encodeURIComponent(settings.ntfy), {method:"POST", body, headers:{"Title":title || "MW Beta alert", "Priority":prio || "high", "Tags":"chart_with_downwards_trend"}})
     .then(r => { if (!r.ok) mwLog("warn", "phone alert failed: ntfy answered " + r.status); }).catch(e => mwLog("warn", "phone alert failed: " + e.message));
 }
 // held lines skip tickers you have since snoozed or muted, and everything while alerts are paused
@@ -781,7 +786,7 @@ function takeHeld(){ const h = heldToasts.splice(0); return pausedNow() ? [] : h
 function flushToasts(){
   if (!heldToasts.length || Date.now() - lastToast < QUIET_MS) return;
   const lines = takeHeld().map(h => h.msg); if (!lines.length) return; lastToast = Date.now();
-  showToast("Market alert", lines[0] + (lines.length > 1 ? `\n+${lines.length-1} more in MW Lab` : ""), "held@" + lastToast, true);
+  showToast("Market alert", lines[0] + (lines.length > 1 ? `\n+${lines.length-1} more in MW Beta` : ""), "held@" + lastToast, true);
 }
 function minsToMidnightET(){ return 1440 - etNow().mins; }
 function snooze(syms, how){
@@ -979,19 +984,26 @@ function liveSetup(){
   const c = liveStore.get("cfg"), s = liveStore.get("settings");
   return c && E.validCfg(c) ? {cfg:c, settings:s || {}} : null;
 }
-function importFromLive(){
+function importFromLive(silent){
   const L = liveSetup();
-  if (!L){ toast("No MW setup found in this browser"); return false; }
+  if (!L){ if (!silent) toast("No MW setup found in this browser"); return false; }
   const nc = normCfg(L.cfg);
-  if (!confirm("Copy your MW setup into MW Lab?\n" + E.cfgDiff(cfg, nc) + "\nIncludes your data keys and settings. Your live MW is not changed.")) return false;
+  if (!silent && !confirm("Copy your MW setup into MW Beta?\n" + E.cfgDiff(cfg, nc) + "\nIncludes your data keys and settings. Your live MW is not changed.")) return false;
   snapCfg("before copying from MW", true);
   cfg = nc; saveCfg("copied from MW");
   ["key","tdKey","ntfy","sound","theme","refresh","bench","heatOrder","layout","hideSec","tz","period","sort","sentryDsn","splash","collapsed","grpCollapsed"].forEach(k => { if (L.settings[k] != null) settings[k] = L.settings[k]; });
   saveSettings(); document.documentElement.dataset.theme = settings.theme;
   hist = {}; store.set("hist", hist); loadHist.day = null;
   mwLog("info", "copied the setup from MW (" + cfg.holdings.length + " holdings, " + cfg.watch.length + " watchlist)");
-  toast("Copied from MW"); return true;
+  if (!silent) toast("Copied from MW"); return true;
 }
+/* in the separate MW Lab desktop app (Ctrl+Alt+L) there is no regular MW to go back to */
+const labShell = () => !!(nat.state && nat.state.hotkey_label === "Ctrl+Alt+L");
+function leaveBeta(){
+  if (!confirm("Switch back to the regular MW?\n\nYour regular setup is just as you left it. Changes you made in the beta stay in the beta, and come back if you join again.")) return;
+  raw.set("mw_channel", "stable"); mwLog("info", "left the beta"); location.replace("../");
+}
+function joinBetaHere(){ raw.set("mw_channel", "beta"); raw.set("mw_betaOk", String(Date.now())); toast("MW now opens the beta"); showTab("general"); }
 
 /* ---------- portfolio ---------- */
 // "today" only once today's session has started; before the open, on weekends and holidays the change is the last session's
@@ -1351,7 +1363,7 @@ function renderPill(ses = session(), ds = dataState()){
   const mc = marketClock(), ageMin = lastUpdate ? Math.round((Date.now()-lastUpdate)/60000) : 0;
   $("mkt").className = "pill " + (ses.s==="open"?"open":ses.s==="ext"?"ext":"") + (ds.k!=="ok" ? " " + ds.k : "") + (mc.ph==="open" && mc.until - Date.now() <= 15*60e3 ? " closing" : "");
   $("mkt").lastElementChild.textContent = ds.k==="stale" && ses.s==="open" && ageMin >= 2 ? `${ageMin}m old` : ds.k==="bad" ? "No data" : clockText(mc, Date.now(), $("titlebar").clientWidth < (document.body.classList.contains("native") ? 440 : 340));
-  $("mkt").title = (ds.why ? ds.why + ". " : "") + (mc.ph === "unknown" ? "MW Lab's market calendar has run out." : clockSentence(mc)) + (ses.s==="open" ? ` Prices refresh about every ${Math.round((refreshMs()||60e3)/1000)} s from Finnhub's free feed.` : " Showing the last close: the free price feeds only cover regular hours.") + " Click for details.";
+  $("mkt").title = (ds.why ? ds.why + ". " : "") + (mc.ph === "unknown" ? "MW Beta's market calendar has run out." : clockSentence(mc)) + (ses.s==="open" ? ` Prices refresh about every ${Math.round((refreshMs()||60e3)/1000)} s from Finnhub's free feed.` : " Showing the last close: the free price feeds only cover regular hours.") + " Click for details.";
 }
 function renderFrame(){
   const ses = session(), ds = dataState();
@@ -1377,7 +1389,7 @@ function renderAll(){
   document.querySelectorAll(".sec").forEach(s => s.classList.toggle("collapsed", !!settings.collapsed[s.dataset.sec]));
   safe("portfolio", renderPortfolio); safe("markets", renderMarkets); safe("watchlist", renderWatch); safe("alert log", renderLog); safe("status", renderFrame);
   safe("title", ()=>{ const P = portfolioCalc();
-    document.title = (settings.compact && Object.keys(quotes).length && cfg.holdings.length) ? `${fmt$(P.total,0)} ${fmtPct(P.dayPct)} · MW Lab` : "MW Lab"; });
+    document.title = (settings.compact && Object.keys(quotes).length && cfg.holdings.length) ? `${fmt$(P.total,0)} ${fmtPct(P.dayPct)} · MW Beta` : "MW Beta"; });
   safe("tray", updateTray);
 }
 function renderStatus(){
@@ -1438,7 +1450,7 @@ document.addEventListener("visibilitychange", ()=>{ document.hidden ? snapLook()
 let trayLast = "";
 function updateTray(){
   if (!NATIVE) return;
-  const P = portfolioCalc(), parts = ["MW Lab · " + (m => m.ph === "unknown" ? "calendar expired" : m.ph === "open" ? "closes in " + fmtLeft(m.until - Date.now()) : "opens " + (m.until - Date.now() < 24*3600e3 ? "in " + fmtLeft(m.until - Date.now()) : whenStr(m.until)))(marketClock())];
+  const P = portfolioCalc(), parts = ["MW Beta · " + (m => m.ph === "unknown" ? "calendar expired" : m.ph === "open" ? "closes in " + fmtLeft(m.until - Date.now()) : "opens " + (m.until - Date.now() < 24*3600e3 ? "in " + fmtLeft(m.until - Date.now()) : whenStr(m.until)))(marketClock())];
   if (cfg.holdings.length && Object.keys(quotes).length) parts.push(`${fmt$(P.total,0)} ${fmtPct(P.dayPct)}`);
   const b = quotes[settings.bench]; if (b) parts.push(`${settings.bench} ${fmtPct(b.dp,1)}`);
   const near = cfg.watch.map(watchInfo).filter(I => I.px && (I.hitL.length || I.dist!=null)).sort((a,b)=>(a.hitL.length?-1e9:a.dist)-(b.hitL.length?-1e9:b.dist))[0];
@@ -1586,7 +1598,7 @@ function showTab(tab){
   const B = $("shBody");
   B.onclick = B.oninput = B.onchange = null;   // each tab sets its own handlers
   if (tab==="general"){
-    B.innerHTML = `
+    B.innerHTML = `${labShell() ? "" : `<div class="callout" style="margin-bottom:14px"><b>${onBeta() ? "You're using MW Beta" : "This is MW Beta"}</b>${onBeta() ? "MW opens this beta version until you switch back. Your regular setup is kept as you left it." : "You opened the beta directly. Make it the version MW opens?"}<div style="margin-top:8px"><button class="btn" id="sChannel">${onBeta() ? "Switch back to regular MW" : "Use the beta by default"}</button></div></div>`}
       <div class="field"><label for="sKey">Finnhub API key</label><input id="sKey" type="password" value="${esc(settings.key)}" placeholder="Paste your free key" autocomplete="off" spellcheck="false">
         <p>Free at finnhub.io. A market-data key only, not a brokerage login. Stored on this PC.</p></div>
       <div class="field"><label for="sTd">Twelve Data key (optional, for mutual funds)</label><input id="sTd" type="password" value="${esc(settings.tdKey)}" placeholder="Paste a free Twelve Data key" autocomplete="off" spellcheck="false">
@@ -1608,19 +1620,20 @@ function showTab(tab){
           <span>Keep on top of other windows (T)</span><label class="sw"><input type="checkbox" data-shell="on_top"><span></span></label>
           <span>Show / hide from anywhere: Ctrl+Alt+L</span><label class="sw"><input type="checkbox" data-shell="hotkey"><span></span></label>
           <span>Opening animation when MW starts</span><label class="sw"><input type="checkbox" id="sSplash" ${settings.splash!==false?"checked":""}><span></span></label>
-        </div></div><p>Closing the window (X or Esc) keeps MW Lab running in the tray so alerts still pop up. Quit from the tray icon's menu. <span id="appVer"></span></p></div>` : ""}
+        </div></div><p>Closing the window (X or Esc) keeps MW Beta running in the tray so alerts still pop up. Quit from the tray icon's menu. <span id="appVer"></span></p></div>` : ""}
       <div class="field"><label for="sNtfy">Phone alerts (optional)</label><input id="sNtfy" type="text" value="${esc(settings.ntfy)}" placeholder="ntfy topic, e.g. mk-dips-8x2q (hard to guess)">
-        <p>Install the free ntfy app and subscribe to the same name to get alerts on your phone. ntfy.sh topics are public: anyone who guesses the name can read them, so by default the phone only gets "MW Lab has a new alert", never tickers, prices or levels.</p>
+        <p>Install the free ntfy app and subscribe to the same name to get alerts on your phone. ntfy.sh topics are public: anyone who guesses the name can read them, so by default the phone only gets "MW Beta has a new alert", never tickers, prices or levels.</p>
         <label style="display:flex;gap:7px;align-items:center;font-weight:400;margin-top:4px"><input type="checkbox" id="sNtfyFull" ${settings.ntfyFull?"checked":""}> Send the full alert text to my phone (tickers and prices)</label></div>
       <div class="field"><label for="sHc">Outside check (optional): Healthchecks.io ping URL</label><input id="sHc" type="text" value="${esc(settings.hcUrl||"")}" placeholder="https://hc-ping.com/your-check-id" spellcheck="false">
-        <p>So you hear about it when MW Lab can't watch, even if this PC is off. Free at healthchecks.io: add a check with the schedule <code>*/10 10-15 * * 1-5</code>, time zone America/New_York, grace time 20 minutes, then paste its ping URL here. While the market is open MW Lab pings it about every 5 minutes; if the pings stop (or MW Lab reports it can't see prices), Healthchecks emails you. Expect one email on market holidays and 1 pm early closes.</p></div>
+        <p>So you hear about it when MW Beta can't watch, even if this PC is off. Free at healthchecks.io: add a check with the schedule <code>*/10 10-15 * * 1-5</code>, time zone America/New_York, grace time 20 minutes, then paste its ping URL here. While the market is open MW Beta pings it about every 5 minutes; if the pings stop (or MW Beta reports it can't see prices), Healthchecks emails you. Expect one email on market holidays and 1 pm early closes.</p></div>
       <div class="field"><label style="display:flex;gap:7px;align-items:center;font-weight:400"><input type="checkbox" id="sOvernight" ${settings.overnight?"checked":""}> Show Nasdaq's overnight session in the clock (from Dec 6, 2026; subject to SEC approval)</label>
         <p>Clock text only: the free price feeds carry no overnight prices, and alerts only run in regular hours.</p></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="sSave">Save</button><button class="btn" id="sTest">Send a test alert</button><button class="btn" id="sKeys">Test my keys</button></div>
       <div id="keyRes" class="note" style="white-space:pre-line"></div>
       <p class="note">Data use: Finnhub allows 60 calls a minute with no daily cap. Twelve Data allows 800 credits a day, shared out between history, VWAP, backups, fund prices and checks so no one feature can use it all; ${tdBudget().n} used today. Click the status pill for the breakdown.</p>
-      ${liveSetup() ? `<div class="callout" style="margin-top:12px"><b>Copy your setup from MW</b>MW Lab keeps its own settings. This copies your holdings, watchlist, keys and preferences from the MW in this browser. MW itself is not changed.<div style="margin-top:8px"><button class="btn" id="sImport">Copy from MW</button></div></div>` : ""}
+      ${liveSetup() ? `<div class="callout" style="margin-top:12px"><b>Copy your setup from MW</b>MW Beta keeps its own settings. This copies your holdings, watchlist, keys and preferences from the MW in this browser. MW itself is not changed.<div style="margin-top:8px"><button class="btn" id="sImport">Copy from MW</button></div></div>` : ""}
       <p class="note" style="margin-top:14px">Shortcuts: R refresh · C compact · A mark alerts seen · P pause alerts · / add a ticker · 1–4 jump to a section · , settings · Esc close${NATIVE?" or hide to tray · T keep on top":""}. ${esc(verLine())}.</p>`;
+    if ($("sChannel")) $("sChannel").onclick = ()=> onBeta() ? leaveBeta() : joinBetaHere();
     if ($("sImport")) $("sImport").onclick = ()=>{ if (importFromLive()){ closeSheet(); renderAll(); schedule(true); } };
     $("sTheme").value = settings.theme; $("sTz").value = TZ_CHOICES.some(c => c[0] === settings.tz) ? settings.tz : "auto"; $("sRefresh").value = String(settings.refresh); $("sSound").value = settings.sound;
     if (NATIVE){
@@ -1757,7 +1770,7 @@ function showTab(tab){
     $("aAdd").onclick = add; $("aSym").onkeydown = e=>{ if (e.key==="Enter") add(); };
   }
   else if (tab==="journal"){
-    B.innerHTML = `<div class="field"><label>Scorecard: how each alert rule has done</label><p>Every alert MW Lab fires is kept on this PC with the price at that moment. After each close, the 1-, 5- and 20-day results are filled in from daily closes. A rule needs about 20 to 60 alerts before its numbers mean much; until then, read them as anecdotes.</p></div>
+    B.innerHTML = `<div class="field"><label>Scorecard: how each alert rule has done</label><p>Every alert MW Beta fires is kept on this PC with the price at that moment. After each close, the 1-, 5- and 20-day results are filled in from daily closes. A rule needs about 20 to 60 alerts before its numbers mean much; until then, read them as anecdotes.</p></div>
       <div id="jScore" class="muted" style="font-size:12px">Loading…</div>
       <div class="field" style="margin-top:12px"><label>Recent alerts</label><p>Mark what you did, so the scorecard can compare the alerts you acted on with the ones you skipped.</p></div>
       <div id="jList"></div>
@@ -1767,7 +1780,7 @@ function showTab(tab){
       recs = (recs || []).sort((a, b) => b.t - a.t);
       const rows = E.scorecard(recs);
       const f = v => v == null ? "—" : fmtPct(v, 1);
-      $("jScore").innerHTML = rows.length ? `<table class="sc"><thead><tr><th>Rule</th><th title="Alerts so far">Alerts</th><th title="Average result 5 trading days later">5 days</th><th title="Average result 20 trading days later">20 days</th><th title="Share of alerts that were higher 20 days later">Up after 20d</th><th title="Average worst close within 20 days (how far it kept falling first)">Worst dip</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.name)}${r.bought || r.skipped ? `<br><span class="muted" style="font-size:10px">bought ${r.bought} · skipped ${r.skipped}</span>` : ""}</td><td>${r.n}</td><td class="${cls(r.r5)}">${f(r.r5)}</td><td class="${cls(r.r20)}">${f(r.r20)}</td><td>${r.hit20 == null ? "—" : r.hit20.toFixed(0) + "% <span class='muted'>of " + r.n20 + "</span>"}</td><td class="${r.mae != null ? "down" : ""}">${f(r.mae)}</td></tr>`).join("")}</tbody></table>` : `<div class="note" style="margin:0">No alerts recorded yet. They'll appear here as MW Lab fires them.</div>`;
+      $("jScore").innerHTML = rows.length ? `<table class="sc"><thead><tr><th>Rule</th><th title="Alerts so far">Alerts</th><th title="Average result 5 trading days later">5 days</th><th title="Average result 20 trading days later">20 days</th><th title="Share of alerts that were higher 20 days later">Up after 20d</th><th title="Average worst close within 20 days (how far it kept falling first)">Worst dip</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.name)}${r.bought || r.skipped ? `<br><span class="muted" style="font-size:10px">bought ${r.bought} · skipped ${r.skipped}</span>` : ""}</td><td>${r.n}</td><td class="${cls(r.r5)}">${f(r.r5)}</td><td class="${cls(r.r20)}">${f(r.r20)}</td><td>${r.hit20 == null ? "—" : r.hit20.toFixed(0) + "% <span class='muted'>of " + r.n20 + "</span>"}</td><td class="${r.mae != null ? "down" : ""}">${f(r.mae)}</td></tr>`).join("")}</tbody></table>` : `<div class="note" style="margin:0">No alerts recorded yet. They'll appear here as MW Beta fires them.</div>`;
       $("jList").innerHTML = recs.slice(0, 40).map(r => { const o = r.outcomes || {};
         return `<div class="jrow" data-jid="${esc(r.id)}"><time>${esc(r.day.slice(5))}<br>${timeStr(r.t)}</time><span><b>${esc(r.sym)}</b> ${esc((E.RULE[r.kind] || {}).name || r.kind)} at ${fmt$(r.px)}${r.quiet ? ` <span class="muted" title="Logged quietly (bundled with an earlier alert)">quiet</span>` : ""}</span>
           <span class="acts"><button data-ja="bought" class="${r.action==="bought"?"on":""}">Bought</button><button data-ja="skipped" class="${r.action==="skipped"?"on":""}">Skipped</button></span>
@@ -1785,7 +1798,7 @@ function showTab(tab){
   else if (tab==="lab"){
     const syms = [...new Set(cfg.watch.map(w => (w.sym||"").toUpperCase()).filter(Boolean))];
     const pick = curLab && syms.includes(curLab) ? curLab : syms[0];
-    B.innerHTML = `<div class="field"><label>Rule lab: would these rules have helped?</label><p>Replays your daily rules for one ticker over the price history MW Lab already downloads (up to about 5 years), as if you had bought each time a rule fired. Each result is compared with buying at every close, and with simply buying on the first trading day of each month.</p></div>
+    B.innerHTML = `<div class="field"><label>Rule lab: would these rules have helped?</label><p>Replays your daily rules for one ticker over the price history MW Beta already downloads (up to about 5 years), as if you had bought each time a rule fired. Each result is compared with buying at every close, and with simply buying on the first trading day of each month.</p></div>
       ${syms.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${syms.map(s => `<button class="btn ${s===pick?"primary":""}" data-lab="${esc(s)}">${esc(s)}</button>`).join("")}</div>` : `<div class="note">Add tickers to your watchlist first.</div>`}
       <div id="labOut" class="muted" style="font-size:12px"></div>
       <p class="note">Fast drops, today's-high drops in the first minutes, and VWAP reclaims need intraday prices, so they can't be replayed here; the Scorecard measures them live. <button class="lnk" data-methods="1">How every number is made</button>. Past results include one long bull market for chips and don't predict the next alert. Price returns only.</p>`;
@@ -1816,7 +1829,7 @@ function showTab(tab){
     const own = [...new Set(cfg.holdings.map(h => (h.sym||"").toUpperCase()).filter(Boolean))];
     const etf = cfg.etf || (cfg.etf = {});
     const pickF = curFund && own.includes(curFund) ? curFund : own.find(s => etf[s]) || own[0];
-    B.innerHTML = `<div class="field"><label>Fund overlap: what's inside your ETFs</label><p>A fund like a chip ETF can hold the same companies you also own directly, so your real exposure to them is bigger than it looks. Paste a fund's holdings (from the fund's own website, "Holdings", copy or download the list) and MW Lab adds it all up. Only ticker and weight are read; it stays on this PC.</p></div>
+    B.innerHTML = `<div class="field"><label>Fund overlap: what's inside your ETFs</label><p>A fund like a chip ETF can hold the same companies you also own directly, so your real exposure to them is bigger than it looks. Paste a fund's holdings (from the fund's own website, "Holdings", copy or download the list) and MW Beta adds it all up. Only ticker and weight are read; it stays on this PC.</p></div>
       ${own.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${own.map(s => `<button class="btn ${s===pickF?"primary":""}" data-fund="${esc(s)}">${esc(s)}${etf[s] && etf[s].list && etf[s].list.length ? " ✓" : ""}</button>`).join("")}</div>` : `<div class="note">Add holdings first.</div>`}
       ${pickF ? `<div class="field"><label for="fPaste">Holdings of ${esc(pickF)} (ticker and weight %, one per line)</label><textarea class="code" id="fPaste" spellcheck="false" style="height:130px" placeholder="AAA, 20.5%&#10;BBB, 10.2%&#10;…">${esc(etf[pickF] && etf[pickF].list ? etf[pickF].list.map(x => x.sym + ", " + x.w + "%").join("\n") : "")}</textarea>
         <div id="fPrev" class="note"></div>
@@ -1880,7 +1893,7 @@ function showTab(tab){
           <span>Last price update</span><b>${lastUpdate ? dateTime(lastUpdate) : "—"}</b>
           <span>Data</span><b>${esc(health.err || (health.total ? health.ok + " of " + health.total + " prices" : "—"))}</b>
         </div></div>
-      <div class="field"><label>Log</label><p>What MW Lab did and any errors, newest at the bottom. It never contains your API keys. If something goes wrong, click Copy and paste it to me.</p>
+      <div class="field"><label>Log</label><p>What MW Beta did and any errors, newest at the bottom. It never contains your API keys. If something goes wrong, click Copy and paste it to me.</p>
         <textarea class="code" id="dLog" readonly spellcheck="false" style="height:220px">${esc(logBuf.join("\n"))}</textarea></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="dCopy">Copy diagnostics</button>${NATIVE?`<button class="btn" id="dFolder">Open log folder</button>`:""}<button class="btn" id="dClear">Clear page log</button></div>
       <div class="field" style="margin-top:18px"><label for="dSentry">Sentry crash reports (optional)</label>
@@ -1907,7 +1920,7 @@ function showTab(tab){
     $("dClear").onclick = ()=>{ logBuf = []; try{ localStorage.removeItem(NS+"diag"); }catch(e){} showTab("diag"); };
     $("dSentryTest").onclick = ()=>{
       if (!window.Sentry){ $("dSentryState").textContent = settings.sentryDsn ? "Still connecting. Try again in a few seconds." : "Paste your DSN and click Save first."; if (settings.sentryDsn) initSentry(); return; }
-      try{ window.Sentry.captureException(new Error("MW Lab test report (" + APP_VERSION + (NATIVE && nat.state ? " / app " + nat.state.version : "") + "): this is a test, nothing is wrong")); $("dSentryState").textContent = "Test report sent. It should appear in Sentry under Issues within a minute."; mwLog("info", "Sentry test report sent"); }
+      try{ window.Sentry.captureException(new Error("MW Beta test report (" + APP_VERSION + (NATIVE && nat.state ? " / app " + nat.state.version : "") + "): this is a test, nothing is wrong")); $("dSentryState").textContent = "Test report sent. It should appear in Sentry under Issues within a minute."; mwLog("info", "Sentry test report sent"); }
       catch(e){ $("dSentryState").textContent = "Couldn't send: " + e.message; } };
     $("dSentrySave").onclick = ()=>{ const v = $("dSentry").value.trim();
       if (v && !/^https:\/\/[^@\s]+@[^\s\/]+\/\d+$/.test(v)){ $("dSentryState").textContent = "That doesn't look like a Sentry DSN (it starts with https:// and ends with a number)."; return; }
@@ -1998,12 +2011,13 @@ async function checkUpdates(force){
       if (!nat.state) await syncNative();
       upd.shellTried = true;
       let u = store.get("appUpd", {});
-      if (force || !u.at || !u.v2 || Date.now() - u.at > 3*3600e3){
-        // the lab app ships as a pre-release tagged lab-app-v…, so the live MW (which only reads "latest") never sees it
+      const kind = labShell() ? "lab" : "mw";
+      if (force || !u.at || !u.v2 || u.kind !== kind || Date.now() - u.at > 3*3600e3){
+        // the MW Lab app ships as pre-releases tagged lab-app-v…; the regular MW app (which may be showing this beta) as app-v…
         try{ const r = await fetchT("https://api.github.com/repos/awpmap/market-widget/releases?per_page=30", {headers:{Accept:"application/vnd.github+json"}}, 15000);
-          if (r.ok){ const list = await r.json(), j = (Array.isArray(list) ? list : []).find(x => /^lab-app-v/.test(x.tag_name || "") && !x.draft);
+          if (r.ok){ const list = await r.json(), j = (Array.isArray(list) ? list : []).find(x => !x.draft && (kind === "lab" ? /^lab-app-v/.test(x.tag_name || "") : /^app-v/.test(x.tag_name || "") && !x.prerelease));
             const a = j && (j.assets||[]).find(x => /_x64-setup\.exe$/i.test(x.name||""));
-            u = j ? {v2:1, at:Date.now(), tag:j.tag_name, url:j.html_url, dl: a ? a.browser_download_url : ""} : {v2:1, at:Date.now()}; store.set("appUpd", u); }
+            u = j ? {v2:1, kind, at:Date.now(), tag:j.tag_name, url:j.html_url, dl: a ? a.browser_download_url : ""} : {v2:1, kind, at:Date.now()}; store.set("appUpd", u); }
           else ok = false;
         }catch(e){ ok = false; }
       }
@@ -2022,12 +2036,12 @@ function inMarketHours(){ const t = etNow(); return E.calendarValid(t.date) && i
 function maybeAutoReload(){
   const st = updState();
   if (!st.widgetNew || !document.hidden || !$("sheet").classList.contains("hide")) return;
-  if (inMarketHours()){ if (!maybeAutoReload.told){ maybeAutoReload.told = true; mwLog("info", "MW Lab " + upd.widget + " is ready; it installs after the close (no code changes during market hours)"); } return; }
+  if (inMarketHours()){ if (!maybeAutoReload.told){ maybeAutoReload.told = true; mwLog("info", "MW Beta " + upd.widget + " is ready; it installs after the close (no code changes during market hours)"); } return; }
   if (store.get("autoRel", "") === upd.widget) return;
   store.set("autoRel", upd.widget); reloadForUpdate();
 }
 document.addEventListener("visibilitychange", ()=>{ if (document.hidden) maybeAutoReload(); else if (Date.now() - upd.at > 30*60e3) checkUpdates(); });
-function verLine(){ return "MW Lab " + APP_VERSION + (NATIVE ? " · app " + (nat.state ? nat.state.version : "?") : ""); }
+function verLine(){ return "MW Beta " + APP_VERSION + (NATIVE ? " · app " + (nat.state ? nat.state.version : "?") : ""); }
 function verStatus(){
   const st = updState();
   if (upd.checking) return {k:"chk", t:"Checking…"};
@@ -2038,15 +2052,15 @@ function verStatus(){
 function renderVersion(){
   const st = updState(), vs = verStatus();
   $("mVer").textContent = verLine();
-  $("mVerSub").textContent = st.appNew ? "App " + upd.app.tag.replace(/^lab-app-v/,"") + " is out. Click to download"
-    : st.widgetNew ? "MW Lab " + upd.widget + " is out. Click to reload"
+  $("mVerSub").textContent = st.appNew ? "App " + upd.app.tag.replace(/^(lab-)?app-v/,"") + " is out. Click to download"
+    : st.widgetNew ? "MW Beta " + upd.widget + " is out. Click to reload"
     : upd.at ? "Checked " + timeStr(upd.at) + ". Click to check again" : "Click to check for updates";
   const c = $("mVerChip"); c.textContent = vs.t; c.className = "vchip " + vs.k;
   $("bMore").classList.toggle("has-upd", st.any);
   $("bMore").title = st.any ? "Menu · update available" : "Menu";
   const el = $("update"), parts = [];
-  if (st.appNew) parts.push(`<div><b>New MW Lab app: ${esc(upd.app.tag.replace(/^lab-app-v/,""))}</b> ${nat.state ? `You have ${esc(nat.state.version)}.` : "Your app is too old to report its version."} Quit MW Lab from the tray, run the installer, your settings stay. <button class="lnk" data-upd="app">Download</button></div>`);
-  if (st.widgetNew) parts.push(`<div><b>MW Lab ${esc(upd.widget)} is ready</b> You're on ${esc(APP_VERSION)}.${inMarketHours() ? " It installs by itself after the close, or now if you click:" : ""} <button class="lnk" data-upd="reload">Reload now</button></div>`);
+  if (st.appNew) parts.push(`<div><b>New desktop app: ${esc(upd.app.tag.replace(/^(lab-)?app-v/,""))}</b> ${nat.state ? `You have ${esc(nat.state.version)}.` : "Your app is too old to report its version."} Quit ${labShell() ? "MW Lab" : "MW"} from the tray, run the installer, your settings stay. <button class="lnk" data-upd="app">Download</button></div>`);
+  if (st.widgetNew) parts.push(`<div><b>MW Beta ${esc(upd.widget)} is ready</b> You're on ${esc(APP_VERSION)}.${inMarketHours() ? " It installs by itself after the close, or now if you click:" : ""} <button class="lnk" data-upd="reload">Reload now</button></div>`);
   if (parts.length && store.get("updDismiss", "") !== (upd.widget || "") + "|" + (upd.app && upd.app.tag || "")){
     el.innerHTML = parts.join("") + `<button class="x" data-upd="dismiss" aria-label="Hide until the next version">×</button>`; el.classList.add("show");
   } else el.classList.remove("show");
@@ -2055,7 +2069,7 @@ function renderVersion(){
 function verDiag(){
   const st = updState();
   return `<span>Widget</span><b>${APP_VERSION}${upd.widget ? (st.widgetNew ? ` <em class="vchip new">${esc(upd.widget)} available</em>` : ` <em class="vchip ok">latest</em>`) : ""}</b>`
-    + (NATIVE ? `<span>Desktop app</span><b>${esc(appVer())}${upd.app ? (st.appNew ? ` <em class="vchip new">${esc(upd.app.tag.replace(/^lab-app-v/,""))} available</em>` : ` <em class="vchip ok">latest</em>`) : ""}</b>` : "")
+    + (NATIVE ? `<span>Desktop app</span><b>${esc(appVer())}${upd.app ? (st.appNew ? ` <em class="vchip new">${esc(upd.app.tag.replace(/^(lab-)?app-v/,""))} available</em>` : ` <em class="vchip ok">latest</em>`) : ""}</b>` : "")
     + `<span>Last checked</span><b>${upd.at ? dateTime(upd.at) : "—"}</b>`;
 }
 function doUpdate(){
@@ -2125,8 +2139,11 @@ setInterval(()=>{ safe("frame", renderFrame); safe("health", watchHealth); updat
 setInterval(()=>{ try{ renderPill(); }catch(e){} }, 10e3);   // keeps the countdown to the minute
 addEventListener("resize", ()=>{ clearTimeout(renderPill._r); renderPill._r = setTimeout(()=>{ try{ renderPill(); }catch(e){} }, 120); });
 
-mwLog("info", "MW Lab " + APP_VERSION + " started" + (NATIVE ? " in the desktop app" : " in the browser"));
+mwLog("info", "MW Beta " + APP_VERSION + " started" + (NATIVE ? " in the desktop app" : " in the browser"));
 safe("sentry", initSentry);
+// first visit after "Try the beta" in MW: bring the setup over without asking again (the person just opted in)
+if (firstRun && onBeta() && liveSetup()) safe("beta setup", ()=>{ if (importFromLive(true)) mwLog("info", "beta: copied your MW setup on first start"); });
 renderAll(); safe("badge", updateBadge); safe("health", ()=>renderBlind());
+if (onBeta()) raw.set("mw_betaOk", String(Date.now()));   // tells MW the beta started, so it keeps opening it
 loadBarsMem().then(fillOutcomes);
 schedule(true);

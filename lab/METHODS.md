@@ -1,6 +1,6 @@
-# How MW Lab makes its numbers
+# How MW Beta makes its numbers
 
-MW Lab is a test copy of Market Widget. This page says, for every number it shows, where the data comes from and how it is worked out. All code is in `lab/engine.js` (pure functions, tested in `labdev/test/`). MW Lab is information only: it never trades and never connects to a brokerage.
+MW Beta is the beta version of Market Widget: turn it on in MW under Settings → General → Beta, and switch back from the same place in the beta. This page says, for every number it shows, where the data comes from and how it is worked out. All code is in `lab/engine.js` (pure functions, tested in `labdev/test/`). MW Beta is information only: it never trades and never connects to a brokerage.
 
 ## Data sources
 
@@ -10,7 +10,7 @@ MW Lab is a test copy of Market Widget. This page says, for every number it show
 | Backup prices | Twelve Data `/quote` (free key) | Only for holdings and watchlist tickers, only when Finnhub has failed. Rows show "backup" in their tooltip. |
 | Daily history | Twelve Data `/time_series`, up to about 5 years | Loaded once a day before the open; failed loads retry after 5, 15 and 45 minutes. Kept in the browser (IndexedDB), never uploaded. |
 | Earnings dates | Finnhub calendar | |
-| Fund holdings (look-through) | Pasted by you from the fund issuer's site | Twelve Data's fund composition is a paid feature, so MW Lab doesn't fetch it. |
+| Fund holdings (look-through) | Pasted by you from the fund issuer's site | Twelve Data's fund composition is a paid feature, so MW Beta doesn't fetch it. |
 
 Every price row has a tooltip naming its source and how old the last trade is.
 
@@ -18,7 +18,7 @@ Every price row has a tooltip naming its source and how old the last trade is.
 
 A price can trigger an alert only when **all** of these hold:
 
-- the market is open, by MW Lab's NYSE calendar (holidays and 1 pm early closes through 2028, checked against the `exchange_calendars` XNYS calendar in CI);
+- the market is open, by MW Beta's NYSE calendar (holidays and 1 pm early closes through 2028, checked against the `exchange_calendars` XNYS calendar in CI);
 - the quote was fetched in the last 15 minutes;
 - the last trade is from today and at most 20 minutes old (trade time, not fetch time);
 - the quote passes the bad-print screen below.
@@ -59,18 +59,18 @@ One registry (`E.RULES`) defines every rule; the live check, the rule lab and th
 
 ## Phone alerts (ntfy)
 
-By default a phone alert says only "MW Lab has a new alert. Open MW Lab for details." under the title "MW Lab alert". Tickers and prices are sent only if you switch on "Full details on the phone", because ntfy topics are public to anyone who guesses the name.
+By default a phone alert says only "MW Beta has a new alert. Open MW Beta for details." under the title "MW Beta alert". Tickers and prices are sent only if you switch on "Full details on the phone", because ntfy topics are public to anyone who guesses the name.
 
 ## Health
 
 - **Coverage:** of the watchlist tickers that are switched on, how many got a new price within max(3 minutes, 2.5 refreshes).
-- **Blind:** coverage under 50% for 5 minutes in market hours. MW Lab shows a red banner, beeps, and sends a phone notice; it says so again when prices come back.
-- **Outside check (optional):** with a free Healthchecks.io URL, MW Lab pings it every 4.5 minutes while open and pings `/fail` while blind. Suggested schedule `*/10 10-15 * * 1-5`, America/New_York, 20-minute grace, so you hear about it when MW Lab isn't running at all.
+- **Blind:** coverage under 50% for 5 minutes in market hours. MW Beta shows a red banner, beeps, and sends a phone notice; it says so again when prices come back.
+- **Outside check (optional):** with a free Healthchecks.io URL, MW Beta pings it every 4.5 minutes while open and pings `/fail` while blind. Suggested schedule `*/10 10-15 * * 1-5`, America/New_York, 20-minute grace, so you hear about it when MW Beta isn't running at all.
 - **Finnhub breaker:** after 3 failures in a row, Finnhub calls pause for 1, 2, 4 … up to 15 minutes; one success resets it.
 
 ## Twelve Data budget
 
-The free plan allows 800 credits a day. MW Lab gives each feature its own share so one can't starve the others: history 300, VWAP 220, backup prices 120, intraday 60, fund NAVs 40, cross-checks 40, other 20. A call is refused once its share is used or the day is within 10 of 800. The status panel shows today's use and an end-of-day projection (history counted once, the rest scaled by how much of the session has passed). Credits are counted per app: if MW and MW Lab both run with the same key, they share the same 800.
+The free plan allows 800 credits a day. MW Beta gives each feature its own share so one can't starve the others: history 300, VWAP 220, backup prices 120, intraday 60, fund NAVs 40, cross-checks 40, other 20. A call is refused once its share is used or the day is within 10 of 800. The status panel shows today's use and an end-of-day projection (history counted once, the rest scaled by how much of the session has passed). Credits are counted per app: if MW and MW Beta both run with the same key, they share the same 800.
 
 ## Portfolio risk
 

@@ -2,6 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>
+/* Beta: if you turned on MW Beta (Settings → General), open it instead of this page. If the beta didn't confirm
+   that it started last time, stay on this regular version, so a broken beta can never lock you out.
+   Adding ?stable to the address always opens this version and turns the beta off. */
+(function(){ try{
+  if (/[?&]stable(=|&|$)/.test(location.search)){ localStorage.setItem("mw_channel", "stable"); return; }
+  if (localStorage.getItem("mw_channel") !== "beta") return;
+  var tryAt = +localStorage.getItem("mw_betaTry") || 0, okAt = +localStorage.getItem("mw_betaOk") || 0;
+  if (tryAt && okAt < tryAt){ window.__mwBetaFailed = true; return; }
+  localStorage.setItem("mw_betaTry", String(Date.now()));
+  location.replace("lab/" + location.hash);
+}catch(e){} })();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f4f6f9" media="(prefers-color-scheme: light)">
@@ -533,7 +546,7 @@ body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !importa
 
 <script>
 "use strict";
-const APP_VERSION = "3.10.0";
+const APP_VERSION = "3.11.0";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -2006,6 +2019,7 @@ function showTab(tab){
         </div></div><p>Closing the window (X or Esc) keeps MW running in the tray so alerts still pop up. Quit from the tray icon's menu. <span id="appVer"></span></p></div>` : ""}
       <div class="field"><label for="sNtfy">Phone alerts (optional)</label><input id="sNtfy" type="text" value="${esc(settings.ntfy)}" placeholder="ntfy topic, e.g. mk-dips-8x2q (hard to guess)">
         <p>Install the free ntfy app and subscribe to the same name to get alerts on your phone.</p></div>
+      <div class="field"><label>Beta version</label><p>${window.__mwBetaFailed ? "<b style=\"color:var(--warn)\">MW Beta didn't start last time, so MW opened this regular version.</b> " : ""}MW Beta gets new features first: an alert journal and scorecard, a rule lab, risk in dollars, fund overlap, and a loud warning when prices stop. It starts with a copy of your setup and keeps its own, so this version stays exactly as it is. Switch back any time in the beta under Settings → General.</p><button class="btn" id="sBeta">${window.__mwBetaFailed ? "Try the beta again" : "Try the beta"}</button></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="sSave">Save</button><button class="btn" id="sTest">Send a test alert</button><button class="btn" id="sKeys">Test my keys</button></div>
       <div id="keyRes" class="note" style="white-space:pre-line"></div>
       <p class="note">Data use: Finnhub allows 60 calls a minute with no daily cap, so refreshing everything is fine. Twelve Data allows 800 a day; used today: ${(()=>{const u=store.get("tdUsed",{});return u.date===etNow().date?u.n:0;})()}.</p>
@@ -2018,6 +2032,10 @@ function showTab(tab){
         const k = e.target.dataset.shell; if (!k) return; nat.invoke("shell_set", {key:k, value:e.target.checked}).then(syncNative).catch(err => { toast(String(err)); e.target.checked = !e.target.checked; }); };
     }
     if ($("sNotif")) $("sNotif").onclick = async ()=>{ try{ const r = await Notification.requestPermission(); toast(r==="granted"?"Pop-ups allowed":"Pop-ups not allowed"); showTab("general"); }catch(e){} };
+    $("sBeta").onclick = ()=>{
+      try{ localStorage.setItem("mw_channel", "beta"); localStorage.removeItem("mw_betaTry"); localStorage.removeItem("mw_betaOk"); }catch(e){ toast("This browser blocks storage, so the beta can't be turned on"); return; }
+      mwLog("info", "switching to MW Beta"); location.replace("lab/");
+    };
     $("sSave").onclick = ()=>{
       const tdChanged = $("sTd").value.trim() !== settings.tdKey;
       Object.assign(settings, {key:$("sKey").value.trim(), tdKey:$("sTd").value.trim(), theme:$("sTheme").value, refresh:+$("sRefresh").value, sound:$("sSound").value, tz:$("sTz").value, ntfy:$("sNtfy").value.trim()});
@@ -2425,6 +2443,7 @@ setInterval(()=>{ try{ renderPill(); }catch(e){} }, 10e3);
 addEventListener("resize", ()=>{ clearTimeout(renderPill._r); renderPill._r = setTimeout(()=>{ try{ renderPill(); }catch(e){} }, 120); });   // keeps the countdown to the minute   // keeps the status light and "x min ago" honest between refreshes
 
 mwLog("info", "MW " + APP_VERSION + " started" + (NATIVE ? " in the desktop app" : " in the browser"));
+if (window.__mwBetaFailed){ mwLog("warn", "MW Beta didn't start last time, so the regular version opened"); setTimeout(()=>{ try{ toast("MW Beta didn't start, so regular MW opened"); }catch(e){} }, 1500); }
 safe("sentry", initSentry);
 renderAll(); safe("badge", updateBadge);
 schedule(true);

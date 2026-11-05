@@ -7,11 +7,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f4f6f9" media="(prefers-color-scheme: light)">
-<meta name="description" content="MW Lab: a test copy of Market Widget with the review board's recommendations built in.">
+<meta name="description" content="MW Beta: the beta version of Market Widget with the review board's recommendations built in.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<title>MW Lab</title>
+<title>MW Beta</title>
 <style>
 /* ============ tokens ============ */
 :root{
@@ -419,7 +419,7 @@ body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !importa
 .kvs span{color:var(--muted)}
 .x:disabled{opacity:.3;cursor:default}
 #tip b{font-weight:600}
-/* ============ MW Lab additions ============ */
+/* ============ MW Beta additions ============ */
 .labtag{font-style:normal;font:700 8.5px/1 var(--font);letter-spacing:.8px;color:var(--accent-fg);background:var(--accent);border-radius:4px;padding:2px 4px;margin-left:3px;vertical-align:2px}
 #blind{display:none;background:color-mix(in srgb,var(--down) 16%,var(--surface));border-color:color-mix(in srgb,var(--down) 55%,transparent)}
 #blind.show{display:block}
@@ -456,7 +456,7 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
 <body>
 <div id="splash" aria-hidden="true">
   <div class="sp-mark"><svg viewBox="0 0 64 64"><rect x=".75" y=".75" width="62.5" height="62.5" rx="15" fill="#0c121d" stroke="#2a3446" stroke-width="1.5"/><path class="sp-base" d="M10 51 H54" stroke="#2a3446" stroke-width="1.5"/><g class="sp-c"><path d="M11 12v38" stroke="#2fcf7d" stroke-width="1.8"/><rect x="8" y="15" width="6" height="32" rx="1.2" fill="#2fcf7d"/></g><g class="sp-c"><path d="M21.5 22v26" stroke="#f26d6d" stroke-width="1.8"/><rect x="18.5" y="25" width="6" height="19" rx="1.2" fill="#f26d6d"/></g><g class="sp-c"><path d="M32 31v18" stroke="#f26d6d" stroke-width="1.8"/><rect x="29" y="34" width="6" height="11" rx="1.2" fill="#f26d6d"/></g><g class="sp-c"><path d="M42.5 22v26" stroke="#2fcf7d" stroke-width="1.8"/><rect x="39.5" y="25" width="6" height="19" rx="1.2" fill="#2fcf7d"/></g><g class="sp-c"><path d="M53 12v38" stroke="#2fcf7d" stroke-width="1.8"/><rect x="50" y="15" width="6" height="32" rx="1.2" fill="#2fcf7d"/></g></svg></div>
-  <div class="sp-word"><b>MW Lab</b><small>Test copy</small></div>
+  <div class="sp-word"><b>MW Beta</b><small>Beta version</small></div>
   <div class="sp-load"><i></i></div>
   <div class="sp-status" id="spStatus">Loading prices…</div>
 </div>
@@ -464,14 +464,14 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
 
 <header id="titlebar" data-tauri-drag-region>
   <svg data-tauri-drag-region class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x=".5" y=".5" width="31" height="31" rx="7" fill="#0c121d" stroke="#34405a"/><rect x="3" y="6" width="4" height="20" rx="1" fill="#2fcf7d"/><rect x="8.5" y="11" width="4" height="15" rx="1" fill="#f26d6d"/><rect x="14" y="15" width="4" height="11" rx="1" fill="#f26d6d"/><rect x="19.5" y="11" width="4" height="15" rx="1" fill="#2fcf7d"/><rect x="25" y="6" width="4" height="20" rx="1" fill="#2fcf7d"/></svg>
-  <span class="appname" title="MW Lab: the test copy. Your live MW is separate." data-tauri-drag-region>MW <em class="labtag" data-tauri-drag-region>LAB</em></span>
+  <span class="appname" title="MW Beta: the beta version. Your regular MW is kept as you left it." data-tauri-drag-region>MW <em class="labtag" data-tauri-drag-region>BETA</em></span>
   <button id="mkt" class="pill" title="Data status"><i></i><span>—</span></button>
   <span class="spacer" data-tauri-drag-region></span>
   <button class="tb-btn" id="bRefresh" title="Refresh now (R)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg></button>
   <button class="tb-btn" id="bAlerts" title="Today's alerts (A marks them seen)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8z"/><path d="M6.5 14h3"/></svg><span class="badge hide" id="badge">0</span></button>
   <button class="tb-btn pin" id="bPin" title="Keep on top (T)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M6 2.5h4l-.6 4 2.1 2.2H4.5l2.1-2.2z"/><path d="M8 8.7V14"/></svg></button>
   <button class="tb-btn" id="bMore" title="Menu" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg></button>
-  <span class="winbtns"><button class="wb" id="wMin" aria-label="Minimize" data-tip="Minimize"><svg viewBox="0 0 10 10" stroke="currentColor"><path d="M0 5.5h10"/></svg></button><button class="wb close" id="wClose" aria-label="Close to tray" data-tip="Close to the tray (Esc). MW Lab keeps watching your alerts. Quit from the tray icon."><svg viewBox="0 0 10 10" stroke="currentColor"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"/></svg></button></span>
+  <span class="winbtns"><button class="wb" id="wMin" aria-label="Minimize" data-tip="Minimize"><svg viewBox="0 0 10 10" stroke="currentColor"><path d="M0 5.5h10"/></svg></button><button class="wb close" id="wClose" aria-label="Close to tray" data-tip="Close to the tray (Esc). MW Beta keeps watching your alerts. Quit from the tray icon."><svg viewBox="0 0 10 10" stroke="currentColor"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"/></svg></button></span>
 </header>
 <div id="statusPop" class="pop hide" role="dialog" aria-label="Data status"></div>
 <div id="menu" class="menu hide" role="menu">
@@ -538,7 +538,7 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
   </section>
 
   <div class="err" id="err"></div>
-  <footer><span>MW Lab · info only · never trades</span><span id="upd"></span></footer>
+  <footer><span>MW Beta · info only · never trades</span><span id="upd"></span></footer>
 </main>
 
 <div id="sheet" class="hide" role="dialog" aria-label="Settings">

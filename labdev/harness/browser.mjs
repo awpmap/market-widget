@@ -100,14 +100,14 @@ await page.clock.install({time: simNow});
 const advance = async (ms, step = 5000) => { for (let t = 0; t < ms; t += step) { simNow += step; await page.clock.runFor(step); await page.waitForTimeout(40); } };
 const shot = async name => { if (SHOTS) await page.screenshot({path: path.join(SHOTS, name + ".png")}); };
 
-console.log("MW Lab browser harness");
+console.log("MW Beta browser harness");
 await page.goto(BASE);
 await advance(20000, 1000);
 await advance(120000);
 check(await page.locator("#pf-body .hero .val").innerText().then(t => /\$/.test(t)), "portfolio total renders");
 check(await page.locator("#mk-body .tile").count() >= 10, "market tiles render");
 check(await page.locator("#wl-body .wrow").count() === 2, "watchlist renders 2 rows");
-check(/MW Lab/.test(await page.title()), "title says MW Lab");
+check(/MW Beta/.test(await page.title()), "title says MW Beta");
 check(await page.locator(".riskx h5").count() === 1, "risk block measured from price history");
 await shot("1-start");
 
@@ -156,6 +156,45 @@ await shot("4-status");
 const live = await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith("mw_")).map(k => [k, localStorage.getItem(k)]));
 check(live.length === 2 && JSON.stringify(JSON.parse(live.find(x => x[0] === "mw_cfg")[1])) === JSON.stringify(liveCfg), "the live MW's storage was not changed");
 check(errors.length === 0, "no page errors" + (errors.length ? ":\n    " + errors.slice(0, 8).join("\n    ") : ""));
+
+/* ---------- beta channel: opt in from the regular MW, come back, and fall back when the beta won't start ---------- */
+console.log("Beta switch");
+const LIVE = BASE.replace(/lab\/$/, "");
+const ctx2 = await browser.newContext({viewport:{width:420, height:900}, timezoneId:"America/Chicago"});
+const p2 = await ctx2.newPage(); await mock(p2);
+const errs2 = []; p2.on("pageerror", e => errs2.push(e.message));
+await p2.addInitScript(([live]) => {
+  if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1");
+  localStorage.clear(); localStorage.setItem("mw_cfg", JSON.stringify(live)); localStorage.setItem("mw_settings", JSON.stringify({key:"test", tdKey:"test"}));
+}, [liveCfg]);
+const ls = k => p2.evaluate(k => localStorage.getItem(k), k);
+await p2.goto(LIVE); await p2.waitForTimeout(800);
+check(!/\/lab\//.test(p2.url()), "regular MW opens normally before opting in");
+const liveBefore = await ls("mw_cfg");   // as the regular MW saved it
+await p2.evaluate(() => openSheet("general"));
+check(/Try the beta/.test(await p2.locator("#sBeta").innerText()), "regular MW offers Try the beta");
+await p2.locator("#sBeta").click(); await p2.waitForURL(/\/lab\//); await p2.waitForTimeout(1500);
+check(/MW Beta/.test(await p2.title()), "Try the beta opens MW Beta");
+const bcfg = JSON.parse(await ls("mwlab_cfg") || "{}");
+check((bcfg.holdings || []).some(h => h.sym === "CCC"), "the beta starts with a copy of the regular setup");
+check(+(await ls("mw_betaOk")) > 0 && await ls("mw_channel") === "beta", "the beta reports that it started");
+await p2.goto(LIVE); await p2.waitForURL(/\/lab\//); await p2.waitForTimeout(800);
+check(/\/lab\//.test(p2.url()), "after opting in, opening MW opens the beta");
+await p2.evaluate(() => openSheet("general"));
+check(/Switch back to regular MW/.test(await p2.locator("#sChannel").innerText()), "the beta offers Switch back");
+p2.once("dialog", d => d.accept());
+await p2.locator("#sChannel").click(); await p2.waitForURL(u => !/\/lab\//.test(String(u))); await p2.waitForTimeout(800);
+check(!/\/lab\//.test(p2.url()) && await ls("mw_channel") === "stable", "Switch back returns to regular MW and stays there");
+check(await ls("mw_cfg") === liveBefore, "the regular setup is unchanged after the round trip");
+// a beta that never confirms it started: MW must fall back to the regular version
+await p2.evaluate(() => { localStorage.setItem("mw_channel", "beta"); localStorage.setItem("mw_betaTry", String(Date.now())); localStorage.setItem("mw_betaOk", "0"); });
+await p2.goto(LIVE); await p2.waitForTimeout(800);
+check(!/\/lab\//.test(p2.url()), "if the beta didn't start last time, MW opens the regular version");
+await p2.evaluate(() => openSheet("general"));
+check(/Try the beta again/.test(await p2.locator("#sBeta").innerText()), "and offers to try the beta again");
+await p2.goto(LIVE + "?stable"); await p2.waitForTimeout(500);
+check(await ls("mw_channel") === "stable", "?stable turns the beta off");
+check(errs2.length === 0, "no page errors in the beta switch" + (errs2.length ? ": " + errs2.slice(0, 4).join(" | ") : ""));
 
 await browser.close(); server.close();
 console.log(fail.length ? `\n${fail.length} check(s) failed` : "\nAll browser checks passed");
