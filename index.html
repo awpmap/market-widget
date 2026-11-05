@@ -354,15 +354,16 @@ body.native #titlebar .logo *{pointer-events:none}
 /* info boxes: every [title] / [data-tip] shows this styled box instead of the plain Windows tooltip */
 #tip{position:fixed;z-index:99;max-width:min(270px,calc(100vw - 16px));background:var(--surface);border:1px solid var(--line-2);color:var(--fg);font-size:11.5px;line-height:1.45;font-weight:400;padding:7px 10px;border-radius:8px;box-shadow:var(--shadow);pointer-events:none;opacity:0;transform:translateY(-2px);transition:opacity .12s,transform .12s;white-space:pre-line;text-align:left}
 #tip.show{opacity:1;transform:none}
-.grip{display:inline-block;width:12px;margin-left:-4px;margin-right:2px;color:var(--muted);cursor:grab;opacity:0;font-weight:400;transition:opacity .1s;user-select:none}
-.wrow:hover .grip,.wrow:focus-within .grip{opacity:.8}
-.wrow.dragging{opacity:.45}
+.grip{display:inline-grid;place-items:center;width:16px;height:22px;margin:-3px 3px -3px -6px;vertical-align:middle;color:var(--muted);cursor:grab;opacity:.35;font-weight:400;font-size:13px;border-radius:4px;transition:opacity .1s,background .1s;user-select:none;touch-action:none}
+.wrow:hover .grip,.wrow:focus-within .grip{opacity:.9}
+.grip:hover{background:var(--surface-2);color:var(--fg)}
+.wrow.dragging,.ly-row.dragging{position:relative;z-index:5;opacity:1;background:var(--surface-2);outline:1px solid var(--accent);box-shadow:var(--shadow);border-radius:8px;cursor:grabbing;transition:none}
+body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !important}
 .wrow.drop-b{box-shadow:inset 0 2px 0 var(--accent)}
 .wrow.drop-a{box-shadow:inset 0 -2px 0 var(--accent)}
-.ly-row{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:6px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;cursor:grab}
+.ly-row{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:6px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;cursor:grab;touch-action:none;user-select:none}
 .ly-row b{flex:1;font-weight:600}
 .ly-row .grip{opacity:.8;margin:0}
-.ly-row.dragging{opacity:.45}
 .ly-row.drop-b{box-shadow:inset 0 2px 0 var(--accent)}
 .ly-row.drop-a{box-shadow:inset 0 -2px 0 var(--accent)}
 .kvs{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px}
@@ -468,7 +469,7 @@ body.native #titlebar .logo *{pointer-events:none}
 
 <script>
 "use strict";
-const APP_VERSION = "3.6.0";
+const APP_VERSION = "3.6.1";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -586,7 +587,7 @@ function initSentry(){
   sc.src = "https://cdn.jsdelivr.net/npm/@sentry/browser@8.55.2/build/bundles/bundle.min.js"; sc.crossOrigin = "anonymous";
   sc.onload = ()=>{ try{ window.Sentry.init({ dsn, release: "mw@" + APP_VERSION, environment: NATIVE ? "desktop" : "browser", sendDefaultPii: false,
       beforeBreadcrumb: () => null, beforeSend: ev => { try{ return JSON.parse(scrubKeys(JSON.stringify(ev))); }catch(e){ return null; } } });
-      mwLog("info", "Sentry connected"); }catch(e){ mwLog("warn", "Sentry failed to start: " + e.message); } };
+      mwLog("info", "Sentry connected"); const st = document.getElementById("dSentryState"); if (st) st.textContent = "Connected: crash reports are on."; }catch(e){ mwLog("warn", "Sentry failed to start: " + e.message); } };
   sc.onerror = ()=>{ initSentry.loading = false; mwLog("warn", "Sentry script couldn't load"); };
   document.head.appendChild(sc);
 }
@@ -1583,7 +1584,8 @@ function updateTray(){
 }
 
 /* ---------- interactions ---------- */
-/* ---------- watchlist reorder: drag a row by its ⠿ grip, or the buttons in an open row ---------- */
+/* ---------- drag to reorder (pointer events: works in the desktop app, where Windows
+   claims the browser's own drag-and-drop for files) ---------- */
 let dragSym = null;
 function moveWatch(sym, where, toSym, after){
   const W = cfg.watch, i = W.findIndex(w => (w.sym||"").toUpperCase() === sym); if (i < 0) return;
@@ -1592,15 +1594,53 @@ function moveWatch(sym, where, toSym, after){
   else { j = W.findIndex(x => (x.sym||"").toUpperCase() === toSym); if (j < 0) j = W.length; else if (after) j++; }
   W.splice(j, 0, w); store.set("cfg", cfg); safe("watchlist", renderWatch);
 }
-function endDrag(){ dragSym = null; document.querySelectorAll(".wrow").forEach(x => { x.draggable = false; x.classList.remove("dragging","drop-a","drop-b"); }); }
-document.addEventListener("mousedown", e => { const g = e.target.closest("[data-grip]"); if (g){ const row = g.closest(".wrow"); if (row) row.draggable = true; } });
-document.addEventListener("dragstart", e => { const row = e.target.closest && e.target.closest(".wrow[draggable=true]"); if (!row) return; dragSym = row.dataset.row.slice(2).toUpperCase(); row.classList.add("dragging"); try{ e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragSym); }catch(_){} });
-document.addEventListener("dragover", e => { if (!dragSym) return; const row = e.target.closest(".wrow"); if (!row) return; e.preventDefault(); const r = row.getBoundingClientRect(), after = e.clientY > r.top + r.height/2; document.querySelectorAll(".wrow.drop-a,.wrow.drop-b").forEach(x => x.classList.remove("drop-a","drop-b")); row.classList.add(after ? "drop-a" : "drop-b"); });
-document.addEventListener("drop", e => { if (!dragSym) return; e.preventDefault(); const row = e.target.closest(".wrow"), from = dragSym; const to = row && row.dataset.row.slice(2).toUpperCase(), after = row && row.classList.contains("drop-a"); endDrag(); if (to && to !== from) moveWatch(from, "to", to, after); });
-document.addEventListener("dragend", ()=>{ if (dragSym) endDrag(); });
-document.addEventListener("mouseup", e => { if (!dragSym) document.querySelectorAll(".wrow[draggable=true]").forEach(x => x.draggable = false); });
+/* sortDrag: press on a handle, move, release. The row follows the pointer, a blue line shows where it lands,
+   and the list scrolls when you reach its top or bottom edge. */
+function sortDrag(e, item, sel, onStart, onDrop){
+  if (e.button !== 0) return;
+  e.preventDefault();
+  const scroller = item.closest("main,.sh-b") || document.scrollingElement;
+  const y0 = e.clientY, top0 = scroller.scrollTop, id = e.pointerId;
+  let started = false, target = null, after = false, raf = 0, lastY = y0;
+  const clear = () => document.querySelectorAll(sel + ".drop-a," + sel + ".drop-b").forEach(x => x.classList.remove("drop-a","drop-b"));
+  const update = () => {
+    item.style.transform = `translateY(${lastY - y0 + scroller.scrollTop - top0}px)`;
+    item.style.pointerEvents = "none";
+    const under = document.elementFromPoint(e.clientX, lastY); item.style.pointerEvents = "";
+    const t = under && under.closest(sel); clear(); target = null;
+    if (t && t !== item && t.parentNode === item.parentNode){ const r = t.getBoundingClientRect(); after = lastY > r.top + r.height/2; t.classList.add(after ? "drop-a" : "drop-b"); target = t; }
+  };
+  const tick = () => {   // auto-scroll near the edges
+    raf = 0; if (!started) return;
+    const r = scroller.getBoundingClientRect ? scroller.getBoundingClientRect() : {top:0, bottom:innerHeight};
+    const edge = 44, dy = lastY < r.top + edge ? -10 : lastY > r.bottom - edge ? 10 : 0;
+    if (dy){ scroller.scrollTop += dy; update(); raf = requestAnimationFrame(tick); }
+  };
+  const move = ev => { if (ev.pointerId !== id) return; lastY = ev.clientY;
+    if (!started && Math.abs(lastY - y0) < 4) return;
+    if (!started){ started = true; onStart && onStart(); item.classList.add("dragging"); document.body.classList.add("sorting"); scroller.style.scrollBehavior = "auto"; }
+    update(); if (!raf) raf = requestAnimationFrame(tick); };
+  const up = ev => { if (ev.pointerId !== id) return;
+    window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true); window.removeEventListener("pointercancel", up, true);
+    cancelAnimationFrame(raf); item.style.transform = ""; item.classList.remove("dragging"); document.body.classList.remove("sorting"); scroller.style.scrollBehavior = "";
+    const t = target, aft = after; clear();
+    if (started) window.__noClickUntil = Date.now() + 350;   // the release isn't also a click that opens the row
+    if (started) onDrop(ev.type === "pointercancel" ? null : t, aft); };
+  window.addEventListener("pointermove", move, true); window.addEventListener("pointerup", up, true); window.addEventListener("pointercancel", up, true);
+}
+document.addEventListener("pointerdown", e => {
+  const g = e.target.closest("[data-grip]"); if (!g) return;
+  const row = g.closest(".wrow"); if (!row) return;
+  const from = row.dataset.row.slice(2).toUpperCase();
+  sortDrag(e, row, ".wrow", () => { dragSym = from; }, (t, after) => {
+    dragSym = null;
+    if (t){ const to = t.dataset.row.slice(2).toUpperCase(); if (to !== from){ moveWatch(from, "to", to, after); mwLog("info", "watchlist: moved " + from); return; } }
+    safe("watchlist", renderWatch);
+  });
+});
 
 document.addEventListener("click", e=>{
+  if (Date.now() < (window.__noClickUntil || 0)){ e.stopPropagation(); return; }
   const wm = e.target.closest("[data-wmove]"); if (wm){ e.stopPropagation(); const [sym, where] = wm.dataset.wmove.split(":"); moveWatch(sym.toUpperCase(), where); return; }
   if (e.target.closest("[data-grip]")){ e.stopPropagation(); return; }
   const sz = e.target.closest("[data-snzsym]"); if (sz){ e.stopPropagation(); snooze(sz.dataset.snzsym, sz.dataset.how); return; }
@@ -1868,7 +1908,7 @@ function showTab(tab){
   else if (tab==="layout"){
     const L = layoutOrder();
     B.innerHTML = `<div class="field"><label>Section order</label><p>Drag the rows, or use the arrows. Turn a section off to hide it. Keys 1 to 4 jump to the sections in this order.</p></div>
-      <div id="lyList">${L.map((k,i)=>`<div class="ly-row" draggable="true" data-ly="${k}">
+      <div id="lyList">${L.map((k,i)=>`<div class="ly-row" data-ly="${k}">
         <span class="grip" title="Drag to move">⠿</span><b>${SEC_NAMES[k]}</b>
         <button class="x" data-lymv="${i}:up" title="Move up" ${i===0?"disabled":""}>↑</button><button class="x" data-lymv="${i}:down" title="Move down" ${i===L.length-1?"disabled":""}>↓</button>
         <label class="sw" title="Show or hide this section"><input type="checkbox" data-lyshow="${k}" ${(settings.hideSec||{})[k]?"":"checked"}><span></span></label></div>`).join("")}</div>
@@ -1880,13 +1920,11 @@ function showTab(tab){
       if (e.target.id==="lyReset"){ settings.hideSec = {}; setL(DEFAULT_LAYOUT.slice()); toast("Layout reset"); }
     };
     B.onchange = e=>{ const k = e.target.dataset.lyshow; if (!k) return; settings.hideSec = Object.assign({}, settings.hideSec, {[k]: !e.target.checked}); saveSettings(); safe("layout", applyLayout); };
-    let dragK = null;
-    const list = $("lyList");
-    list.ondragstart = e=>{ const r = e.target.closest(".ly-row"); if (!r) return; dragK = r.dataset.ly; r.classList.add("dragging"); try{ e.dataTransfer.setData("text/plain", dragK); }catch(_){} };
-    list.ondragover = e=>{ if (!dragK) return; e.preventDefault(); const r = e.target.closest(".ly-row"); list.querySelectorAll(".ly-row").forEach(x=>x.classList.remove("drop-a","drop-b")); if (r){ const b = r.getBoundingClientRect(); r.classList.add(e.clientY > b.top + b.height/2 ? "drop-a" : "drop-b"); } };
-    list.ondrop = e=>{ e.preventDefault(); const r = e.target.closest(".ly-row"); if (!dragK || !r || r.dataset.ly === dragK){ dragK = null; showTab("layout"); return; }
-      const L2 = layoutOrder().filter(k=>k!==dragK); let j = L2.indexOf(r.dataset.ly); if (r.classList.contains("drop-a")) j++; L2.splice(j,0,dragK); dragK = null; setL(L2); };
-    list.ondragend = ()=>{ dragK = null; list.querySelectorAll(".ly-row").forEach(x=>x.classList.remove("dragging","drop-a","drop-b")); };
+    $("lyList").onpointerdown = e=>{
+      const r = e.target.closest(".ly-row"); if (!r || e.target.closest("button,label,input")) return;
+      sortDrag(e, r, ".ly-row", null, (t, after)=>{ if (!t || t === r){ showTab("layout"); return; }
+        const L2 = layoutOrder().filter(k=>k!==r.dataset.ly); let j = L2.indexOf(t.dataset.ly); if (after) j++; L2.splice(j,0,r.dataset.ly); setL(L2); });
+    };
   }
   else if (tab==="diag"){
     B.innerHTML = `<div class="field"><label>How MW is doing</label>
@@ -1903,6 +1941,7 @@ function showTab(tab){
       <div class="field" style="margin-top:18px"><label for="dSentry">Sentry crash reports (optional)</label>
         <p>Sentry is a free service that collects crash reports from your PC so problems can be fixed even when you don't notice them. Make a free account at sentry.io, create a "Browser JavaScript" project, and paste its DSN here. Reports include the error and app version only: no keys, holdings or prices.</p>
         <div style="display:flex;gap:6px"><input id="dSentry" type="text" value="${esc(settings.sentryDsn||"")}" placeholder="https://…@o123.ingest.sentry.io/456" spellcheck="false" style="flex:1"><button class="btn" id="dSentrySave">Save</button></div>
+        <div style="margin-top:6px"><button class="btn" id="dSentryTest">Send a test report</button></div>
         <p id="dSentryState" class="note">${window.Sentry ? "Connected: crash reports are on." : settings.sentryDsn ? "Saved. It connects the next time MW loads." : "Off."}</p></div>`;
     const shellLog = ()=> NATIVE ? nat.invoke("shell_logs").catch(()=> "") : Promise.resolve("");
     if (NATIVE){ nat.invoke("shell_state").then(st => { const el = $("dApp"); if (el) el.textContent = st.version; }).catch(()=>{});
@@ -1912,6 +1951,10 @@ function showTab(tab){
       const txt = scrubKeys(head + $("dLog").value); try{ await navigator.clipboard.writeText(txt); }catch(e){ $("dLog").select(); document.execCommand("copy"); } toast("Copied. Paste it into the chat"); };
     if ($("dFolder")) $("dFolder").onclick = ()=> nat.invoke("shell_open_logs").catch(e => toast(String(e)));
     $("dClear").onclick = ()=>{ logBuf = []; try{ localStorage.removeItem("mw_diag"); }catch(e){} showTab("diag"); };
+    $("dSentryTest").onclick = ()=>{
+      if (!window.Sentry){ $("dSentryState").textContent = settings.sentryDsn ? "Still connecting. Try again in a few seconds." : "Paste your DSN and click Save first."; if (settings.sentryDsn) initSentry(); return; }
+      try{ window.Sentry.captureMessage("MW test report (" + APP_VERSION + (NATIVE && nat.state ? " / app " + nat.state.version : "") + ")", "info"); $("dSentryState").textContent = "Test report sent. It should appear in Sentry under Issues within a minute."; mwLog("info", "Sentry test report sent"); }
+      catch(e){ $("dSentryState").textContent = "Couldn't send: " + e.message; } };
     $("dSentrySave").onclick = ()=>{ const v = $("dSentry").value.trim();
       if (v && !/^https:\/\/[^@\s]+@[^\s\/]+\/\d+$/.test(v)){ $("dSentryState").textContent = "That doesn't look like a Sentry DSN (it starts with https:// and ends with a number)."; return; }
       settings.sentryDsn = v; saveSettings(); initSentry(); $("dSentryState").textContent = v ? "Saved. Connecting…" : "Off."; mwLog("info", "Sentry " + (v ? "turned on" : "turned off")); };
