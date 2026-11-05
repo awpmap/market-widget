@@ -165,6 +165,26 @@ body.compact #strip{display:block;padding:0 12px 8px}
 #paused{display:none;margin-bottom:8px;padding:7px 10px;border-radius:var(--r-sm);background:color-mix(in srgb,var(--warn) 16%,var(--surface));font-size:11.5px;color:var(--fg-2)}
 #paused.show{display:flex;align-items:center;gap:8px}
 #paused button{margin-left:auto;color:var(--accent);font-weight:600;font-size:11.5px}
+/* ============ opening animation (Candle M) ============ */
+#splash{display:none;position:fixed;inset:0;z-index:300;background:var(--bg);cursor:pointer}
+.boot #splash{display:block}
+.boot body{overflow:hidden}
+#splash .sp-mark{position:absolute;left:50%;top:36%;width:84px;height:84px;margin:-42px 0 0 -42px}
+#splash .sp-mark svg{width:100%;height:100%;display:block}
+#splash .sp-word{position:absolute;left:0;right:0;top:calc(36% + 60px);text-align:center;animation:spUp .4s .75s both cubic-bezier(.2,.7,.2,1)}
+#splash .sp-word b{display:block;font:700 28px/1 var(--font-d);letter-spacing:.5px;color:var(--fg)}
+#splash .sp-word small{display:block;margin-top:7px;font:600 10.5px var(--font);letter-spacing:2.4px;text-transform:uppercase;color:var(--muted)}
+#splash .sp-load{position:absolute;left:50%;width:120px;margin-left:-60px;top:calc(36% + 122px);height:2px;border-radius:2px;background:var(--line);overflow:hidden;animation:spIn .3s .3s both}
+#splash .sp-load i{display:block;height:100%;background:var(--accent);transform-origin:left;transform:scaleX(0);animation:spFill 2.4s .05s forwards cubic-bezier(.3,0,.2,1)}
+#splash .sp-status{position:absolute;left:0;right:0;top:calc(36% + 132px);text-align:center;font:500 11px var(--font);color:var(--muted);animation:spIn .3s .4s both}
+#splash .sp-c{transform-box:fill-box;transform-origin:50% 100%;animation:spGrow .42s both cubic-bezier(.2,1.6,.4,1)}
+#splash .sp-c:nth-of-type(1){animation-delay:.2s} #splash .sp-c:nth-of-type(2){animation-delay:.32s} #splash .sp-c:nth-of-type(3){animation-delay:.44s} #splash .sp-c:nth-of-type(4){animation-delay:.56s} #splash .sp-c:nth-of-type(5){animation-delay:.68s}
+#splash .sp-base{stroke-dasharray:44;stroke-dashoffset:44;animation:spDraw .5s .1s forwards ease-out}
+@keyframes spGrow{from{transform:scaleY(0);opacity:0}to{transform:scaleY(1);opacity:1}}
+@keyframes spDraw{to{stroke-dashoffset:0}}
+@keyframes spUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes spIn{from{opacity:0}to{opacity:1}}
+@keyframes spFill{to{transform:scaleX(1)}}
 #update{display:none;position:relative;padding-right:28px}
 #update.show{display:block}
 #update>div+div{margin-top:6px}
@@ -401,9 +421,23 @@ body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !importa
 </style>
 </head>
 <body>
+<div id="splash" aria-hidden="true">
+  <div class="sp-mark"><svg viewBox="0 0 64 64"><rect x=".75" y=".75" width="62.5" height="62.5" rx="15" fill="#0c121d" stroke="#2a3446" stroke-width="1.5"/><path class="sp-base" d="M10 51 H54" stroke="#2a3446" stroke-width="1.5"/><g class="sp-c"><path d="M11 12v38" stroke="#2fcf7d" stroke-width="1.8"/><rect x="8" y="15" width="6" height="32" rx="1.2" fill="#2fcf7d"/></g><g class="sp-c"><path d="M21.5 22v26" stroke="#f26d6d" stroke-width="1.8"/><rect x="18.5" y="25" width="6" height="19" rx="1.2" fill="#f26d6d"/></g><g class="sp-c"><path d="M32 31v18" stroke="#f26d6d" stroke-width="1.8"/><rect x="29" y="34" width="6" height="11" rx="1.2" fill="#f26d6d"/></g><g class="sp-c"><path d="M42.5 22v26" stroke="#2fcf7d" stroke-width="1.8"/><rect x="39.5" y="25" width="6" height="19" rx="1.2" fill="#2fcf7d"/></g><g class="sp-c"><path d="M53 12v38" stroke="#2fcf7d" stroke-width="1.8"/><rect x="50" y="15" width="6" height="32" rx="1.2" fill="#2fcf7d"/></g></svg></div>
+  <div class="sp-word"><b>MW</b><small>Market Widget</small></div>
+  <div class="sp-load"><i></i></div>
+  <div class="sp-status" id="spStatus">Loading prices…</div>
+</div>
+<script>
+/* opening animation: only when the desktop app starts (or with #splash), never on background reloads */
+(function(){ try{
+  var st = JSON.parse(localStorage.getItem("mw_settings") || "{}");
+  var cold = location.hash === "#splash" || (!!window.__TAURI__ && /tauri\.localhost|^tauri:/.test(document.referrer || ""));
+  if (cold && st.splash !== false && !document.hidden) document.documentElement.classList.add("boot");
+}catch(e){} })();
+</script>
 
 <header id="titlebar" data-tauri-drag-region>
-  <svg data-tauri-drag-region class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1a5fd6"/><path d="M6 21l6-6 5 4 9-10" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <svg data-tauri-drag-region class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x=".5" y=".5" width="31" height="31" rx="7" fill="#0c121d" stroke="#34405a"/><rect x="3" y="6" width="4" height="20" rx="1" fill="#2fcf7d"/><rect x="8.5" y="11" width="4" height="15" rx="1" fill="#f26d6d"/><rect x="14" y="15" width="4" height="11" rx="1" fill="#f26d6d"/><rect x="19.5" y="11" width="4" height="15" rx="1" fill="#2fcf7d"/><rect x="25" y="6" width="4" height="20" rx="1" fill="#2fcf7d"/></svg>
   <span class="appname" title="Market Widget" data-tauri-drag-region>MW</span>
   <button id="mkt" class="pill" title="Data status"><i></i><span>—</span></button>
   <span class="spacer" data-tauri-drag-region></span>
@@ -499,7 +533,7 @@ body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !importa
 
 <script>
 "use strict";
-const APP_VERSION = "3.9.0";
+const APP_VERSION = "3.10.0";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -1968,6 +2002,7 @@ function showTab(tab){
           <span>Start hidden in the tray</span><label class="sw"><input type="checkbox" data-shell="start_hidden"><span></span></label>
           <span>Keep on top of other windows (T)</span><label class="sw"><input type="checkbox" data-shell="on_top"><span></span></label>
           <span>Show / hide from anywhere: Ctrl+Alt+M</span><label class="sw"><input type="checkbox" data-shell="hotkey"><span></span></label>
+          <span>Opening animation when MW starts</span><label class="sw"><input type="checkbox" id="sSplash" ${settings.splash!==false?"checked":""}><span></span></label>
         </div></div><p>Closing the window (X or Esc) keeps MW running in the tray so alerts still pop up. Quit from the tray icon's menu. <span id="appVer"></span></p></div>` : ""}
       <div class="field"><label for="sNtfy">Phone alerts (optional)</label><input id="sNtfy" type="text" value="${esc(settings.ntfy)}" placeholder="ntfy topic, e.g. mk-dips-8x2q (hard to guess)">
         <p>Install the free ntfy app and subscribe to the same name to get alerts on your phone.</p></div>
@@ -1979,7 +2014,8 @@ function showTab(tab){
     if (NATIVE){
       const box = $("appOpts");
       nat.invoke("shell_state").then(st => { nat.state = st; box.querySelectorAll("[data-shell]").forEach(i => i.checked = !!st[i.dataset.shell]); $("appVer").textContent = "App version " + st.version + "." + (st.hotkey && !st.hotkey_ok ? " Ctrl+Alt+M is taken by another app, so the hotkey is off." : ""); }).catch(()=>{});
-      box.onchange = e => { const k = e.target.dataset.shell; if (!k) return; nat.invoke("shell_set", {key:k, value:e.target.checked}).then(syncNative).catch(err => { toast(String(err)); e.target.checked = !e.target.checked; }); };
+      box.onchange = e => { if (e.target.id === "sSplash"){ settings.splash = e.target.checked; saveSettings(); toast(e.target.checked ? "Opening animation on" : "Opening animation off"); return; }
+        const k = e.target.dataset.shell; if (!k) return; nat.invoke("shell_set", {key:k, value:e.target.checked}).then(syncNative).catch(err => { toast(String(err)); e.target.checked = !e.target.checked; }); };
     }
     if ($("sNotif")) $("sNotif").onclick = async ()=>{ try{ const r = await Notification.requestPermission(); toast(r==="granted"?"Pop-ups allowed":"Pop-ups not allowed"); showTab("general"); }catch(e){} };
     $("sSave").onclick = ()=>{
@@ -2355,6 +2391,34 @@ if (NATIVE){
   // the tray app calls this when it hasn't heard from the page (timers held back while hidden)
   window.__mwWake = why => { mwLog("info", "woken by " + why); alive(); if (refreshMs() && (!lastUpdate || Date.now() - lastUpdate > refreshMs())) schedule(true); safe("frame", renderFrame); };
 }
+/* opening animation hand-off: hold at least 1.9 s for the logo, then go once prices are in (3 s at most);
+   the logo flies into the title bar and the app shows through. A click skips it. */
+(function(){
+  const el = $("splash");
+  if (!document.documentElement.classList.contains("boot")){ if (el) el.remove(); return; }
+  mwLog("info", "opening animation");
+  try{ if (location.hash === "#splash") history.replaceState(null, "", location.pathname + location.search); }catch(e){}
+  const t0 = performance.now(); let done = false;
+  const finish = () => {
+    if (done) return; done = true;
+    try{
+      $("spStatus").textContent = "Ready";
+      const mark = el.querySelector(".sp-mark"), dst = document.querySelector("#titlebar .logo");
+      const a = mark.getBoundingClientRect(), b = dst ? dst.getBoundingClientRect() : null;
+      if (b && b.width && mark.animate){
+        mark.animate([{transform:"none"}, {transform:`translate(${(b.left + b.width/2) - (a.left + a.width/2)}px,${(b.top + b.height/2) - (a.top + a.height/2)}px) scale(${b.width / a.width})`}], {duration:480, easing:"cubic-bezier(.6,0,.2,1)", fill:"forwards"});
+        el.querySelectorAll(".sp-word,.sp-load,.sp-status").forEach(n => n.animate([{opacity:getComputedStyle(n).opacity}, {opacity:0}], {duration:200, fill:"forwards"}));
+        el.animate([{backgroundColor:getComputedStyle(el).backgroundColor}, {backgroundColor:"rgba(0,0,0,0)"}], {duration:360, delay:160, fill:"forwards"});
+      }
+    }catch(e){}
+    setTimeout(()=>{ el.remove(); document.documentElement.classList.remove("boot"); }, 520);
+  };
+  const fresh = () => lastUpdate && Date.now() - lastUpdate < 90e3;
+  const check = () => { const t = performance.now() - t0; if (t >= 1900 && (fresh() || !settings.key || t >= 3000)) finish(); else setTimeout(check, 100); };
+  setTimeout(check, 1900);
+  el.addEventListener("click", finish);
+  setTimeout(finish, 6000);   // never stuck
+})();
 renderVersion(); setTimeout(()=>checkUpdates(), 4000); setInterval(()=>checkUpdates(), 60*60e3);   // am I on the latest version?
 setInterval(()=>{ renderFrame(); updateTray(); }, 30e3);
 setInterval(()=>{ try{ renderPill(); }catch(e){} }, 10e3);
