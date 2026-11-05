@@ -141,7 +141,7 @@ body:not(.native) .tb-btn.pin{display:none}
 .risk{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:11.5px;color:var(--fg-2);background:var(--surface-2);border-radius:var(--r-sm);padding:7px 9px;margin:-4px 0 10px}
 .risk b{color:var(--fg);font-weight:600}
 .er{font-size:10px;font-weight:600;color:var(--fg-2);background:var(--surface-2);border-radius:5px;padding:0 4px;margin-left:4px;vertical-align:1px}
-.er.soon{color:#1b1300;background:var(--warn)}
+.er.soon{color:#1b1300;background:#f5b43c}
 .news{grid-column:1/-1;margin-top:4px;font-size:11.5px}
 .news a{display:block;color:var(--fg);text-decoration:none;padding:4px 0;border-top:1px dashed var(--line);user-select:text}
 .news a:hover{color:var(--accent)}
@@ -150,16 +150,17 @@ body:not(.native) .tb-btn.pin{display:none}
 .wdet{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;margin-top:6px;font-size:11.5px;color:var(--fg-2);cursor:default}
 .wdet b{color:var(--fg);font-weight:600}
 .wmeta{flex-wrap:wrap;row-gap:2px}
-/* compact strip: watch tickers sorted by distance to the next buy level */
+/* compact strip: watch tickers in the same order as the Watchlist; one shared grid so the columns line up */
 #strip{display:none}
-body.compact #strip{display:block;padding:0 12px 8px}
-.srow{display:grid;grid-template-columns:minmax(44px,1fr) auto auto auto;gap:8px;align-items:center;font-size:12px;padding:4px 0;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
+body.compact #strip{display:grid;grid-template-columns:minmax(44px,1fr) auto auto auto;column-gap:8px;padding:0 12px 8px}
+.srow{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:center;font-size:12px;padding:4px 0;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
 .srow:first-child{border-top:0}
 .srow .s{font-weight:600}
-.srow .d{font-size:11px;color:var(--fg-2);min-width:58px;text-align:right}
+.srow>span:not(.s){text-align:right}
+.srow .d{font-size:11px;color:var(--fg-2);min-width:58px}
 .srow .d.hit{color:var(--down);font-weight:700} .srow .d.near{color:var(--warn);font-weight:700}
 /* banner by kind + actions */
-#banner.k-near{background:var(--warn);color:#1b1300}
+#banner.k-near{background:#f5b43c;color:#1b1300}
 #banner.k-test{background:var(--accent);color:var(--accent-fg)}
 #banner .acts{display:flex;gap:6px;margin-top:7px}
 #banner .acts button{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;background:rgba(0,0,0,.18)}
@@ -354,7 +355,7 @@ body.wco #sheet{top:env(titlebar-area-height,40px)}
 .sh-h{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
 .sh-h b{font:600 14px var(--font-d);flex:1}
 .tabs{display:flex;flex-wrap:wrap;gap:2px;padding:6px 10px 0;border-bottom:1px solid var(--line)}
-.tabs button{padding:7px 10px;font-size:12px;color:var(--fg-2);border-bottom:2px solid transparent;white-space:nowrap}
+.tabs button{padding:7px 8px;font-size:12px;color:var(--fg-2);border-bottom:2px solid transparent;white-space:nowrap}
 .tabs button.on{color:var(--fg);border-bottom-color:var(--accent);font-weight:600}
 .sh-b{flex:1;overflow:auto;padding:12px;user-select:text}
 .field{margin-bottom:12px}
@@ -395,6 +396,10 @@ input:disabled{opacity:.45;cursor:not-allowed}
 body.native #titlebar .logo *{pointer-events:none}
 .er{display:inline-block;white-space:nowrap}
 .hrow .s,.wtop .s,.srow .s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+/* ticker + earnings chip: the ticker never gets cut off; when space is tight the chip shortens instead */
+.s1{display:flex;align-items:center;min-width:0;max-width:100%}
+.s1 .tk,.s1 .grip{flex:none}
+.s1 .er{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .risk span{white-space:nowrap}
 .breadth .bar{min-width:40px}
 .grp-h .muted{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
@@ -476,7 +481,7 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
 <div id="statusPop" class="pop hide" role="dialog" aria-label="Data status"></div>
 <div id="menu" class="menu hide" role="menu">
   <button role="menuitem" id="bCompact"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5h10M3 8h10M3 11h10"/></svg><span id="mCompactLbl">Compact view</span><kbd>C</kbd></button>
-  <button role="menuitem" data-open="alerts" data-tip="Your tickers and their alert rules"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8z"/></svg><span>Watchlist</span></button>
+  <button role="menuitem" data-open="alerts" data-tip="Your tickers and their alert rules"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8z"/></svg><span>Watchlist</span><kbd>/</kbd></button>
   <button role="menuitem" data-open="holdings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="4" width="11" height="9" rx="1.5"/><path d="M5.5 4V2.8h5V4"/></svg><span>Holdings</span></button>
   <button role="menuitem" id="bPause"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4v8M10 4v8"/></svg><span id="mPauseLbl">Pause alerts</span><kbd>P</kbd></button>
   <button role="menuitem" data-open="journal"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13V8M6.5 13V4M10 13V7M13.5 13V2.5"/></svg><span>Scorecard</span></button>
@@ -497,6 +502,12 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
   <div id="needKey" class="callout hide">
     <b>Welcome. One step to start.</b>
     Get a free market-data key at <a href="https://finnhub.io/register" target="_blank" rel="noopener" style="color:var(--accent)">finnhub.io/register</a>, then paste it in Settings.
+    <div style="margin-top:8px"><button class="btn primary" data-open="general">Open settings</button></div>
+  </div>
+
+  <div id="keyBad" class="callout hide" role="alert">
+    <b>Finnhub didn't accept your key</b>
+    Prices from Finnhub aren't updating. The key may have a typo, or it was reset on finnhub.io.<span id="keyBadBk"></span>
     <div style="margin-top:8px"><button class="btn primary" data-open="general">Open settings</button></div>
   </div>
 
