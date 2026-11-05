@@ -1,0 +1,77 @@
+name: Build MW Lab Windows app
+
+# Builds MW Lab, the test copy of the desktop app (labapp/). It installs next to the real MW:
+# its own name, app ID, settings and Ctrl+Alt+L hotkey, and it opens /market-widget/lab/.
+# Published only as a PRE-release named lab-app-v<version>, so the live app's update check
+# (which reads the latest full release) never offers it.
+on:
+  push:
+    tags: ['lab-app-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lab-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          sparse-checkout: labapp
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: 'labapp/src-tauri -> target'
+      - name: Install build tools
+        working-directory: labapp
+        run: npm ci
+      - name: Publish this version?
+        id: rel
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          v=$(node -p "require('./labapp/src-tauri/tauri.conf.json').version")
+          if gh release view "lab-app-v$v" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release lab-app-v$v already exists; building only."; echo "tag=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing lab-app-v$v."; echo "tag=lab-app-v$v" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build (and publish a new version as a pre-release)
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: labapp
+          tagName: ${{ steps.rel.outputs.tag }}
+          releaseName: 'MW Lab for Windows ${{ steps.rel.outputs.tag }} (test copy)'
+          releaseCommitish: ${{ github.sha }}
+          releaseBody: |
+            **Test copy.** MW Lab installs next to your current MW and does not change it. It has its own settings, its own tray icon (violet frame) and Ctrl+Alt+L instead of Ctrl+Alt+M.
+
+            **Install:** download `MW Lab_..._x64-setup.exe` below and run it. Windows may say "Windows protected your PC" because the app isn't code-signed: click **More info → Run anyway**.
+
+            To bring your setup over: in MW open Settings → Backup, tick "Include my data keys and settings" and click Copy. Then in MW Lab open Settings → Backup, paste into the box and click Restore.
+            To remove it: Windows Settings → Apps → MW Lab → Uninstall.
+
+            Information only. MW Lab never trades and never connects to a brokerage.
+          releaseDraft: false
+          prerelease: true
+      - name: Keep the installer from this build
+        if: ${{ steps.rel.outputs.tag == '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mw-lab-windows-installer
+          path: labapp/src-tauri/target/release/bundle/nsis/*.exe
+          retention-days: 7

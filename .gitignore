@@ -1,3 +1,8 @@
 app/node_modules/
 app/src-tauri/target/
 app/src-tauri/gen/
+labapp/node_modules/
+labapp/src-tauri/target/
+labapp/src-tauri/gen/
+labdev/node_modules/
+labdev/shots/

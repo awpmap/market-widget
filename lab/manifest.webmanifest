@@ -1,0 +1,17 @@
+{
+  "name": "MW Lab",
+  "short_name": "MW Lab",
+  "description": "Test copy of Market Widget with the review board's recommendations built in. Information only; it never trades.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#0e1116",
+  "theme_color": "#0e1116",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

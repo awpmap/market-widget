@@ -1,0 +1,51 @@
+[
+ {
+  "t": "2026-11-05T16:02:00.000Z",
+  "sym": "AAA",
+  "kind": "fast",
+  "quiet": false,
+  "id": "AAA-fast-1"
+ },
+ {
+  "t": "2026-11-05T16:03:00.000Z",
+  "sym": "AAA",
+  "kind": "red",
+  "quiet": true,
+  "id": "AAA-red"
+ },
+ {
+  "t": "2026-11-05T16:04:00.000Z",
+  "sym": "AAA",
+  "kind": "level",
+  "quiet": false,
+  "id": "AAA-L96"
+ },
+ {
+  "t": "2026-11-05T16:39:00.000Z",
+  "sym": "BBB",
+  "kind": "near",
+  "quiet": false,
+  "id": "BBB-N48"
+ },
+ {
+  "t": "2026-11-05T17:01:00.000Z",
+  "sym": "BBB",
+  "kind": "red",
+  "quiet": false,
+  "id": "BBB-red"
+ },
+ {
+  "t": "2026-11-05T17:51:00.000Z",
+  "sym": "BBB",
+  "kind": "level",
+  "quiet": false,
+  "id": "BBB-L48"
+ },
+ {
+  "t": "2026-11-05T19:27:00.000Z",
+  "sym": "BBB",
+  "kind": "fast",
+  "quiet": false,
+  "id": "BBB-leg-1"
+ }
+]

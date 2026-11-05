@@ -1,0 +1,13 @@
+{
+  "name": "mw-lab-desktop",
+  "private": true,
+  "version": "1.3.0",
+  "description": "Windows tray app for MW Lab, the test copy of Market Widget. Info only, never trades.",
+  "scripts": {
+    "tauri": "tauri",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

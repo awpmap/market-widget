@@ -1,0 +1,98 @@
+name: MW Lab checks and deploy
+
+# MW Lab is a test copy of the widget (served at /market-widget/lab/). It never touches the live widget.
+# Every push to the lab branch runs the checks below. Only when all of them pass is lab/ copied
+# into lab/ on main, which GitHub Pages then serves. Nothing else on main is changed.
+on:
+  push:
+    branches: [lab]
+    paths: ['lab/**', 'labdev/**', '.github/workflows/lab-ci.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lab-ci
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Engine and replay tests
+        working-directory: labdev
+        run: |
+          npm ci
+          npm test
+
+      - name: Market calendar matches the NYSE calendar
+        run: |
+          pip install --quiet exchange_calendars==4.13.2
+          node labdev/dump_calendar.mjs | python labdev/check_calendar.py
+
+      - name: Crash-report script matches its pinned hash
+        shell: bash
+        run: |
+          src=$(grep -o 'https://browser.sentry-cdn.com/[^"]*' lab/app.js | head -1)
+          want=$(grep -o 'sha384-[A-Za-z0-9+/=]*' lab/app.js | head -1)
+          got="sha384-$(curl -fsSL "$src" | openssl dgst -sha384 -binary | openssl base64 -A)"
+          echo "script: $src"
+          if [ "$got" != "$want" ]; then echo "::error::Hash mismatch: page pins $want, CDN serves $got"; exit 1; fi
+          echo "Hash OK"
+
+      - name: Real page in a browser (synthetic data, fake clock)
+        working-directory: labdev
+        run: |
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+          node harness/browser.mjs --shots shots
+
+      - name: Keep screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lab-screenshots
+          path: labdev/shots
+          if-no-files-found: ignore
+          retention-days: 7
+
+  deploy:
+    needs: checks
+    if: github.ref == 'refs/heads/lab'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: pages-main-push
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: src
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          path: site
+      - name: Copy lab/ to main (only the lab folder)
+        shell: bash
+        run: |
+          rsync -a --delete src/lab/ site/lab/
+          cd site
+          git add -A lab
+          if git diff --cached --quiet; then echo "lab/ on main is already up to date."; exit 0; fi
+          other=$(git diff --cached --name-only | grep -v '^lab/' || true)
+          if [ -n "$other" ]; then echo "::error::Refusing to change files outside lab/: $other"; exit 1; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Deploy MW Lab from lab@${GITHUB_SHA::7}"
+          git push origin HEAD:main

@@ -1,0 +1,13 @@
+{
+  "name": "mw-lab-dev",
+  "private": true,
+  "description": "Tests and harness for MW Lab. Not deployed.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "harness": "node harness/replay.mjs fixtures/synthetic-day.json"
+  },
+  "devDependencies": {
+    "fast-check": "3.23.2"
+  }
+}
