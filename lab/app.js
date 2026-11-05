@@ -243,6 +243,8 @@ const etDateOf = E.etDateOf, etMs = E.etMs, addDays = E.addDays, isTradingDay = 
 const OVERNIGHT_FROM = E.OVERNIGHT_FROM;
 const clockOpts = () => ({overnight: !!settings.overnight});
 function marketClock(now = Date.now()){ return E.marketClock(now, clockOpts()); }
+/* "every 30 s", "every 5 min" */
+const everyStr = ms => { const sec = Math.round(ms/1000); return sec < 120 ? `every ${sec} s` : `every ${Math.round(sec/60)} min`; };
 /* "2h 05m", "45m", "1d 14h" */
 function fmtLeft(ms){
   const mins = Math.max(0, Math.ceil(ms / 60e3));
@@ -629,6 +631,10 @@ async function tick(){
   } finally {
     busy = false; $("bRefresh").classList.remove("spin");
     $("err").textContent = lastErr ? lastErr + (health.backup.length ? ` Using the Twelve Data backup for ${health.backup.length} symbol(s).` : "") : ""; renderAll();
+    // a rejected key is shown up top (not just in the line at the bottom), with a way to fix it
+    const keyBad = /didn't accept the key/.test(lastErr || "");
+    $("keyBad").classList.toggle("hide", !keyBad);
+    if (keyBad) $("keyBadBk").textContent = health.backup.length ? ` Meanwhile the Twelve Data backup is pricing ${health.backup.length} of your symbols.` : "";
   }
 }
 
@@ -705,13 +711,14 @@ function effLevels(w){
   (w.ma||[]).forEach(n => { const v = h && h["sma"+n]; if (v) lv.push(+v.toFixed(2)); });
   return lv.sort((a,b)=>b-a);
 }
-const lvName = (w, L) => { if (w.auto){ const a = autoLevels((w.sym||"").toUpperCase()), x = a && a.find(x => x.p === L); if (x) return `auto ${fmtL(L)} (${x.why})`; } const h = hist[(w.sym||"").toUpperCase()]; const m = (w.ma||[]).find(n => h && h["sma"+n] && +h["sma"+n].toFixed(2) === L); return m ? `${m}-day average (${fmt$(L)})` : fmt$(L); };
+// short: for alert text ("hit your auto $428 buy level"); the long form adds why the level sits there (tooltips)
+const lvName = (w, L, short) => { if (w.auto){ const a = autoLevels((w.sym||"").toUpperCase()), x = a && a.find(x => x.p === L); if (x) return short ? `auto ${fmtL(L)}` : `auto ${fmtL(L)} (${x.why})`; } const h = hist[(w.sym||"").toUpperCase()]; const m = (w.ma||[]).find(n => h && h["sma"+n] && +h["sma"+n].toFixed(2) === L); return m ? `${m}-day average (${fmt$(L)})` : fmt$(L); };
 const volOf = sym => { const h = hist[sym]; return h && h.vol ? h.vol : null; };
 function snoozed(sym){ const t = settings.snooze[sym]; return t && t > Date.now(); }
 function pausedNow(){ return settings.pauseUntil && settings.pauseUntil > Date.now(); }
 function ctxFor(w){
   const sym = (w.sym||"").toUpperCase(), q = quotes[sym], now = Date.now(), fr = freshOf(q), bq = quotes[settings.bench];
-  const levels = effLevels(w).map(L => ({L, name:lvName(w, L)}));
+  const levels = effLevels(w).map(L => ({L, name:lvName(w, L, true)}));
   return {sym, q, now, today:etNow().date, vol:volOf(sym), hi52: metrics[sym] && metrics[sym].hi, benchSym:settings.bench, benchDp: bq && bq.dp != null ? bq.dp : null,
     er:erInfo(sym), ticks:(ticks.day === etNow().date && ticks.s[sym]) || [], vwap: sessVwap(sym), levels, alertOk: fr.ok && !settings.allOff, fresh:fr};
 }
@@ -1042,6 +1049,7 @@ function renderPortfolio(){
   let hv = 0, hw = 0; P.rows.forEach(r => { const m = metrics[r.sym]; if (r.val && m && m.hi && r.q && r.q.c){ hv += r.val*(r.q.c/m.hi - 1); hw += r.val; } });
   const offHi = hw ? hv/hw*100 : null;
   const gain = P.cost ? (P.costVal/P.cost - 1)*100 : null;
+  const missingSyms = [...new Set(P.rows.filter(r => r.val == null).map(r => r.sym))];
 
   // allocation by account (+ funds & cash)
   const accts = {}; P.rows.forEach(r=>{ const a = r.h.acct || "Other"; accts[a] = (accts[a]||0) + (r.val||0); });
@@ -1074,27 +1082,30 @@ function renderPortfolio(){
     const asOf = (xs.find(o=>o.x.live)||{x:{}}).x.date;
     fundsHtml = `<div class="grp ${settings.grpCollapsed.__funds?"collapsed":""}">
       <button class="grp-h" data-grp="__funds">${chev}<b>Mutual funds</b><span class="muted">${anyLive ? "close " + shortDate(asOf) : settings.tdKey ? "" : "not live"}${anyErr ? ` <span title="Some fund prices couldn't update. Click a fund to retry, or use Settings → Test my keys." style="color:var(--warn)">⚠</span>` : ""}</span>
-        <span class="r num"><span>${fmt$(fv,0)}</span>${anyLive && fchg!=null ? `<span class="${cls(fchg)}" style="font-weight:600">${fmtPct(fchg)}</span>` : ""}</span></button>
+        <span class="r num"><span>${fmt$(fv,0)}</span>${anyLive && fchg!=null ? `<span class="${cls(fchg)}" style="font-weight:${asOf && asOf !== etNow().date ? 400 : 600}"${asOf && asOf !== etNow().date ? ` title="Change on ${shortDate(asOf)}, the funds' latest prices. Today's prices come in this evening."` : ""}>${fmtPct(fchg)}</span>` : ""}</span></button>
       <div class="grp-rows">${xs.map(({f,x})=>{ const sym = f.sym.toUpperCase();
         return `<div class="hrow" ${settings.tdKey?`data-nav="${esc(sym)}" title="${x.err && !x.live ? "Couldn't update: " + esc(x.err) + ". Click to retry." : "Click to re-check this fund's price"}"`:`style="cursor:default" title="Add a free Twelve Data key in Settings for daily prices"`}>
           <div class="s">${esc(sym)}<small>${+f.shares ? (+f.shares).toLocaleString("en-US",{maximumFractionDigits:1}) + " sh · " : ""}${(x.value/tot*100).toFixed(1)}%</small></div><span class="spark"></span>
           <div class="v num">${fmt$(x.value,0)}<small>${x.live ? fmt$(x.nav) : "—"}</small></div>
-          ${x.live && x.chgPct!=null ? `<div class="dp num ${cls(x.chgPct)}">${fmtPct(x.chgPct)}</div>` : `<div class="dp num muted" style="font-weight:400">${x.err ? "⚠" : "—"}</div>`}</div>`; }).join("")}</div></div>`;
+          ${x.live && x.chgPct!=null ? (x.date && x.date !== etNow().date
+            ? `<div class="dp num ${cls(x.chgPct)}" style="background:none;font-weight:400" title="Change on ${shortDate(x.date)}, the fund's latest price (NAV). Mutual funds price once a day after the close, so today's move shows up this evening.">${fmtPct(x.chgPct)}<small style="display:block;font-size:10px;color:var(--muted)">${shortDate(x.date)}</small></div>`
+            : `<div class="dp num ${cls(x.chgPct)}">${fmtPct(x.chgPct)}</div>`) : `<div class="dp num muted" style="font-weight:400">${x.err ? "⚠" : "—"}</div>`}</div>`; }).join("")}</div></div>`;
   }
   // a cash row at $0 stays out of the way; it shows again as soon as it's above $0 (Settings → Holdings can show them)
   const cashShown = settings.showZeroCash ? cashes : cashes.filter(f => (+f.value||0) > 0);
   if (cashShown.length){
     const cv = cashShown.reduce((a,f)=>a+(+f.value||0),0);
-    const label = f => { const n = String(f.name||"").replace(/\s*\(.*?\)\s*/g," ").replace(/^cash[\s,:-]*/i,"").trim(); return n ? n.charAt(0).toUpperCase() + n.slice(1) : "Cash"; };
+    // the name exactly as typed in Settings → Holdings, so "Cash (Taxable)" and "Cash (Roth)" stay told apart
+    const label = f => String(f.name||"").trim() || "Cash";
     cashHtml = `<div class="grp ${settings.grpCollapsed.__cash?"collapsed":""}">
       <button class="grp-h" data-grp="__cash">${chev}<b>Cash</b><span class="muted">ready to invest</span><span class="r num"><span>${fmt$(cv,0)}</span></span></button>
-      <div class="grp-rows">${cashShown.map(f=>`<div class="hrow" style="cursor:default"><div class="s">${esc(label(f))}<small>${((+f.value||0)/tot*100).toFixed(1)}%</small></div><span class="spark"></span><div class="v num">${fmt$(+f.value||0,0)}</div><div class="dp"></div></div>`).join("")}</div></div>`;
+      <div class="grp-rows">${cashShown.map(f=>`<div class="hrow" style="cursor:default"><div class="s" title="${esc(label(f))}">${esc(label(f))}<small>${((+f.value||0)/tot*100).toFixed(1)}%</small></div><span class="spark"></span><div class="v num">${fmt$(+f.value||0,0)}</div><div class="dp"></div></div>`).join("")}</div></div>`;
   }
   const fixedHtml = fundsHtml + cashHtml;
   const cashTotal = cashes.reduce((a,f)=>a+(+f.value||0),0);
 
   body.innerHTML = `
-    <div class="hero"><div><div class="val num" title="Everything you own here: stocks, ETFs, mutual funds and cash, at the latest prices.">${any?fmt$(P.total,0):"—"}</div></div>
+    <div class="hero"><div><div class="val num" title="Everything you own here: stocks, ETFs, mutual funds and cash, at the latest prices.">${any?fmt$(P.total,0):"—"}</div>${any && missingSyms.length ? `<small style="display:block;margin-top:3px;font-size:11px;color:var(--warn)" title="These holdings had no price on the last refresh, so the total leaves them out for now.">Leaves out ${esc(missingSyms.join(", "))} (no price)</small>` : ""}</div>
       <div class="chg num ${cls(P.dayUsd)}" title="How much the whole portfolio moved today in dollars and percent. When the market is closed, this is the last trading day.">${any?fmtS$(P.dayUsd):"—"} <span>${any?fmtPct(P.dayPct):""}</span><small>${dayWord()}</small></div></div>
     <div class="kpis num">
       <div class="kpi" title="Your stocks and ETFs today minus the S&amp;P 500 (cash and funds left out)"><b class="${cls(vs)}">${vs==null?"—":fmtPct(vs)}</b><span>stocks vs S&amp;P</span></div>
@@ -1106,7 +1117,7 @@ function renderPortfolio(){
     <div class="toolbar"><span style="flex:1"></span>
       <div class="seg" id="sortSeg">${[["value","Value"],["day","Today"],["name","A–Z"]].map(([k,l])=>`<button data-sort="${k}" class="${settings.sort===k?"on":""}">${l}</button>`).join("")}</div></div>
     ${grpHtml}${fixedHtml}
-    ${P.missing && any ? `<div class="note">${P.missing} holding(s) had no live price this round.</div>` : ""}`;
+    ${P.missing && any ? `<div class="note">No price this round for ${esc(missingSyms.join(", "))}, so the total leaves ${missingSyms.length > 1 ? "them" : "it"} out. MW Beta tries again with the next refresh.</div>` : ""}`;
 }
 function holdRow(r, total){
   const q = r.q, m = metrics[r.sym] || {}, open = openRows.has("h:"+r.sym+":"+(r.h.acct||""));
@@ -1127,9 +1138,9 @@ function holdRow(r, total){
     </div>`;
   }
   return `<div class="hrow" role="button" tabindex="0" data-row="h:${esc(r.sym)}:${esc(r.h.acct||"")}">
-    <div class="s">${esc(r.sym)}${erChip(r.sym)}<small>${r.sh} sh${wt!=null?" · "+wt.toFixed(1)+"%":""}</small></div>
+    <div class="s"><span class="s1"><span class="tk">${esc(r.sym)}</span>${erChip(r.sym)}</span><small>${r.sh} sh${wt!=null?" · "+wt.toFixed(1)+"%":""}</small></div>
     ${sparkSvg(r.sym)}
-    <div class="v num">${fmt$(r.val,0)}<small>${q?fmt$(q.c):"—"}</small>${heldChip(r.sym)}</div>
+    <div class="v num">${r.val!=null ? fmt$(r.val,0) : `<span class="muted" title="No price for ${esc(r.sym)} yet. It's left out of the total until the next refresh brings one.">no price</span>`}<small>${q?fmt$(q.c):"—"}</small>${heldChip(r.sym)}</div>
     <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}</div>${det}</div>`;
 }
 
@@ -1264,7 +1275,7 @@ function renderWatch(){
     const insane = px && useLv ? E.levelSanity(lv, px) : [];
     const flags = (ses0 === "open" && fr && !fr.ok && !off ? `<span class="chip stale" title="Alerts for ${esc(sym)} are on hold: ${esc(fr.why)}. They start again with the next fresh price.">stale</span>` : "")
       + (insane.length ? `<span class="chip flag" title="${esc(insane.map(fmtL).join(", "))} ${insane.length > 1 ? "are" : "is"} more than 3x away from today's price. A stock split, or a typo? Check Settings → Watchlist.">check levels</span>` : "");
-    const right = `<span class="r">${flags}${vwd!=null?`<span class="num" title="Price vs today's VWAP (${fmt$(sv.vw)}), the average price paid today weighted by volume. Under it, sellers have the upper hand today; climbing back over it after a drop often means the selling has paused.">VWAP <b class="${cls(vwd)}">${fmtPct(vwd,1)}</b></span>`:""}${rel!=null?`<span class="num" title="Today's move minus ${esc(bench)}'s: separates a sector-wide dip from a stock-specific drop">vs ${esc(bench)} <b class="${cls(rel)}">${fmtPct(rel,1)}</b></span>`:""}${fromHi!=null?`<span class="num" title="From the 52-week high">${fromHi>=0?"−":"+"}${Math.abs(fromHi).toFixed(1)}% hi</span>`:""}${off?`<span class="chip">alerts off</span>`:sn?`<span class="chip" title="Snoozed until ${timeStr(settings.snooze[sym])}">snoozed</span>`:""}<button class="rbtn" data-ref="${esc(sym)}" title="Refresh just ${esc(sym)}" aria-label="Refresh ${esc(sym)}">↻</button></span>`;
+    const right = `<span class="r">${flags}${vwd!=null?`<span class="num" title="Price vs today's VWAP (${fmt$(sv.vw)}), the average price paid today weighted by volume. Under it, sellers have the upper hand today; climbing back over it after a drop often means the selling has paused.">VWAP <b class="${cls(vwd)}">${fmtPct(vwd,1)}</b></span>`:""}${rel!=null?`<span class="num" title="Today's move minus ${esc(bench)}'s: separates a sector-wide dip from a stock-specific drop">vs ${esc(bench)} <b class="${cls(rel)}">${fmtPct(rel,1)}</b></span>`:""}${fromHi!=null?`<span class="num" title="How far the price is from its 52-week high (${fmt$(m.hi)})">52w high <b class="${fromHi>0?"down":""}">${fromHi>=0?"−":"+"}${Math.abs(fromHi).toFixed(1)}%</b></span>`:""}${off?`<span class="chip">alerts off</span>`:sn?`<span class="chip" title="Snoozed until ${timeStr(settings.snooze[sym])}">snoozed</span>`:""}<button class="rbtn" data-ref="${esc(sym)}" title="Refresh just ${esc(sym)}" aria-label="Refresh ${esc(sym)}">↻</button></span>`;
     const open = openRows.has("w:"+sym);
     let det = "";
     if (open){
@@ -1288,7 +1299,7 @@ function renderWatch(){
       </div>`;
     }
     return `<div class="wrow ${off?"muted-row":I.st?"st-"+I.st:""}" data-row="w:${esc(sym)}" role="button" tabindex="0" aria-expanded="${open}"><div class="wtop">
-      <div class="s"><span class="grip" data-grip="1" title="Drag to reorder your watchlist">⠿</span>${esc(sym)}${erChip(sym)}<small>${esc(w.note||"")}</small></div>
+      <div class="s"><span class="s1"><span class="grip" data-grip="1" title="Drag to reorder your watchlist">⠿</span><span class="tk">${esc(sym)}</span>${erChip(sym)}</span><small${w.note ? ` title="${esc(w.note)}"` : ""}>${esc(w.note||"")}</small></div>
       ${sparkSvg(sym, lv)}
       <div class="v num" style="text-align:right" title="${esc(srcLine(q))}">${px?fmt$(px):"—"}${heldChip(sym)?`<br>${heldChip(sym)}`:""}</div>
       <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}</div></div>
@@ -1311,10 +1322,10 @@ function renderWatch(){
   const planHtml = trigHtml + (plan.length ? `<div class="note" style="margin:0 0 6px;font-size:11.5px;color:var(--fg-2)" title="${esc(plan.map(x=>`${x.sym} ${fmtL(x.L)}: ${fmt$(x.amt,0)}`).join(" · ") + (settings.sizing ? "\nAmounts are scaled by each ticker's volatility (Settings → Watchlist)." : ""))}">${trig ? "What's left" : "Cash " + fmt$(cash,0)} covers <b style="color:${covered<plan.length?"var(--warn)":"var(--up)"}">${covered} of ${plan.length}</b> planned buys (${fmt$(cum,0)} total)${plan[0]?` · next: ${esc(plan[0].sym)} ${fmtL(plan[0].L)}${settings.sizing ? " for " + fmt$(plan[0].amt,0) : ""}`:""}${conc && conc.over ? ` · <b style="color:var(--warn)" title="After that buy, ${esc(plan[0].sym)} would be ${conc.after.toFixed(0)}% of everything you own, above your ${settings.concCap}% limit.">${esc(plan[0].sym)} would reach ${conc.after.toFixed(0)}%</b>` : ""}</div>` : "");
   $("wl-body").innerHTML = html ? planHtml + html : `<div class="empty">No tickers yet. <button data-open="alerts">Add one</button></div>`;
   $("wl-sum").innerHTML = settings.allOff ? `<span class="muted">alerts off</span>` : pausedNow() ? `<span style="color:var(--warn);font-weight:600">paused</span>` : (hits?`<span class="down" style="font-weight:600">${hits} at level</span>`:"") + (nears?`<span style="color:var(--warn);font-weight:600">${nears} near</span>`:"") + (!hits&&!nears?`<span class="muted">${cfg.watch.length} watching</span>`:"");
-  // compact strip: closest to a buy level first
-  const rows = cfg.watch.map(watchInfo).filter(I => I.px).sort((a,b) => (a.hitL.length?-1e9:0) - (b.hitL.length?-1e9:0) || (a.dist ?? 1e9) - (b.dist ?? 1e9));
-  $("strip").innerHTML = rows.map(I => `<div class="srow num"><span class="s">${esc(I.sym)}${erChip(I.sym)}</span><span>${fmt$(I.px)}</span><span class="${cls(I.q.dp)}">${fmtPct(I.q.dp,1)}</span>
-    <span class="d ${I.hitL.length||I.red?"hit":I.st}">${I.hitL.length ? levelText(I, true) : I.next ? `${I.dist.toFixed(1)}% → ${fmtL(I.next)}` : I.red ? "red day" : "—"}</span></div>`).join("") || `<div class="muted" style="font-size:11.5px">No watchlist prices yet.</div>`;
+  // compact strip: same order as the Watchlist (your drag order), so rows don't jump around between refreshes
+  const rows = cfg.watch.map(watchInfo);
+  $("strip").innerHTML = rows.map(I => !I.px ? `<div class="srow num"><span class="s"><span class="s1"><span class="tk">${esc(I.sym)}</span>${erChip(I.sym)}</span></span><span class="muted">—</span><span></span><span class="d">waiting</span></div>` : `<div class="srow num"><span class="s"><span class="s1"><span class="tk">${esc(I.sym)}</span>${erChip(I.sym)}</span></span><span>${fmt$(I.px)}</span><span class="${cls(I.q.dp)}">${fmtPct(I.q.dp,1)}</span>
+    <span class="d ${I.hitL.length||I.red?"hit":I.st}">${I.hitL.length ? levelText(I, true) : I.next ? `${I.dist.toFixed(1)}% → ${fmtL(I.next)}` : I.red ? "red day" : "—"}</span></div>`).join("") || `<div class="muted" style="grid-column:1/-1;font-size:11.5px">No tickers on your watchlist yet.</div>`;
 }
 function renderLog(){
   const f = firedToday();
@@ -1365,7 +1376,7 @@ function renderPill(ses = session(), ds = dataState()){
   const mc = marketClock(), ageMin = lastUpdate ? Math.round((Date.now()-lastUpdate)/60000) : 0;
   $("mkt").className = "pill " + (ses.s==="open"?"open":ses.s==="ext"?"ext":"") + (ds.k!=="ok" ? " " + ds.k : "") + (mc.ph==="open" && mc.until - Date.now() <= 15*60e3 ? " closing" : "");
   $("mkt").lastElementChild.textContent = ds.k==="stale" && ses.s==="open" && ageMin >= 2 ? `${ageMin}m old` : ds.k==="bad" ? "No data" : clockText(mc, Date.now(), $("titlebar").clientWidth < (document.body.classList.contains("native") ? 440 : 340));
-  $("mkt").title = (ds.why ? ds.why + ". " : "") + (mc.ph === "unknown" ? "MW Beta's market calendar has run out." : clockSentence(mc)) + (ses.s==="open" ? ` Prices refresh about every ${Math.round((refreshMs()||60e3)/1000)} s from Finnhub's free feed.` : " Showing the last close: the free price feeds only cover regular hours.") + " Click for details.";
+  $("mkt").title = (ds.why ? ds.why + ". " : "") + (mc.ph === "unknown" ? "MW Beta's market calendar has run out." : clockSentence(mc)) + (ses.s==="open" ? ` Prices refresh about ${everyStr(refreshMs()||60e3)} from Finnhub's free feed.` : " Showing the last close: the free price feeds only cover regular hours.") + " Click for details.";
 }
 function renderFrame(){
   const ses = session(), ds = dataState();
@@ -1398,7 +1409,7 @@ function renderStatus(){
   const ses = session(), ds = dataState(), d = etNow().date, L = tdBudget();
   const now = Date.now(), perMin = RL.times.filter(t => now - t < 60000).length, ms = refreshMs();
   const kv = (k, v) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`;
-  $("statusPop").innerHTML = `<h4>${ds.k==="ok" ? "✓ Data is live" : ds.k==="stale" ? "⚠ " + esc(ds.why) : "✕ " + esc(ds.why)}</h4>
+  $("statusPop").innerHTML = `<h4>${ds.k==="ok" ? (ses.s === "open" ? "✓ Data is live" : "✓ Up to date · showing the last close") : ds.k==="stale" ? "⚠ " + esc(ds.why) : "✕ " + esc(ds.why)}</h4>
     ${(()=>{ const mc = marketClock(), today = etNow().date; if (mc.ph === "unknown") return kv("Market", "Calendar expired " + E.CAL_VALID_TO);
       const td = isTradingDay(today) ? today : mc.nextOpenDay, o = etMs(td, 570), c = etMs(td, closeMins(td));
       return kv("Market", esc(mc.ph === "open" ? "Open" : mc.label) + (mstat && mstat.date===d ? " · confirmed by Finnhub's market status" : ""))
@@ -1407,13 +1418,13 @@ function renderStatus(){
         + kv("Extended", `Pre-market from ${timeStr(etMs(td, 240))}, after hours to ${timeStr(etMs(td, closeMins(td) === 960 ? 1200 : closeMins(td) + 240))}${settings.overnight ? `, overnight ${timeStr(etMs(td, 1260))} – ${timeStr(etMs(td, 240 + 1440))}` : ""}. Timers count to the regular open and close.`)
         + kv("Calendar", "NYSE holidays through " + E.CAL_VALID_TO); })()}
     ${kv("Last update", lastUpdate ? dateTime(lastUpdate) + (health.ms ? ` (took ${(health.ms/1000).toFixed(1)} s)` : "") : "never")}
-    ${health.cov && health.cov.total ? kv("Watching", `${health.cov.ok} of ${health.cov.total} watchlist tickers can alert` + (health.cov.blind.length ? ` · not: ${esc(health.cov.blind.slice(0,6).join(", "))}` : "")) : ""}
+    ${health.cov && health.cov.total ? kv("Watching", ses.s !== "open" ? `Alerts rest while the market is closed and start again at the open (${health.cov.total} watchlist ticker${health.cov.total > 1 ? "s" : ""})` : `${health.cov.ok} of ${health.cov.total} watchlist tickers can alert` + (health.cov.blind.length ? ` · not: ${esc(health.cov.blind.slice(0,6).join(", "))}` : "")) : ""}
     ${kv("Symbols priced", health.total ? `${health.ok} of ${health.total}` : "—")}
     ${health.fail.length ? kv("Didn't update", esc(health.fail.slice(0,8).join(", "))) : ""}
     ${health.backup.length ? kv("Priced by backup", esc(health.backup.slice(0,8).join(", "))) : ""}
     ${health.bad && health.bad.length ? kv("Held or dropped prints", esc(health.bad.slice(0,6).map(s => s + (health.badWhy[s] ? " (" + health.badWhy[s] + ")" : "")).join(", "))) : ""}
     ${health.xdiff ? kv("Cross-check", `${esc(health.xdiff.sym)} ${fmt$(health.xdiff.fh)} vs Twelve Data ${fmt$(health.xdiff.td)} (${fmtPct(health.xdiff.d,1)}) ${health.xdiff.ok ? "✓" : "⚠"} at ${timeStr(health.xdiff.at)}`) : ""}
-    ${kv("Refresh", ms ? `every ${Math.round(ms/1000)}s` + (ses.s==="open" && minRefreshSec() > (+settings.refresh||60) ? " (stretched to stay under the free limit)" : "") : "manual")}
+    ${kv("Refresh", ms ? everyStr(ms) + (ses.s==="open" && minRefreshSec() > (+settings.refresh||60) ? " (stretched to stay under the free limit)" : "") : "manual")}
     ${kv("Finnhub calls, last minute", `${perMin} of 60` + (E.breakerOpen(fhBreaker, now) ? ` · paused until ${timeStr(fhBreaker.openUntil)} after repeated failures` : ""))}
     ${settings.tdKey ? kv("Twelve Data today", budgetHtml(L, ses)) : kv("Twelve Data", "no key")}
     ${settings.hcUrl ? kv("Healthchecks", health.hc ? (health.hc.err ? "ping failed: " + esc(health.hc.err) : `pinged ${timeStr(health.hc.at)}${health.hc.fail ? " (reported a problem)" : ""}`) : "pings while the market is open") : ""}
@@ -1552,6 +1563,8 @@ document.addEventListener("click", e=>{
   if (t.dataset.open){ openSheet(t.dataset.open); return; }
 });
 document.addEventListener("keydown", e=>{
+  // Esc in a Settings text box leaves the box (nothing typed is lost); the next Esc closes Settings
+  if (e.key==="Escape" && e.target.matches("input,textarea,select") && !$("sheet").classList.contains("hide")){ e.target.blur(); return; }
   if (e.target.matches("input,textarea,select") || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase(), sheetOpen = !$("sheet").classList.contains("hide");
   if (e.key==="Escape"){
@@ -1570,13 +1583,13 @@ document.addEventListener("keydown", e=>{
   else if (k==="t" && NATIVE) $("bPin").click();
   else if (k==="/"){ e.preventDefault(); openSheet("alerts"); setTimeout(()=>{ const i = $("aSym"); if (i) i.focus(); }, 30); }
   else if (["1","2","3","4"].includes(k)){ const sec = layoutOrder()[+k-1]; settings.compact = false; settings.collapsed[sec] = false; saveSettings(); renderAll(); document.querySelector(`[data-sec="${sec}"]`).scrollIntoView({behavior:"smooth", block:"start"}); }
-  else if (e.key===",") openSheet("general");
+  else if (e.key===",") openSheet(settings.sheetTab || "general");
   else if ((e.key==="Enter"||e.key===" ") && e.target.dataset && e.target.dataset.row){ e.preventDefault(); e.target.click(); }
 });
 $("bCompact").onclick = ()=>{ settings.compact = !settings.compact; saveSettings(); renderAll(); toast(settings.compact ? "Compact view" : "Full view"); };
 $("bRefresh").onclick = ()=>{ schedule(true); if (session().s !== "open") toast("Showing 4 PM close prices · after-hours isn't in the free data"); };
 $("bAlerts").onclick = ()=>{ markSeen(); settings.collapsed.log = false; settings.compact = false; saveSettings(); renderAll(); $("log-sec").scrollIntoView({behavior:"smooth", block:"start"}); };
-$("bSettings").onclick = ()=>{ closeMenu(); openSheet("general"); };
+$("bSettings").onclick = ()=>{ closeMenu(); openSheet(settings.sheetTab || "general"); };
 function closeMenu(){ $("menu").classList.add("hide"); $("bMore").setAttribute("aria-expanded","false"); }
 $("bMore").onclick = e=>{ e.stopPropagation(); const m = $("menu"), open = m.classList.contains("hide"); m.classList.toggle("hide", !open); $("bMore").setAttribute("aria-expanded", String(open)); if (open) m.querySelector("button").focus(); };
 document.addEventListener("click", e=>{ if (!e.target.closest("#menu,#bMore")) closeMenu(); }, true);
@@ -1591,11 +1604,13 @@ document.addEventListener("click", e=>{ if (!e.target.closest("#statusPop,#mkt")
 /* ---------- settings sheet ---------- */
 let curTab = "general", draft = null, curLab = "", curFund = "";
 function openSheet(tab){ draft = JSON.parse(JSON.stringify(cfg)); $("sheet").classList.remove("hide"); showTab(tab || "general"); }
-function closeSheet(){ $("sheet").classList.add("hide"); draft = null; }
+function closeSheet(){ const a = document.activeElement; if (a && $("sheet").contains(a)) a.blur();   // shortcuts work right after closing
+  $("sheet").classList.add("hide"); draft = null; document.documentElement.dataset.theme = settings.theme; }
 $("shClose").onclick = closeSheet;
 $("tabs").onclick = e=>{ const b = e.target.closest("[data-tab]"); if (b) showTab(b.dataset.tab); };
 function showTab(tab){
-  curTab = tab;
+  curTab = tab; document.documentElement.dataset.theme = settings.theme;   // an unsaved theme preview ends when you leave General
+  if (settings.sheetTab !== tab){ settings.sheetTab = tab; saveSettings(); }   // Settings (and ",") reopen the tab you used last
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab===tab));
   const B = $("shBody");
   B.onclick = B.oninput = B.onchange = null;   // each tab sets its own handlers
@@ -1603,8 +1618,8 @@ function showTab(tab){
     B.innerHTML = `${labShell() ? "" : `<div class="callout" style="margin-bottom:14px"><b>${onBeta() ? "You're using MW Beta" : "This is MW Beta"}</b>${onBeta() ? "MW opens this beta version until you switch back. Your regular setup is kept as you left it." : "You opened the beta directly. Make it the version MW opens?"}<div style="margin-top:8px"><button class="btn" id="sChannel">${onBeta() ? "Switch back to regular MW" : "Use the beta by default"}</button></div></div>`}
       <div class="field"><label for="sKey">Finnhub API key</label><input id="sKey" type="password" value="${esc(settings.key)}" placeholder="Paste your free key" autocomplete="off" spellcheck="false">
         <p>Free at finnhub.io. A market-data key only, not a brokerage login. Stored on this PC.</p></div>
-      <div class="field"><label for="sTd">Twelve Data key (optional, for mutual funds)</label><input id="sTd" type="password" value="${esc(settings.tdKey)}" placeholder="Paste a free Twelve Data key" autocomplete="off" spellcheck="false">
-        <p>Mutual funds price once a day after the close. Free at twelvedata.com. Only used a few times a day.</p></div>
+      <div class="field"><label for="sTd">Twelve Data key (optional)</label><input id="sTd" type="password" value="${esc(settings.tdKey)}" placeholder="Paste a free Twelve Data key" autocomplete="off" spellcheck="false">
+        <p>Adds price history (every time frame, risk figures, auto buy levels, Rule lab), mutual fund prices and backup prices when Finnhub misses one. Free at twelvedata.com; MW Beta keeps within its free 800 credits a day.</p></div>
       <div class="row2">
         <div class="field"><label for="sTheme">Theme</label><select id="sTheme"><option value="auto">Match Windows</option><option value="dark">Dark</option><option value="light">Light</option></select></div>
         <div class="field"><label for="sRefresh">Refresh while open</label><select id="sRefresh"><option value="30">Every 30 sec</option><option value="60">Every minute</option><option value="120">Every 2 min</option><option value="300">Every 5 min</option><option value="0">Off (manual only)</option></select></div>
@@ -1637,7 +1652,7 @@ function showTab(tab){
       <p class="note" style="margin-top:14px">Shortcuts: R refresh · C compact · A mark alerts seen · P pause alerts · / add a ticker · 1–4 jump to a section · , settings · Esc close${NATIVE?" or hide to tray · T keep on top":""}. ${esc(verLine())}.</p>`;
     if ($("sChannel")) $("sChannel").onclick = ()=> onBeta() ? leaveBeta() : joinBetaHere();
     if ($("sImport")) $("sImport").onclick = ()=>{ if (importFromLive()){ closeSheet(); renderAll(); schedule(true); } };
-    $("sTheme").value = settings.theme; $("sTz").value = TZ_CHOICES.some(c => c[0] === settings.tz) ? settings.tz : "auto"; $("sRefresh").value = String(settings.refresh); $("sSound").value = settings.sound;
+    $("sTheme").value = settings.theme; $("sTheme").onchange = e => { document.documentElement.dataset.theme = e.target.value; }; $("sTz").value = TZ_CHOICES.some(c => c[0] === settings.tz) ? settings.tz : "auto"; $("sRefresh").value = String(settings.refresh); $("sSound").value = settings.sound;
     if (NATIVE){
       const box = $("appOpts");
       nat.invoke("shell_state").then(st => { nat.state = st; box.querySelectorAll("[data-shell]").forEach(i => i.checked = !!st[i.dataset.shell]); $("appVer").textContent = "App version " + st.version + "." + (st.hotkey && !st.hotkey_ok ? " Ctrl+Alt+L is taken by another app, so the hotkey is off." : ""); }).catch(()=>{});
@@ -1702,8 +1717,9 @@ function showTab(tab){
     };
     B.onclick = e=>{
       if (!draft) return;
-      if (e.target.id==="hAdd"){ draft.holdings.push({sym:"", shares:null, avg:null, acct:"Taxable"}); showTab("holdings"); }
-      else if (e.target.id==="fAdd"){ draft.fixed.push({name:"", sym:"", shares:null, value:0}); showTab("holdings"); }
+      // a new row is ready to type into
+      if (e.target.id==="hAdd"){ draft.holdings.push({sym:"", shares:null, avg:null, acct:"Taxable"}); showTab("holdings"); const i = document.querySelector("#hBody tr:last-child [data-f=sym]"); if (i) i.focus(); }
+      else if (e.target.id==="fAdd"){ draft.fixed.push({name:"", sym:"", shares:null, value:0}); showTab("holdings"); const i = document.querySelector("#fBody tr:last-child [data-g=name]"); if (i) i.focus(); }
       else if (e.target.dataset.del){ draft.holdings.splice(+e.target.dataset.del,1); showTab("holdings"); }
       else if (e.target.dataset.fdel){ draft.fixed.splice(+e.target.dataset.fdel,1); showTab("holdings"); }
       else if (e.target.id==="hCancel") closeSheet();
@@ -1770,7 +1786,11 @@ function showTab(tab){
     $("aList").onclick = e=>{
       const mv = e.target.closest("[data-wmv]"); if (mv){ const [i, dir] = mv.dataset.wmv.split(":"); const j = +i + (dir==="up" ? -1 : 1); if (j < 0 || j >= cfg.watch.length) return; const [w] = cfg.watch.splice(+i, 1); cfg.watch.splice(j, 0, w); save(); showTab("alerts"); return; }
       const d = e.target.closest("[data-wdel]"); if (!d) return; const w = cfg.watch[+d.dataset.wdel]; if (confirm(`Remove ${w.sym} from your watchlist?`)){ cfg.watch.splice(+d.dataset.wdel,1); save(); showTab("alerts"); } };
-    const add = ()=>{ const sym = $("aSym").value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,""); if (!sym) return; if (!cfg.watch.some(w=>w.sym.toUpperCase()===sym)){ cfg.watch.push({sym, note:"", dayDrop:3, offHigh:10, levels:[], near:1.5, hiDrop:4, sigDrop:2, fastDrop:2, fastMins:15}); save(); schedule(true); } showTab("alerts"); };
+    // says what happened (added, or already there) and keeps the box ready for the next ticker
+    const add = ()=>{ const sym = $("aSym").value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,""); if (!sym) return;
+      if (cfg.watch.some(w=>w.sym.toUpperCase()===sym)){ toast(sym + " is already on your watchlist"); $("aSym").select(); return; }
+      cfg.watch.push({sym, note:"", dayDrop:3, offHigh:10, levels:[], near:1.5, hiDrop:4, sigDrop:2, fastDrop:2, fastMins:15}); save(); schedule(true);
+      showTab("alerts"); toast(sym + " added to your watchlist"); const box = $("aSym"); if (box){ box.focus(); box.scrollIntoView({block:"nearest"}); } };
     $("aAdd").onclick = add; $("aSym").onkeydown = e=>{ if (e.key==="Enter") add(); };
   }
   else if (tab==="journal"){
@@ -1786,7 +1806,7 @@ function showTab(tab){
       const f = v => v == null ? "—" : fmtPct(v, 1);
       $("jScore").innerHTML = rows.length ? `<table class="sc"><thead><tr><th>Rule</th><th title="Alerts so far">Alerts</th><th title="Average result 5 trading days later">5 days</th><th title="Average result 20 trading days later">20 days</th><th title="Share of alerts that were higher 20 days later">Up after 20d</th><th title="Average worst close within 20 days (how far it kept falling first)">Worst dip</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.name)}${r.bought || r.skipped ? `<br><span class="muted" style="font-size:10px">bought ${r.bought} · skipped ${r.skipped}</span>` : ""}</td><td>${r.n}</td><td class="${cls(r.r5)}">${f(r.r5)}</td><td class="${cls(r.r20)}">${f(r.r20)}</td><td>${r.hit20 == null ? "—" : r.hit20.toFixed(0) + "% <span class='muted'>of " + r.n20 + "</span>"}</td><td class="${r.mae != null ? "down" : ""}">${f(r.mae)}</td></tr>`).join("")}</tbody></table>` : `<div class="note" style="margin:0">No alerts recorded yet. They'll appear here as MW Beta fires them.</div>`;
       $("jList").innerHTML = recs.slice(0, 40).map(r => { const o = r.outcomes || {};
-        return `<div class="jrow" data-jid="${esc(r.id)}"><time>${esc(r.day.slice(5))}<br>${timeStr(r.t)}</time><span><b>${esc(r.sym)}</b> ${esc((E.RULE[r.kind] || {}).name || r.kind)} at ${fmt$(r.px)}${r.quiet ? ` <span class="muted" title="Logged quietly (bundled with an earlier alert)">quiet</span>` : ""}</span>
+        return `<div class="jrow" data-jid="${esc(r.id)}"><time>${esc(mdLabel(r.day))}<br>${timeStr(r.t)}</time><span><b>${esc(r.sym)}</b> ${esc((E.RULE[r.kind] || {}).name || r.kind)} at ${fmt$(r.px)}${r.quiet ? ` <span class="muted" title="Logged quietly (bundled with an earlier alert)">quiet</span>` : ""}</span>
           <span class="acts"><button data-ja="bought" class="${r.action==="bought"?"on":""}">Bought</button><button data-ja="skipped" class="${r.action==="skipped"?"on":""}">Skipped</button></span>
           <span class="out">${o.n ? `1 day ${f(o.r1)} · 5 days ${f(o.r5)} · 20 days ${f(o.r20)}${o.mae20 != null ? ` · worst ${f(o.mae20)}` : ""}` : "Results appear after the next close."}</span></div>`; }).join("") || "";
       $("jCsv").onclick = ()=>{
@@ -1858,7 +1878,7 @@ function showTab(tab){
       <div class="field"><label class="mk-list" style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="xaOn" ${xaOn()?"checked":""}> Risk-on / risk-off read</label><p>Uses volatility, credit, Treasury, dollar and equal-weight ETFs (VIXY, HYG, IEF, UUP, RSP). 5 calls per refresh.</p></div>
       <div class="field"><label for="bench">Compare watchlist moves against</label><select id="bench">${["SMH","SOXX","QQQ","SPY","XLK"].map(x=>`<option ${settings.bench===x?"selected":""}>${x}</option>`).join("")}</select><p>Shows "vs ${esc(settings.bench)}" on each watchlist row, to tell a sector-wide dip from a stock-specific drop.</p></div>
       ${grp("Indexes", MARKETS.indices)}${grp("Sectors", MARKETS.sectors)}${grp("Other markets", MARKETS.other)}`;
-    const addMy = ()=>{ const v = $("myAdd").value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,""); if (!v || cfg.myMk.includes(v)) return; if (cfg.myMk.length >= 12){ toast("My list holds 12 tiles"); return; } cfg.myMk.push(v); saveCfg(); renderAll(); schedule(true); showTab("markets"); };
+    const addMy = ()=>{ const v = $("myAdd").value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,""); if (!v) return; if (cfg.myMk.includes(v)){ toast(v + " is already in My list"); return; } if (cfg.myMk.length >= 12){ toast("My list holds 12 tiles"); return; } cfg.myMk.push(v); saveCfg(); renderAll(); schedule(true); showTab("markets"); toast(v + " added to My list"); if ($("myAdd")) $("myAdd").focus(); };
     $("myAddB").onclick = addMy; $("myAdd").onkeydown = e=>{ if (e.key==="Enter") addMy(); };
     B.onclick = e=>{ const d = e.target.closest("[data-mydel]"); if (!d) return; cfg.myMk = cfg.myMk.filter(x=>x!==d.dataset.mydel); saveCfg(); renderAll(); showTab("markets"); };
     B.onchange = e=>{
@@ -1897,7 +1917,7 @@ function showTab(tab){
           <span>Last price update</span><b>${lastUpdate ? dateTime(lastUpdate) : "—"}</b>
           <span>Data</span><b>${esc(health.err || (health.total ? health.ok + " of " + health.total + " prices" : "—"))}</b>
         </div></div>
-      <div class="field"><label>Log</label><p>What MW Beta did and any errors, newest at the bottom. It never contains your API keys. If something goes wrong, click Copy and paste it to me.</p>
+      <div class="field"><label>Log</label><p>What MW Beta did and any errors, newest at the bottom. Times in the log are UTC. It never contains your API keys. If something goes wrong, click Copy and paste it to me.</p>
         <textarea class="code" id="dLog" readonly spellcheck="false" style="height:220px">${esc(logBuf.join("\n"))}</textarea></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="dCopy">Copy diagnostics</button>${NATIVE?`<button class="btn" id="dFolder">Open log folder</button>`:""}<button class="btn" id="dClear">Clear page log</button></div>
       <div class="field" style="margin-top:18px"><label for="dSentry">Sentry crash reports (optional)</label>

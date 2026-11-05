@@ -37,7 +37,7 @@ let simNow = Date.parse("2026-11-05T15:30:00Z");   // 10:30 New York time, a Thu
 const hash = s => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
 const px = {}, pcOf = s => 50 + hash(s) % 200;
 const priceOf = s => px[s] ?? pcOf(s);
-let finnhubDown = false, tdDown = false;
+let finnhubDown = false, tdDown = false, finnhubBadKey = false;
 const sent = {ntfy:[], hc:0};
 function dailyBars(sym, today) {
   let seed = hash(sym) || 1; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -55,6 +55,7 @@ const quote = s => { const c = priceOf(s), pc = pcOf(s); return {c, pc, d:c - pc
 async function mock(page) {
   await page.route(/https:\/\/finnhub\.io\/.*/, route => {
     const u = new URL(route.request().url()), p = u.pathname.replace("/api/v1/", ""), sym = u.searchParams.get("symbol");
+    if (finnhubBadKey) return route.fulfill({status:401, json:{error:"Invalid API key"}});
     if (p === "quote") return finnhubDown ? route.fulfill({status:502, body:"bad gateway"}) : route.fulfill({json: quote(sym)});
     if (p === "stock/metric") return route.fulfill({json: {metric: {"52WeekHigh": pcOf(sym) * 1.08, "52WeekLow": pcOf(sym) * 0.7, beta: 1.2}}});
     if (p === "stock/market-status") return route.fulfill({json: {isOpen: true, holiday: null}});
@@ -92,7 +93,7 @@ await page.addInitScript(([live]) => {
   localStorage.setItem("mw_settings", JSON.stringify({key:"live-key-not-used"}));
   localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", tdKey:"test", ntfy:"mwlab-harness", hcUrl:"https://hc-ping.com/00000000-0000-0000-0000-000000000000", refresh:30}));
   localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"AAA", shares:10, acct:"Taxable"}, {sym:"BBB", shares:20, acct:"Roth"}, {sym:"QQQ", shares:2, acct:"Roth"}],
-    fixed:[{name:"Cash", value:1000}],
+    fixed:[{name:"Cash (Taxable)", value:1000}, {name:"Cash (Roth)", value:500}],
     watch:[{sym:"AAA", note:"test", dayDrop:3, offHigh:10, levels:[90, 80], near:1.5, hiDrop:4, sigDrop:2, fastDrop:2, fastMins:15, buyAmt:200},
            {sym:"BBB", dayDrop:3, levels:[], near:1.5, buyAmt:100}]}));
 }, [liveCfg]);
@@ -110,6 +111,20 @@ check(await page.locator("#wl-body .wrow").count() === 2, "watchlist renders 2 r
 check(/MW Beta/.test(await page.title()), "title says MW Beta");
 check(await page.locator(".riskx h5").count() === 1, "risk block measured from price history");
 await shot("1-start");
+const cashNames = await page.locator("#pf-body .grp-h[data-grp=__cash] + .grp-rows .hrow .s").evaluateAll(els => els.map(e => e.firstChild.textContent.trim()));
+check(cashNames.join("|") === "Cash (Taxable)|Cash (Roth)", "cash rows keep their names from Settings (" + cashNames.join(", ") + ")");
+check(await page.locator("#pf-body .hrow .tk").count() >= 3, "holding rows show the ticker in its own cell");
+// compact view keeps the watchlist in your order, with the columns lined up
+await page.keyboard.press("c"); await advance(1000, 250);
+check(JSON.stringify(await page.locator("#strip .srow .tk").allInnerTexts()) === JSON.stringify(["AAA","BBB"]), "the compact strip follows the watchlist order");
+check(await page.evaluate(() => { const r = [...document.querySelectorAll("#strip .srow")].map(row => Math.round(row.children[1].getBoundingClientRect().right)); return r.length === 2 && r[0] === r[1]; }), "the compact strip's price column lines up across rows");
+await page.keyboard.press("c"); await advance(1000, 250);
+// Esc in a Settings text box leaves the box first; the next Esc closes Settings
+await page.evaluate(() => { openSheet("general"); document.getElementById("sKey").focus(); });
+await page.keyboard.press("Escape");
+const stillOpen = await page.evaluate(() => !document.getElementById("sheet").classList.contains("hide"));
+await page.keyboard.press("Escape");
+check(stillOpen && await page.evaluate(() => document.getElementById("sheet").classList.contains("hide")), "Esc leaves a text box, then closes Settings");
 
 // a sharp drop in AAA: red day, unusual drop, off today's high, near the $90 level
 const pc = pcOf("AAA"); px.AAA = +(pc * 0.91).toFixed(2);
@@ -140,6 +155,12 @@ check(await page.locator("#blind.show").count() === 0, "the banner clears when p
 check(sent.ntfy.slice(before2).some(b => /watching again/.test(b)), "the recovery was announced");
 check(sent.hc > 0, "Healthchecks was pinged");
 
+// a rejected Finnhub key is shown at the top, with a way to fix it, and clears once the key works
+finnhubBadKey = true; await page.evaluate(() => { fhBreaker = {fails:0, openUntil:0, trips:0}; schedule(true); });   // the outage above left Finnhub paused; start clean
+await advance(150000, 2000);   // a refresh with Finnhub refusing waits on the slower backup feed
+check(await page.locator("#keyBad:not(.hide)").count() === 1, "a rejected key shows the fix-your-key notice");
+finnhubBadKey = false; await page.evaluate(() => schedule(true)); await advance(150000, 2000);
+check(await page.locator("#keyBad.hide").count() === 1, "the notice clears when the key works again");
 // every settings tab opens without an error
 for (const tab of ["general","holdings","alerts","journal","lab","funds","markets","layout","backup","diag"]) {
   await page.evaluate(t => { document.querySelector('[data-open="journal"]') && 0; openSheet(t); }, tab);
@@ -148,6 +169,12 @@ for (const tab of ["general","holdings","alerts","journal","lab","funds","market
 }
 check(/Copy from MW/.test(await page.evaluate(() => { openSheet("backup"); return document.getElementById("shBody").innerText; })), "Backup offers to copy the live MW setup");
 await page.evaluate(() => closeSheet());
+await page.keyboard.press(","); await advance(500, 250);
+check(await page.evaluate(() => document.querySelector("#tabs button.on").dataset.tab) === "backup", "Settings reopens on the tab used last");
+await page.evaluate(() => { openSheet("general"); document.getElementById("sTheme").value = "light"; document.getElementById("sTheme").dispatchEvent(new Event("change")); });
+const previewTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+await page.evaluate(() => closeSheet());
+check(previewTheme === "light" && await page.evaluate(() => document.documentElement.dataset.theme) !== "light", "a theme previews right away and closing without Save puts it back");
 await page.locator("#mkt").click(); await advance(1000, 500);
 check(/credits/.test(await page.locator("#statusPop").innerText()), "status shows the Twelve Data budget");
 await shot("4-status");
