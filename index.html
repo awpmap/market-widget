@@ -86,10 +86,18 @@ body.wco .menu{top:calc(env(titlebar-area-height,40px) + 4px);right:calc(100vw -
 .winbtns{display:none;margin-right:-8px}
 body.native .winbtns{display:flex}
 body.native #titlebar{padding-right:0}
-.wb{width:34px;height:40px;display:grid;place-items:center;color:var(--fg-2)}
-.wb svg{width:12px;height:12px}
-.wb:hover{background:var(--surface-2);color:var(--fg)}
+/* Windows 11 caption buttons: 46 px wide, full bar height, 10 px hairline glyphs, red close */
+.winbtns{align-self:stretch;margin-left:4px}
+.wb{app-region:no-drag;-webkit-app-region:no-drag;width:46px;height:100%;min-height:32px;display:grid;place-items:center;color:var(--fg);border-radius:0;transition:background .1s}
+.wb svg{width:10px;height:10px;overflow:visible;shape-rendering:crispEdges}
+.wb svg path{stroke-width:1;vector-effect:non-scaling-stroke;fill:none}
+.wb:hover{background:rgba(255,255,255,.084)}
+.wb:active{background:rgba(255,255,255,.054)}
+[data-theme="light"] .wb:hover{background:rgba(0,0,0,.037)}
+[data-theme="light"] .wb:active{background:rgba(0,0,0,.024)}
+@media (prefers-color-scheme: light){ [data-theme="auto"] .wb:hover{background:rgba(0,0,0,.037)} [data-theme="auto"] .wb:active{background:rgba(0,0,0,.024)} }
 .wb.close:hover{background:#c42b1c;color:#fff}
+.wb.close:active{background:#c42b1ce6;color:#fff}
 .tb-btn.pin.on{color:var(--accent)}
 body:not(.native) .tb-btn.pin{display:none}
 @container (max-width:260px){ .tb-btn.pin{display:none} }
@@ -327,6 +335,10 @@ body.native #titlebar .logo *{pointer-events:none}
 .grp-h .muted{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 @media (max-width:300px){ .mk-nq,.mk-sum-idx{display:none} .srow .er,.hrow .er,.wtop .er{display:none} .risk{grid-template-columns:1fr} #mk-sum span:first-child{display:none} }
 @media (prefers-reduced-motion: reduce){ *{animation:none !important;transition:none !important} }
+/* info boxes: every [title] / [data-tip] shows this styled box instead of the plain Windows tooltip */
+#tip{position:fixed;z-index:99;max-width:min(270px,calc(100vw - 16px));background:var(--surface);border:1px solid var(--line-2);color:var(--fg);font-size:11.5px;line-height:1.45;font-weight:400;padding:7px 10px;border-radius:8px;box-shadow:var(--shadow);pointer-events:none;opacity:0;transform:translateY(-2px);transition:opacity .12s,transform .12s;white-space:pre-line;text-align:left}
+#tip.show{opacity:1;transform:none}
+#tip b{font-weight:600}
 </style>
 </head>
 <body>
@@ -340,7 +352,7 @@ body.native #titlebar .logo *{pointer-events:none}
   <button class="tb-btn" id="bAlerts" title="Alerts"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8z"/><path d="M6.5 14h3"/></svg><span class="badge hide" id="badge">0</span></button>
   <button class="tb-btn pin" id="bPin" title="Keep on top (T)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M6 2.5h4l-.6 4 2.1 2.2H4.5l2.1-2.2z"/><path d="M8 8.7V14"/></svg></button>
   <button class="tb-btn" id="bMore" title="Menu" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg></button>
-  <span class="winbtns"><button class="wb" id="wMin" title="Minimize"><svg viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.2"><path d="M1.5 6h9"/></svg></button><button class="wb close" id="wClose" title="Hide to tray (Esc). Quit from the tray icon."><svg viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.2"><path d="M2 2l8 8M10 2l-8 8"/></svg></button></span>
+  <span class="winbtns"><button class="wb" id="wMin" aria-label="Minimize" data-tip="Minimize"><svg viewBox="0 0 10 10" stroke="currentColor"><path d="M0 5.5h10"/></svg></button><button class="wb close" id="wClose" aria-label="Close to tray" data-tip="Close to the tray (Esc). MW keeps watching your alerts. Quit from the tray icon."><svg viewBox="0 0 10 10" stroke="currentColor"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"/></svg></button></span>
 </header>
 <div id="statusPop" class="pop hide" role="dialog" aria-label="Data status"></div>
 <div id="menu" class="menu hide" role="menu">
@@ -420,10 +432,11 @@ body.native #titlebar .logo *{pointer-events:none}
 </div>
 
 <div id="toast"></div>
+<div id="tip" role="tooltip"></div>
 
 <script>
 "use strict";
-const APP_VERSION = "3.4.1";
+const APP_VERSION = "3.5.0";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -482,6 +495,60 @@ const store = {
   get(k, d){ try{ const v = localStorage.getItem("mw_"+k); if (v!=null) return JSON.parse(v); }catch(e){} return (k in mem) ? mem[k] : d; },
   set(k, v){ mem[k] = v; try{ localStorage.setItem("mw_"+k, JSON.stringify(v)); }catch(e){} }
 };
+/* ---------- diagnostics log: kept on this PC (last 300 lines) and, in the desktop app, in its log file ----------
+   Never logs keys: URLs are scrubbed of token=/apikey= values before they are stored. */
+const scrubKeys = t => String(t).replace(/(token|apikey|apiKey|key)=[^&\s"')]*/g, "$1=***").replace(/#setup=\S*/g, "#setup=***");
+let logBuf = []; try{ logBuf = JSON.parse(localStorage.getItem("mw_diag") || "[]"); }catch(e){}
+let logSaveT = null;
+function mwLog(level, msg){
+  const line = new Date().toISOString().slice(5,19).replace("T"," ") + " " + level.toUpperCase() + " " + scrubKeys(msg).slice(0, 600);
+  logBuf.push(line); if (logBuf.length > 300) logBuf = logBuf.slice(-300);
+  clearTimeout(logSaveT); logSaveT = setTimeout(()=>{ try{ localStorage.setItem("mw_diag", JSON.stringify(logBuf)); }catch(e){} }, 1000);
+  try{ if (window.__TAURI__ && window.__TAURI__.core) window.__TAURI__.core.invoke("shell_log", {level, msg: scrubKeys(msg).slice(0, 600)}).catch(()=>{}); }catch(e){}
+  if (level === "error") try{ console.error("[MW]", msg); }catch(e){}
+}
+let errCount = 0;
+window.addEventListener("error", e => { errCount++; mwLog("error", (e.message || "error") + (e.filename ? " @" + String(e.filename).split("/").pop() + ":" + e.lineno + ":" + e.colno : "") + (e.error && e.error.stack ? " | " + String(e.error.stack).split("\n").slice(1,3).join(" ").trim() : "")); });
+window.addEventListener("unhandledrejection", e => { const r = e.reason; mwLog("warn", "unhandled: " + (r && r.message ? r.message : String(r)) + (r && r.stack ? " | " + String(r.stack).split("\n").slice(1,2).join(" ").trim() : "")); });
+document.addEventListener("visibilitychange", ()=> mwLog("info", "window " + (document.hidden ? "hidden" : "visible")));
+document.addEventListener("freeze", ()=> mwLog("warn", "page frozen by the browser"));
+document.addEventListener("resume", ()=> mwLog("info", "page resumed"));
+/* every network call gives up after 20 s, so one stalled connection can never stall the app */
+function fetchT(url, opts, ms){
+  const ac = new AbortController(), t = setTimeout(()=> ac.abort(), ms || 20000);
+  return fetch(url, Object.assign({}, opts || {}, {signal: ac.signal}))
+    .catch(e => { throw (e && e.name === "AbortError") ? new Error("timed out") : e; })
+    .finally(()=> clearTimeout(t));
+}
+/* info boxes: hover (or keyboard focus) on anything with a title shows a styled explanation */
+(function(){
+  let el = null, t = null;
+  const box = () => document.getElementById("tip");
+  const hide = () => { clearTimeout(t); t = null; el = null; const b = box(); if (b) b.classList.remove("show"); };
+  const place = (target) => {
+    const b = box(); if (!b || !target.isConnected) return;
+    b.textContent = target.dataset.tip; b.classList.add("show");
+    const r = target.getBoundingClientRect(), w = b.offsetWidth, h = b.offsetHeight, vw = innerWidth, vh = innerHeight;
+    let x = Math.min(Math.max(8, r.left + r.width/2 - w/2), vw - w - 8), y = r.bottom + 6;
+    if (y + h > vh - 8) y = Math.max(8, r.top - h - 6);
+    b.style.left = x + "px"; b.style.top = y + "px";
+  };
+  const over = (e) => {
+    const target = e.target.closest && e.target.closest("[title],[data-tip]"); if (target === el) return;
+    hide(); if (!target) return;
+    if (target.hasAttribute("title")){ const tt = target.getAttribute("title"); target.removeAttribute("title"); if (tt) target.dataset.tip = tt; }
+    if (!target.dataset.tip) return;
+    el = target; t = setTimeout(() => place(target), e.type === "focusin" ? 600 : 380);
+  };
+  document.addEventListener("mouseover", over, true);
+  document.addEventListener("focusin", e => { if (e.target.matches && e.target.matches(":focus-visible")) over(e); }, true);
+  document.addEventListener("mouseout", e => { if (el && !el.contains(e.relatedTarget)) hide(); }, true);
+  ["mousedown","keydown","scroll","blur","wheel"].forEach(k => window.addEventListener(k, hide, true));
+})();
+
+/* run one piece of the UI; if it throws, log it and keep the rest of the app working */
+function safe(name, fn){ try{ return fn(); }catch(e){ errCount++; mwLog("error", name + ": " + (e && e.message || e) + (e && e.stack ? " | " + String(e.stack).split("\n").slice(1,2).join(" ").trim() : "")); } }
+
 let cfg = store.get("cfg", null) || JSON.parse(JSON.stringify(DEFAULT_CFG));
 function normCfg(c){ c.holdings = c.holdings || []; c.fixed = c.fixed || []; c.watch = c.watch || []; c.hiddenMk = c.hiddenMk || []; c.myMk = c.myMk || []; return c; }
 normCfg(cfg);
@@ -578,7 +645,7 @@ function pump(){
 }
 let lastErr = "";
 async function api(path){
-  const r = await fetch(API + path + (path.includes("?")?"&":"?") + "token=" + encodeURIComponent(settings.key));
+  const r = await fetchT(API + path + (path.includes("?")?"&":"?") + "token=" + encodeURIComponent(settings.key));
   if (r.status===401||r.status===403) throw new Error("Finnhub didn't accept the key. Check it in Settings.");
   if (r.status===429) throw new Error("Free data limit reached for this minute. Retrying shortly.");
   if (!r.ok) throw new Error("Data error " + r.status);
@@ -667,7 +734,7 @@ function tdPump(){
   while (TD.q.length && TD.times.length < 7){
     const j = TD.q.shift(); TD.times.push(Date.now());
     const u = store.get("tdUsed", {}); const d = etNow().date; store.set("tdUsed", {date:d, n:(u.date===d?u.n:0)+1});
-    fetch("https://api.twelvedata.com/" + j.path + "&apikey=" + encodeURIComponent(settings.tdKey))
+    fetchT("https://api.twelvedata.com/" + j.path + "&apikey=" + encodeURIComponent(settings.tdKey))
       .then(r => r.json()).then(js => { if (js.status === "error") throw new Error(js.message || "Twelve Data error"); j.res(js); })
       .catch(e => j.rej(e));
   }
@@ -805,8 +872,11 @@ function fixedInfo(f){
 }
 
 let busy = false;
+let busyAt = 0;
 async function tick(){
-  if (busy) return; busy = true;
+  // a refresh that has run for 2+ minutes is stuck (should be impossible with timeouts); start over
+  if (busy && Date.now() - busyAt > 120e3){ mwLog("warn", "refresh was stuck; restarting it"); busy = false; RL.active = 0; }
+  if (busy) return; busy = true; busyAt = Date.now();
   $("bRefresh").classList.add("spin"); lastErr = "";
   try{
     if (!settings.key){ $("needKey").classList.remove("hide"); return; }
@@ -958,7 +1028,7 @@ function notify(list){
     const lines = [...body, ...takeHeld().map(h => h.msg)]; lastToast = now;
     showToast("Market alert", lines[0] + (lines.length > 1 ? `\n+${lines.length-1} more in MW` : ""), (main.id||"x") + "@" + bannerDay, true);
   } else { heldToasts.push(...urgent.map(a => ({sym:a.sym, msg:a.msg}))); setTimeout(flushToasts, QUIET_MS - (now - lastToast) + 500); }
-  if (settings.ntfy) fetch("https://ntfy.sh/" + encodeURIComponent(settings.ntfy), {method:"POST", body:body.join("\n"), headers:{"Title":"Market alert","Priority":"high","Tags":"chart_with_downwards_trend"}}).catch(()=>{});
+  if (settings.ntfy) fetchT("https://ntfy.sh/" + encodeURIComponent(settings.ntfy), {method:"POST", body:body.join("\n"), headers:{"Title":"Market alert","Priority":"high","Tags":"chart_with_downwards_trend"}}).catch(()=>{});
 }
 // held lines skip tickers you have since snoozed or muted, and everything while alerts are paused
 function takeHeld(){ const h = heldToasts.splice(0); return pausedNow() ? [] : h.filter(x => !x.sym || !snoozed(x.sym)); }
@@ -1391,10 +1461,10 @@ function renderAll(){
   $("mCompactLbl").textContent = settings.compact ? "Full view" : "Compact view";
   document.body.classList.toggle("compact", !!settings.compact);
   document.querySelectorAll(".sec").forEach(s => s.classList.toggle("collapsed", !!settings.collapsed[s.dataset.sec]));
-  renderPortfolio(); renderMarkets(); renderWatch(); renderLog(); renderFrame();
-  const P = portfolioCalc();
-  document.title = (settings.compact && Object.keys(quotes).length && cfg.holdings.length) ? `${fmt$(P.total,0)} ${fmtPct(P.dayPct)} · MW` : "MW";
-  updateTray();
+  safe("portfolio", renderPortfolio); safe("markets", renderMarkets); safe("watchlist", renderWatch); safe("alert log", renderLog); safe("status", renderFrame);
+  safe("title", ()=>{ const P = portfolioCalc();
+    document.title = (settings.compact && Object.keys(quotes).length && cfg.holdings.length) ? `${fmt$(P.total,0)} ${fmtPct(P.dayPct)} · MW` : "MW"; });
+  safe("tray", updateTray);
 }
 function renderStatus(){
   const ses = session(), ds = dataState(), u = store.get("tdUsed", {}), fb = store.get("tdFallback", {}), d = etNow().date;
@@ -1569,11 +1639,11 @@ function showTab(tab){
     $("sKeys").onclick = async ()=>{
       const out = $("keyRes"); out.textContent = "Testing…"; const lines = [];
       const fk = $("sKey").value.trim(), tk = $("sTd").value.trim();
-      try{ const r = await fetch(API + "quote?symbol=SPY&token=" + encodeURIComponent(fk)); const j = await r.json(); lines.push(r.ok && j.c ? `Finnhub: working (SPY ${fmt$(j.c)})` : `Finnhub: problem (${r.status} ${j.error||""})`); }catch(e){ lines.push("Finnhub: couldn't connect (" + e.message + ")"); }
+      try{ const r = await fetchT(API + "quote?symbol=SPY&token=" + encodeURIComponent(fk)); const j = await r.json(); lines.push(r.ok && j.c ? `Finnhub: working (SPY ${fmt$(j.c)})` : `Finnhub: problem (${r.status} ${j.error||""})`); }catch(e){ lines.push("Finnhub: couldn't connect (" + e.message + ")"); }
       if (tk){
         const fund = (cfg.fixed.find(f=>f.sym)||{}).sym || "VFIAX";
         for (const sym of ["SPY", fund]){
-          try{ const r = await fetch("https://api.twelvedata.com/quote?symbol=" + encodeURIComponent(sym) + "&apikey=" + encodeURIComponent(tk)); const j = await r.json();
+          try{ const r = await fetchT("https://api.twelvedata.com/quote?symbol=" + encodeURIComponent(sym) + "&apikey=" + encodeURIComponent(tk)); const j = await r.json();
             lines.push(j.close ? `Twelve Data ${sym}: working (${fmt$(+j.close)} on ${j.datetime})` : `Twelve Data ${sym}: ${j.message || "no price"}`); }
           catch(e){ lines.push(`Twelve Data ${sym}: couldn't connect (${e.message})`); }
         }
@@ -1721,7 +1791,7 @@ let timer = null;
 function schedule(now){
   clearTimeout(timer);
   const next = ()=>{ const ms = refreshMs(); if (ms) timer = setTimeout(run, ms); };
-  const run = async ()=>{ await tick(); next(); };
+  const run = async ()=>{ try{ await tick(); }catch(e){ mwLog("error", "refresh: " + (e && e.message || e)); } finally{ next(); } };
   if (now) run(); else next();
 }
 document.addEventListener("visibilitychange", ()=>{ if (!document.hidden && refreshMs() && lastUpdate && Date.now()-lastUpdate > refreshMs()) schedule(true); });
@@ -1748,7 +1818,7 @@ async function checkAppUpdate(){
   if (!NATIVE || !nat.state) return;
   let u = store.get("appUpd", {});
   if (!u.at || Date.now() - u.at > 12*3600e3){
-    try{ const r = await fetch("https://api.github.com/repos/awpmap/market-widget/releases/latest", {headers:{Accept:"application/vnd.github+json"}});
+    try{ const r = await fetchT("https://api.github.com/repos/awpmap/market-widget/releases/latest", {headers:{Accept:"application/vnd.github+json"}});
       if (r.ok){ const j = await r.json(); u = {at:Date.now(), tag:j.tag_name, url:j.html_url}; store.set("appUpd", u); } }catch(e){}
   }
   const el = $("update");
@@ -1771,11 +1841,14 @@ if (NATIVE){
   // heartbeat: the tray app reloads the page if this stops (crash, failed load)
   const alive = ()=> nat.invoke("shell_alive").catch(()=>{});
   alive(); setInterval(alive, 30e3);
+  // the tray app calls this when it hasn't heard from the page (timers held back while hidden)
+  window.__mwWake = why => { mwLog("info", "woken by " + why); alive(); if (refreshMs() && (!lastUpdate || Date.now() - lastUpdate > refreshMs())) schedule(true); safe("frame", renderFrame); };
   setInterval(checkAppUpdate, 6*3600e3);
 }
 setInterval(()=>{ renderFrame(); updateTray(); }, 30e3);   // keeps the status light and "x min ago" honest between refreshes
 
-renderAll(); updateBadge();
+mwLog("info", "MW " + APP_VERSION + " started" + (NATIVE ? " in the desktop app" : " in the browser"));
+renderAll(); safe("badge", updateBadge);
 schedule(true);
 </script>
 </body>

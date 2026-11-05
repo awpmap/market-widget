@@ -10,6 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use tauri::{
     image::Image,
@@ -30,8 +31,11 @@ const AUTOSTART_ARG: &str = "--autostart";
 const LAUNCHER_URL: &str = "http://tauri.localhost/index.html";
 #[cfg(not(windows))]
 const LAUNCHER_URL: &str = "tauri://localhost/index.html";
-/// If the page stops checking in for this long, the shell warns and reloads it.
+/// If the page stops checking in for this long, the shell checks whether the page
+/// still answers. Only a page that doesn't answer is reloaded, with growing gaps.
 const WATCHDOG_SECS: u64 = 180;
+/// Log file name (in %LOCALAPPDATA%\\io.github.awpmap.marketwidget\\logs).
+const LOG_NAME: &str = "MW";
 
 /// Preferences that belong to the shell (the page keeps its own in its storage).
 #[derive(Serialize, Deserialize, Clone)]
@@ -60,6 +64,7 @@ struct Shell {
     hotkey_ok: Mutex<bool>,
 }
 
+#[derive(Clone)]
 struct TrayItems {
     show: MenuItem<Wry>,
     on_top: CheckMenuItem<Wry>,
@@ -105,7 +110,19 @@ fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window("main")
 }
 
+// Locking rule: never hold one of the Shell mutexes while calling into the tray, menu
+// or window. Those calls hop to the main thread and wait, so holding a lock across
+// them can deadlock against a command running there, which freezes the whole app.
+fn tray_icon(app: &AppHandle) -> Option<TrayIcon<Wry>> {
+    app.state::<Shell>().tray.lock().unwrap().clone()
+}
+
+fn tray_items(app: &AppHandle) -> Option<TrayItems> {
+    app.state::<Shell>().items.lock().unwrap().clone()
+}
+
 fn show_main(app: &AppHandle) {
+    info!("window: show");
     if let Some(w) = main_window(app) {
         let _ = w.unminimize();
         let _ = w.show();
@@ -115,6 +132,7 @@ fn show_main(app: &AppHandle) {
 }
 
 fn hide_main(app: &AppHandle) {
+    info!("window: hide to tray");
     if let Some(w) = main_window(app) {
         let _ = w.hide();
     }
@@ -151,12 +169,10 @@ fn toggle_main(app: &AppHandle) {
 }
 
 fn refresh_tray_labels(app: &AppHandle) {
-    let shell = app.state::<Shell>();
-    let items = shell.items.lock().unwrap();
-    if let Some(items) = items.as_ref() {
+    if let Some(items) = tray_items(app) {
         let visible = main_window(app).and_then(|w| w.is_visible().ok()).unwrap_or(false);
         let _ = items.show.set_text(if visible { "Hide MW" } else { "Open MW" });
-        let p = shell.prefs.lock().unwrap();
+        let p = app.state::<Shell>().prefs.lock().unwrap().clone();
         let _ = items.on_top.set_checked(p.on_top);
         let _ = items.start_hidden.set_checked(p.start_hidden);
         #[cfg(desktop)]
@@ -244,38 +260,42 @@ fn shell_quit(app: AppHandle) {
 }
 
 fn set_tray_icon(app: &AppHandle, state: &'static str) {
-    let shell = app.state::<Shell>();
-    let mut last = shell.icon_state.lock().unwrap();
-    if *last == state {
-        return;
+    {
+        let shell = app.state::<Shell>();
+        let mut last = shell.icon_state.lock().unwrap();
+        if *last == state {
+            return;
+        }
+        *last = state;
     }
-    *last = state;
     let bytes: &[u8] = match state {
         "alert" => include_bytes!("../icons/tray-alert.png"),
         "stale" => include_bytes!("../icons/tray-stale.png"),
         _ => include_bytes!("../icons/tray.png"),
     };
-    if let Some(tray) = shell.tray.lock().unwrap().as_ref() {
+    if let Some(tray) = tray_icon(app) {
         if let Ok(img) = Image::from_bytes(bytes) {
             let _ = tray.set_icon(Some(img));
         }
-    };
+    }
 }
 
 /// Update the tray: tooltip text, icon (red dot = unseen alerts, amber dot = data
 /// is stale or failing) and the pause check mark. Also counts as a heartbeat.
 #[tauri::command]
 fn shell_tray(app: AppHandle, tooltip: String, alert: bool, stale: bool, paused: bool) {
-    let shell = app.state::<Shell>();
-    *shell.heartbeat.lock().unwrap() = Instant::now();
-    *shell.watchdog_fired.lock().unwrap() = false;
+    {
+        let shell = app.state::<Shell>();
+        *shell.heartbeat.lock().unwrap() = Instant::now();
+        *shell.watchdog_fired.lock().unwrap() = false;
+    }
     let tip: String = tooltip.chars().take(120).collect();
-    if let Some(tray) = shell.tray.lock().unwrap().as_ref() {
+    if let Some(tray) = tray_icon(&app) {
         let _ = tray.set_tooltip(Some(if tip.is_empty() { "MW".to_string() } else { tip }));
-    };
-    if let Some(items) = shell.items.lock().unwrap().as_ref() {
+    }
+    if let Some(items) = tray_items(&app) {
         let _ = items.pause.set_checked(paused);
-    };
+    }
     set_tray_icon(&app, if alert { "alert" } else if stale { "stale" } else { "ok" });
 }
 
@@ -287,6 +307,63 @@ fn shell_alive(app: AppHandle) {
     *shell.watchdog_fired.lock().unwrap() = false;
 }
 
+/// Hide secrets that could appear in a logged URL or error (API keys in query strings).
+fn scrub(msg: &str) -> String {
+    let mut out = String::with_capacity(msg.len());
+    let mut rest = msg;
+    loop {
+        let hit = ["token=", "apikey=", "apiKey=", "key=", "#setup="]
+            .iter()
+            .filter_map(|k| rest.find(k).map(|i| (i, k.len())))
+            .min();
+        match hit {
+            Some((i, n)) => {
+                out.push_str(&rest[..i + n]);
+                out.push_str("***");
+                let tail = &rest[i + n..];
+                let end = tail.find(|c: char| c == '&' || c == ' ' || c == '"' || c == '\'' || c == ')').unwrap_or(tail.len());
+                rest = &tail[end..];
+            }
+            None => {
+                out.push_str(rest);
+                return out;
+            }
+        }
+    }
+}
+
+/// The page writes notable events and errors to the shell's log file.
+#[tauri::command]
+fn shell_log(level: String, msg: String) {
+    let m: String = scrub(&msg).chars().take(800).collect();
+    match level.as_str() {
+        "error" => error!("page: {m}"),
+        "warn" => warn!("page: {m}"),
+        _ => info!("page: {m}"),
+    }
+}
+
+fn log_file(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_log_dir().ok().map(|d| d.join(format!("{LOG_NAME}.log")))
+}
+
+/// The last lines of the log, for Settings → Diagnostics.
+#[tauri::command]
+async fn shell_logs(app: AppHandle) -> String {
+    let text = log_file(&app).and_then(|p| fs::read_to_string(p).ok()).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().collect();
+    lines[lines.len().saturating_sub(300)..].join("\n")
+}
+
+/// Open the folder that holds the log file.
+#[tauri::command]
+fn shell_open_logs(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    let _ = fs::create_dir_all(&dir);
+    app.opener().open_path(dir.to_string_lossy().to_string(), None::<&str>).map_err(|e| e.to_string())
+}
+
 fn reload_launcher(app: &AppHandle) {
     if let Some(w) = main_window(app) {
         if let Ok(url) = tauri::Url::parse(LAUNCHER_URL) {
@@ -295,43 +372,161 @@ fn reload_launcher(app: &AppHandle) {
     }
 }
 
-/// Watchdog: if the page stops checking in (renderer crash, failed load), warn once
-/// in the tray and with a toast, then reload through the launcher.
-fn start_watchdog(app: AppHandle) {
-    std::thread::spawn(move || loop {
-        let tick = Instant::now();
-        std::thread::sleep(Duration::from_secs(30));
-        let shell = app.state::<Shell>();
-        // The PC was asleep: give the page a fresh grace period instead of a false alarm.
-        if tick.elapsed() > Duration::from_secs(75) {
-            *shell.heartbeat.lock().unwrap() = Instant::now();
-            continue;
-        }
-        let silent = shell.heartbeat.lock().unwrap().elapsed() > Duration::from_secs(WATCHDOG_SECS);
-        if !silent {
-            continue;
-        }
-        let first = {
-            let mut fired = shell.watchdog_fired.lock().unwrap();
-            let first = !*fired;
-            *fired = true;
-            first
+/// Ask the page's renderer to run a tiny script and wait for the answer. This does not
+/// depend on the page's timers or on IPC, so a page that is merely throttled (hidden
+/// window, power saving) still answers; a hung or crashed renderer does not.
+#[cfg(windows)]
+fn probe_page(app: &AppHandle, timeout: Duration) -> Option<bool> {
+    let w = main_window(app)?;
+    let (tx, rx) = std::sync::mpsc::channel::<bool>();
+    let sent = w.with_webview(move |pv| unsafe {
+        use webview2_com::ExecuteScriptCompletedHandler;
+        let core = match pv.controller().CoreWebView2() {
+            Ok(c) => c,
+            Err(_) => {
+                let _ = tx.send(false);
+                return;
+            }
         };
-        *shell.heartbeat.lock().unwrap() = Instant::now(); // give the reload time to come up
-        if first {
-            if let Some(tray) = shell.tray.lock().unwrap().as_ref() {
-                let _ = tray.set_tooltip(Some("MW: the page stopped responding, reloading…"));
-            };
-            set_tray_icon(&app, "stale");
-            let _ = app
-                .notification()
-                .builder()
-                .title("MW is reloading")
-                .body("The widget stopped responding, so alerts were paused. Reloading it now.")
-                .show();
+        let tx2 = tx.clone();
+        let handler = ExecuteScriptCompletedHandler::create(Box::new(move |hr, result| {
+            let _ = tx2.send(hr.is_ok() && result.trim() == "1");
+            Ok(())
+        }));
+        if core.ExecuteScript(windows::core::w!("1"), &handler).is_err() {
+            let _ = tx.send(false);
         }
-        let h = app.clone();
-        let _ = app.run_on_main_thread(move || reload_launcher(&h));
+    });
+    if sent.is_err() {
+        return None;
+    }
+    rx.recv_timeout(timeout).ok()
+}
+
+#[cfg(not(windows))]
+fn probe_page(_app: &AppHandle, _timeout: Duration) -> Option<bool> {
+    None
+}
+
+/// Kick the page's refresh loop (in case its timers were held back while hidden).
+fn nudge_page(app: &AppHandle) {
+    let h = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(w) = main_window(&h) {
+            let _ = w.eval("window.__mwWake && window.__mwWake('watchdog')");
+        }
+    });
+}
+
+/// Watchdog: if the page stops checking in, first check whether it still answers.
+/// A page that answers is nudged, never reloaded. A page that doesn't answer is
+/// reloaded through the launcher, and repeated failures wait longer each time
+/// (3, 6, 12, 24, 48 min) so MW never sits in a reload loop. Everything is logged.
+fn start_watchdog(app: AppHandle) {
+    std::thread::spawn(move || {
+        let mut strikes: u32 = 0;
+        loop {
+            let tick = Instant::now();
+            std::thread::sleep(Duration::from_secs(30));
+            let shell = app.state::<Shell>();
+            // The PC was asleep: give the page a fresh grace period instead of a false alarm.
+            if tick.elapsed() > Duration::from_secs(75) {
+                info!("watchdog: PC was asleep about {}s; fresh grace period", tick.elapsed().as_secs());
+                *shell.heartbeat.lock().unwrap() = Instant::now();
+                nudge_page(&app);
+                continue;
+            }
+            let age = shell.heartbeat.lock().unwrap().elapsed();
+            if age < Duration::from_secs(WATCHDOG_SECS) {
+                if age < Duration::from_secs(60) && strikes > 0 {
+                    info!("watchdog: page is checking in again");
+                    strikes = 0;
+                }
+                continue;
+            }
+            match probe_page(&app, Duration::from_secs(15)) {
+                Some(true) => {
+                    warn!("watchdog: no check-in for {}s but the page answers; nudging, not reloading", age.as_secs());
+                    nudge_page(&app);
+                    *shell.heartbeat.lock().unwrap() = Instant::now();
+                    continue;
+                }
+                Some(false) => warn!("watchdog: page probe failed"),
+                None => warn!("watchdog: page probe timed out or unavailable"),
+            }
+            let wait = WATCHDOG_SECS * 2u64.pow(strikes.min(4));
+            if age < Duration::from_secs(wait) {
+                continue;
+            }
+            strikes += 1;
+            error!("watchdog: page silent for {}s and not answering; reload #{strikes}", age.as_secs());
+            let first = strikes == 1;
+            if first {
+                *shell.watchdog_fired.lock().unwrap() = true;
+            }
+            // All window/tray work happens on the main thread, queued (never waited on here).
+            let h = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if first {
+                    if let Some(tray) = tray_icon(&h) {
+                        let _ = tray.set_tooltip(Some("MW: the page stopped responding, reloading…"));
+                    }
+                    set_tray_icon(&h, "stale");
+                    let _ = h
+                        .notification()
+                        .builder()
+                        .title("MW is reloading")
+                        .body("The widget stopped responding, so alerts were paused. Reloading it now.")
+                        .show();
+                }
+                reload_launcher(&h);
+            });
+        }
+    });
+}
+
+/// WebView2 hardening: no Edge autofill pop-ups on our inputs, and recover from a
+/// crashed page right away (logged) instead of waiting for the watchdog.
+#[cfg(windows)]
+fn harden_webview(app: &AppHandle) {
+    let Some(w) = main_window(app) else { return };
+    let h = app.clone();
+    let _ = w.with_webview(move |pv| unsafe {
+        use webview2_com::{Microsoft::Web::WebView2::Win32::*, ProcessFailedEventHandler};
+        use windows::core::Interface;
+        let Ok(core) = pv.controller().CoreWebView2() else { return };
+        if let Ok(settings) = core.Settings() {
+            if let Ok(s4) = settings.cast::<ICoreWebView2Settings4>() {
+                let _ = s4.SetIsGeneralAutofillEnabled(false);
+                let _ = s4.SetIsPasswordAutosaveEnabled(false);
+            }
+        }
+        let handler = ProcessFailedEventHandler::create(Box::new(move |_wv, args| {
+            let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
+            if let Some(a) = args {
+                let _ = a.ProcessFailedKind(&mut kind);
+            }
+            error!("webview: process failed (kind {})", kind.0);
+            let h2 = h.clone();
+            if kind == COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED {
+                // the whole WebView is gone: restart the app cleanly
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_secs(2));
+                    h2.restart();
+                });
+            } else if kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED
+                || kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE
+            {
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_secs(1));
+                    let h3 = h2.clone();
+                    let _ = h2.run_on_main_thread(move || reload_launcher(&h3));
+                });
+            }
+            Ok(())
+        }));
+        let mut token = Default::default();
+        let _ = core.add_ProcessFailed(&handler, &mut token);
     });
 }
 
@@ -383,6 +578,17 @@ pub fn run() {
     }
 
     builder
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                    file_name: Some(LOG_NAME.into()),
+                })])
+                .level(log::LevelFilter::Info)
+                .max_file_size(512_000)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+                .build(),
+        )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .manage(Shell {
@@ -401,12 +607,24 @@ pub fn run() {
             shell_quit,
             shell_tray,
             shell_alive,
-            shell_notify
+            shell_notify,
+            shell_log,
+            shell_logs,
+            shell_open_logs
         ])
+        .on_page_load(|_webview, payload| {
+            let url = payload.url();
+            info!("page: {:?} {}{}", payload.event(), url.host_str().unwrap_or(url.scheme()), url.path());
+        })
         .setup(|app| {
             let handle = app.handle().clone();
             let prefs = load_prefs(&handle);
             let first_run = !prefs.first_run_done;
+            info!(
+                "MW {} starting{}",
+                handle.package_info().version,
+                if std::env::args().any(|a| a == AUTOSTART_ARG) { " (with Windows)" } else { "" }
+            );
             *app.state::<Shell>().prefs.lock().unwrap() = prefs.clone();
 
             // First run: start with Windows by default (it can be turned off from the tray or Settings).
@@ -468,10 +686,14 @@ pub fn run() {
                         let _ = apply_pref(app, "autostart", v);
                     }
                     "reload" => {
+                        info!("tray: Reload MW");
                         reload_launcher(app);
                         show_main(app);
                     }
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        info!("tray: Quit");
+                        app.exit(0)
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -511,6 +733,8 @@ pub fn run() {
                 }
             }
             refresh_tray_labels(&handle);
+            #[cfg(windows)]
+            harden_webview(&handle);
             start_watchdog(handle.clone());
             Ok(())
         })

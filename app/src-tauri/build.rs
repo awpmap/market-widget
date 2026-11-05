@@ -9,6 +9,9 @@ fn main() {
             "shell_tray",
             "shell_alive",
             "shell_notify",
+            "shell_log",
+            "shell_logs",
+            "shell_open_logs",
         ])),
     )
     .expect("failed to run tauri-build");

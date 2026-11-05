@@ -23,27 +23,32 @@ button{margin-top:10px;background:#5b9dff;color:#0b1220;border:0;border-radius:8
 // Launcher: the widget itself is hosted, so updates arrive without reinstalling.
 // Wait for a connection first (Windows startup can beat the network).
 const APP = "https://awpmap.github.io/market-widget/";
-let tries = 0, timer = 0;
+let tries = 0, timer = 0, leaving = false;
+const log = (level, msg) => { try { window.__TAURI__ && window.__TAURI__.core.invoke("shell_log", { level, msg: "launcher: " + msg }); } catch (e) {} };
+function go(why){ if (leaving) return; leaving = true; log("info", "opening MW (" + why + ")"); location.replace(APP); }
 async function attempt(){
   clearTimeout(timer); tries++;
+  const ac = new AbortController(), t = setTimeout(() => ac.abort(), 8000);   // a stalled check can't hold the launcher
   try {
     // GitHub Pages allows cross-origin reads, so a real status check is possible
-    const r = await fetch(APP + "manifest.webmanifest?ping=" + Date.now(), { cache: "no-store" });
+    const r = await fetch(APP + "manifest.webmanifest?ping=" + Date.now(), { cache: "no-store", signal: ac.signal });
     if (!r.ok) throw new Error("status " + r.status);
-    location.replace(APP);
+    go("online");
   } catch (e) {
+    log("warn", "check " + tries + " failed: " + (e.name === "AbortError" ? "timed out" : e.message));
     document.getElementById("on").style.display = "none";
     document.getElementById("off").style.display = "block";
-    // After ~2 minutes offline, open anyway: the app's offline copy may load from cache.
-    if (tries >= 24) { location.replace(APP); return; }
+    // After ~1 minute offline, open anyway: the app's offline copy may load from cache.
+    if (tries >= 10) { go("offline copy"); return; }
     timer = setTimeout(attempt, 5000);
-  }
+  } finally { clearTimeout(t); }
 }
-document.getElementById("retry").onclick = attempt;
+document.getElementById("retry").onclick = () => { tries = 0; attempt(); };
 window.addEventListener("online", attempt);
 // tell the tray app this page is alive (so its watchdog doesn't reload while we wait)
 const alive = () => { try { window.__TAURI__ && window.__TAURI__.core.invoke("shell_alive"); } catch (e) {} };
 alive(); setInterval(alive, 30000);
+log("info", "start");
 attempt();
 </script>
 </body></html>

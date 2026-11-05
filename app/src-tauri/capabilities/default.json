@@ -29,6 +29,9 @@
     "allow-shell-quit",
     "allow-shell-tray",
     "allow-shell-notify",
-    "allow-shell-alive"
+    "allow-shell-alive",
+    "allow-shell-log",
+    "allow-shell-logs",
+    "allow-shell-open-logs"
   ]
 }
