@@ -423,7 +423,7 @@ body.native #titlebar .logo *{pointer-events:none}
 
 <script>
 "use strict";
-const APP_VERSION = "3.4.0";
+const APP_VERSION = "3.4.1";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -513,7 +513,7 @@ const fmt$ = (n, d=2) => (n==null||!isFinite(n)) ? "—" : (n<0?"−":"") + "$" 
 const fmtS$ = (n, d=0) => (n==null||!isFinite(n)) ? "—" : (n>=0?"+":"−") + "$" + Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
 const fmtPct = (n, d=2) => (n==null||!isFinite(n)) ? "—" : (n>=0?"+":"−") + Math.abs(n).toFixed(d) + "%";
 const cls = n => (n==null||!isFinite(n)) ? "" : n>=0 ? "up" : "down";
-const timeStr = t => new Date(t).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+const timeStr = t => new Date(t).toLocaleTimeString("en-US", {hour:"numeric", minute:"2-digit", timeZone:"America/New_York"});   // ET, like the rest of the app
 /* ---------- desktop app bridge (Tauri). In a browser all of this stays off. ---------- */
 const TAURI = window.__TAURI__ || null;
 const NATIVE = !!(TAURI && TAURI.core && TAURI.core.invoke);
@@ -604,6 +604,13 @@ function badPrint(sym, q){
   const p = pendingPx[sym];
   if (p && Math.abs(q.c/p - 1) < 0.05){ delete pendingPx[sym]; return false; }   // confirmed by a second refresh
   pendingPx[sym] = q.c; return true;
+}
+/* while a big move waits for its confirming refresh, say so on the row instead of showing the old price silently */
+function heldChip(sym){
+  const p = pendingPx[sym], prev = quotes[sym];
+  if (!p || !prev || !(prev.c > 0)) return "";
+  const ch = (p/prev.c - 1)*100;
+  return `<span class="chip" style="color:var(--warn);border-color:var(--warn)" title="A ${fmtPct(ch,0)} move came in. MW holds it for one refresh to rule out a bad print, then shows it if the next price agrees.">${fmtPct(ch,0)}? confirming…</span>`;
 }
 /* timestamped prices for today (for the "fast drop" rule); kept for the day */
 let ticks = store.get("ticks", {});
@@ -894,9 +901,10 @@ function checkAlerts(){
   if (!pausedNow()) cfg.watch.forEach(w => {
     const sym = (w.sym||"").toUpperCase(); if (snoozed(sym)) return;
     const news = evaluate(w).filter(a => !f.ids[a.id]);
-    // still sliding after its last alert: each further leg down (fast-drop %, default 2%) is news on its own
-    const lq = quotes[sym], lb = f.lastBy[sym], legPct = w.fastDrop || 2;
-    if (!news.length && lb && lb.px && Date.now() - lb.t >= BUNDLE_MS && alertable(lq) && w.on!==false && !settings.allOff && lq.c <= lb.px*(1 - legPct/100)){
+    // still sliding after its last alert: a further leg down is news, but each leg must be twice the last
+    // (fast-drop %, default 2% → 4% → 8%) and at most 3 a day, so a slow grind doesn't pop up every 15 min
+    const lq = quotes[sym], lb = f.lastBy[sym], legPct = (w.fastDrop || 2) * 2 ** ((lb && lb.legs) || 0);
+    if (!news.length && lb && lb.px && (lb.legs||0) < 3 && Date.now() - lb.t >= BUNDLE_MS && alertable(lq) && w.on!==false && !settings.allOff && lq.c <= lb.px*(1 - legPct/100)){
       const n = (lb.legs||0) + 1, id = `${sym}-leg-${n}`;
       news.push({id, kind:"fast", sym, msg:`${sym} is down another ${((1-lq.c/lb.px)*100).toFixed(1)}% since the ${timeStr(lb.t)} alert (${fmt$(lb.px)} → ${fmt$(lq.c)})`});
       lb.legs = n;
@@ -1179,7 +1187,7 @@ function holdRow(r, total){
   return `<div class="hrow" role="button" tabindex="0" data-row="h:${esc(r.sym)}:${esc(r.h.acct||"")}">
     <div class="s">${esc(r.sym)}${erChip(r.sym)}<small>${r.sh} sh${wt!=null?" · "+wt.toFixed(1)+"%":""}</small></div>
     ${sparkSvg(r.sym)}
-    <div class="v num">${fmt$(r.val,0)}<small>${q?fmt$(q.c):"—"}</small></div>
+    <div class="v num">${fmt$(r.val,0)}<small>${q?fmt$(q.c):"—"}</small>${heldChip(r.sym)}</div>
     <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}</div>${det}</div>`;
 }
 
@@ -1322,7 +1330,7 @@ function renderWatch(){
     return `<div class="wrow ${off?"muted-row":I.st?"st-"+I.st:""}" data-row="w:${esc(sym)}" role="button" tabindex="0" aria-expanded="${open}"><div class="wtop">
       <div class="s">${esc(sym)}${erChip(sym)}<small>${esc(w.note||"")}</small></div>
       ${sparkSvg(sym, lv)}
-      <div class="v num" style="text-align:right">${px?fmt$(px):"—"}</div>
+      <div class="v num" style="text-align:right">${px?fmt$(px):"—"}${heldChip(sym)?`<br>${heldChip(sym)}`:""}</div>
       <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}</div></div>
       ${useLv && px ? ladder(lv, px) : ""}<div class="wmeta">${parts.join("")}${right}</div>${det}</div>`;
   }).join("");
