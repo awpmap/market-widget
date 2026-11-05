@@ -2,9 +2,9 @@ name: Background alerts
 
 # Checks the watchlist every 5 minutes on weekdays and sends Windows notifications through Edge.
 # All personal settings live in the ALERT_SETUP repository secret. Logs show counts only.
+# Retired in MW 4 (review board R9): MW's own alerts, phone alerts (ntfy) and the outside check replace it,
+# and MW 4's service worker no longer shows these pushes. Kept for a manual test run only.
 on:
-  schedule:
-    - cron: "*/5 13-21 * * 1-5"
   workflow_dispatch:
     inputs:
       test:
