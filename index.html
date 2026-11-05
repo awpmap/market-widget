@@ -82,6 +82,7 @@ body.wco main{margin-top:env(titlebar-area-height,40px)}
 .pill.open i{background:var(--up);box-shadow:0 0 0 3px color-mix(in srgb,var(--up) 25%,transparent)}
 .pill.ext i{background:var(--warn)}
 .pill span{font-variant-numeric:tabular-nums}
+.chip.auto{font-size:9.5px;padding:0 5px;color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
 .pill.open.closing{color:var(--warn)}
 .spacer{flex:1}
 .tb-btn{app-region:no-drag;-webkit-app-region:no-drag;width:30px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--fg-2);position:relative}
@@ -368,6 +369,7 @@ textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
 @media (max-width:360px){ .kpi{padding:6px 7px} .kpi b{font-size:13px} .kpi span{font-size:10px} .idx{grid-template-columns:1fr 1fr} .hrow{grid-template-columns:minmax(56px,1fr) 58px 80px} .wtop{grid-template-columns:minmax(56px,1fr) auto 58px} .hrow > .spark,.wtop > .spark{display:none} .wdet{grid-template-columns:1fr} }
 @media (max-width:400px){ .mk-up,.mk-nq{display:none} }
 input::placeholder{text-transform:none;letter-spacing:normal}
+input:disabled{opacity:.45;cursor:not-allowed}
 .pill:focus{outline:none} .pill:focus-visible{outline:2px solid var(--accent)}
 body.native #titlebar .logo *{pointer-events:none}
 .er{display:inline-block;white-space:nowrap}
@@ -497,7 +499,7 @@ body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !importa
 
 <script>
 "use strict";
-const APP_VERSION = "3.8.0";
+const APP_VERSION = "3.9.0";
 
 /* =====================================================================
    Public build: NO personal data lives in this file.
@@ -915,11 +917,13 @@ async function loadHist(syms){
   if (!settings.tdKey) return;
   const today = etNow().date;
   if (loadHist.day !== today){ loadHist.day = today; loadHist.busy = new Set(); loadHist.failed = new Set(); }
-  const need = [...new Set(syms)].filter(s => (!hist[s] || hist[s].date !== today || hist[s].v !== 3) && !loadHist.busy.has(s) && !loadHist.failed.has(s));
+  const watchSet = new Set(cfg.watch.map(w => (w.sym||"").toUpperCase()));
+  const need = [...new Set(syms)].filter(s => (!hist[s] || hist[s].date !== today || hist[s].v !== 4 || (watchSet.has(s) && !hist[s].bars)) && !loadHist.busy.has(s) && !loadHist.failed.has(s));
   need.forEach(s => loadHist.busy.add(s));
   for (const sym of need){
     tdCall("time_series?symbol=" + encodeURIComponent(sym) + "&interval=1day&outputsize=1300").then(js=>{
-      const vals = (js.values || []).filter(v => v.datetime < today).map(v => ({d:v.datetime.slice(0,10), c:+v.close})); // newest first, completed days only
+      const done = (js.values || []).filter(v => v.datetime < today);   // newest first, completed days only
+      const vals = done.map(v => ({d:v.datetime.slice(0,10), c:+v.close}));
       if (!vals.length){ loadHist.failed.add(sym); return; }
       const refs = {};
       PERIODS.forEach(p=>{
@@ -933,7 +937,10 @@ async function loadHist(syms){
       const rets = []; for (let i=0; i<Math.min(60, cl.length-1); i++) rets.push(cl[i]/cl[i+1]-1);
       const mu = rets.reduce((a,b)=>a+b,0)/(rets.length||1);
       const vol = rets.length >= 20 ? Math.sqrt(rets.reduce((a,b)=>a+(b-mu)**2,0)/(rets.length-1))*100 : null;  // typical daily move, %
-      hist[sym] = {v:3, date:today, last:vals[0], refs, sma20:avg(20), sma50:avg(50), sma100:avg(100), sma200:avg(200), vol};
+      // watchlist tickers keep ~3 months of daily bars for auto buy levels and VWAP: [date, open, high, low, close, volume]
+      const bars = watchSet.has(sym) ? done.slice(0, 70).map(v => [v.datetime.slice(0,10), +v.open, +v.high, +v.low, +v.close, +v.volume || 0]) : null;
+      hist[sym] = {v:4, date:today, last:vals[0], refs, sma20:avg(20), sma50:avg(50), sma100:avg(100), sma200:avg(200), vol, bars};
+      delete statsCache[sym];
       store.set("hist", hist); renderMarkets();
     }).catch(()=>{ loadHist.failed.add(sym); /* keep older data; don't retry today */ }).finally(()=>loadHist.busy.delete(sym));
   }
@@ -966,6 +973,83 @@ function erInfo(sym){
   return {d:e.d, hour:e.hour, days, label:`ER ${(+e.d.slice(5,7))}/${(+e.d.slice(8,10))}${e.hour==="amc"?" pm":e.hour==="bmo"?" am":""}`};
 }
 const erChip = sym => { const e = erInfo(sym); return e ? `<span class="er ${e.days<=5?"soon":""}" title="Earnings ${e.d}${e.hour==="amc"?" after the close":e.hour==="bmo"?" before the open":""} (${e.days===0?"today":e.days===1?"tomorrow":"in "+e.days+" days"})">${e.label}</span>` : ""; };
+/* ---------- auto buy levels + VWAP ----------
+   Daily numbers come from completed sessions only, so auto levels are set before the open and hold all day. */
+const statsCache = {};
+const mdLabel = d => (+d.slice(5,7)) + "/" + (+d.slice(8,10));
+function dailyStats(sym){
+  const h = hist[sym]; if (!h || !h.bars || h.bars.length < 16) return null;
+  const hit = statsCache[sym]; if (hit && hit.date === h.date) return hit;
+  const b = h.bars, c = b[0][4];
+  const tr = i => Math.max(b[i][2] - b[i][3], Math.abs(b[i][2] - b[i+1][4]), Math.abs(b[i][3] - b[i+1][4]));
+  let atr = 0; for (let i = 0; i < 14; i++) atr += tr(i); atr /= 14;
+  // VWAP anchor: the biggest gap of the last 40 sessions (3%+, weighted by volume; usually earnings), else the 20-day high
+  const nv = Math.min(50, b.length), avgV = b.slice(0, nv).reduce((a, x) => a + x[5], 0) / nv;
+  let anc = -1, best = 0;
+  for (let i = 0; i < Math.min(40, b.length - 1); i++){
+    const gap = Math.abs(b[i][1] / b[i+1][4] - 1), sc = gap * Math.min(avgV ? b[i][5] / avgV : 1, 4);
+    if (gap >= 0.03 && sc > best){ best = sc; anc = i; }
+  }
+  let ancWhy = "gap";
+  if (anc < 0){ ancWhy = "high"; anc = 0; for (let i = 1; i < Math.min(20, b.length); i++) if (b[i][2] > b[anc][2]) anc = i; }
+  let pv = 0, vv = 0; for (let i = anc; i >= 0; i--){ pv += (b[i][2] + b[i][3] + b[i][4]) / 3 * b[i][5]; vv += b[i][5]; }
+  // support: swing lows (lowest of the 2 days either side) plus the 20- and 60-day lows, all under today's close
+  const sup = [];
+  for (let i = 2; i < b.length - 2; i++){ const l = b[i][3]; if (l <= b[i-1][3] && l <= b[i-2][3] && l <= b[i+1][3] && l <= b[i+2][3]) sup.push({p:l, label:"swing low of " + mdLabel(b[i][0])}); }
+  const lowOf = n => { let j = 0; for (let i = 1; i < Math.min(n, b.length); i++) if (b[i][3] < b[j][3]) j = i; return j; };
+  const l20 = lowOf(20), l60 = lowOf(60);
+  sup.push({p:b[l20][3], label:"20-day low (" + mdLabel(b[l20][0]) + ")"});
+  if (b.length >= 40 && l60 !== l20) sup.push({p:b[l60][3], label:"60-day low (" + mdLabel(b[l60][0]) + ")"});
+  const st = {date:h.date, c, atr, atrPct: atr / c * 100, anchor:{d:b[anc][0], why:ancWhy, pv, v:vv, vw: vv ? pv / vv : null}, sup: sup.filter(x => x.p < c * 0.985)};
+  return statsCache[sym] = st;
+}
+/* three levels: 1, 2 and 3 average daily ranges (ATR) under the last close, snapped to nearby support,
+   the first at least 3% under the close and each at least 5% under the one before (the "each buy 5% lower" rule) */
+function autoLevels(sym){
+  const s = dailyStats(sym); if (!s) return null;
+  const out = []; let ref = s.c;
+  for (let k = 1; k <= 3; k++){
+    let p = s.c - k * s.atr, why = k === 1 ? "1 average day's range under the close" : k + " average days' ranges under the close";
+    const near = s.sup.filter(x => Math.abs(x.p - p) <= 0.4 * s.atr && x.p < ref).sort((a, b) => Math.abs(a.p - p) - Math.abs(b.p - p))[0];
+    if (near){ p = near.p; why = "near the " + near.label; }
+    const cap = ref * (k === 1 ? 0.97 : 0.95);
+    if (p > cap){ p = cap; why = k === 1 ? "3% under the close (closest allowed)" : "5% under the level above (your spacing rule)"; }
+    if (p <= 0) break;
+    p = p < 100 ? +p.toFixed(2) : Math.round(p);
+    out.push({p, why}); ref = p;
+  }
+  return out;
+}
+/* today's VWAP from 5-minute bars (Twelve Data, about every 10 min per watchlist ticker while the market is open) */
+let vwap = store.get("vwap", {});
+function sessVwap(sym, maxAgeMin = 25){
+  const d = vwap.day === etNow().date && vwap.s && vwap.s[sym];
+  return d && d.vw && Date.now() - d.at < maxAgeMin * 60e3 ? d : null;
+}
+function anchorVwap(sym){
+  const s = dailyStats(sym); if (!s || !s.anchor.vw) return null;
+  const t = sessVwap(sym, 60);   // fold today's trading in when we have it
+  return {vw: t ? (s.anchor.pv + t.pv) / (s.anchor.v + t.v) : s.anchor.vw, d:s.anchor.d, why:s.anchor.why};
+}
+async function loadVwap(){
+  if (!settings.tdKey || session().s !== "open") return;
+  const day = etNow().date; if (vwap.day !== day) vwap = {day, s:{}};
+  if (etNow().mins < 575) return;   // wait for the first few 5-minute bars
+  const u = store.get("tdUsed", {}); if (u.date === day && u.n > 680) return;   // leave room in the 800-a-day free limit
+  const syms = cfg.watch.filter(w => w.on !== false && w.vwapOn !== false).map(w => (w.sym||"").toUpperCase()).filter(Boolean).slice(0, 8);
+  for (const sym of syms){
+    const cur = vwap.s[sym];
+    if (cur && (Date.now() - cur.at < 10*60e3 || (cur.busyAt && Date.now() - cur.busyAt < 90e3))) continue;
+    vwap.s[sym] = Object.assign({}, cur, {busyAt: Date.now()});
+    tdCall("time_series?symbol=" + encodeURIComponent(sym) + "&interval=5min&outputsize=80").then(js => {
+      let pv = 0, v = 0, n = 0;
+      (js.values || []).forEach(b => { if (b.datetime.slice(0,10) !== day) return; const vol = +b.volume || 0; pv += (+b.high + +b.low + +b.close) / 3 * vol; v += vol; n++; });
+      vwap.s[sym] = v ? {pv, v, vw: pv / v, n, at: Date.now()} : {at: Date.now(), none: true};
+      store.set("vwap", vwap); safe("watchlist", renderWatch);
+    }).catch(e => { vwap.s[sym] = {at: Date.now(), err: String(e && e.message || e)}; });
+  }
+}
+
 /* fill today's sparklines from 9:30 when the app opens mid-day (Twelve Data, 1 credit per symbol, once a day) */
 async function loadIntraday(){
   if (!settings.tdKey || session().s === "closed") return;
@@ -1060,7 +1144,7 @@ async function tick(){
     loadMarketStatus().then(renderFrame);
     loadNavs(false);
     loadHist([...cfg.watch.map(w=>(w.sym||"").toUpperCase()), ...marketSyms(), ...mySyms()].filter(Boolean));
-    loadIntraday();
+    loadIntraday(); loadVwap();
     loadEarnings().then(renderAll);
     loadMetrics(syms).then(()=>{ renderAll(); checkAlerts(); });
   } finally {
@@ -1072,12 +1156,13 @@ async function tick(){
 /* ---------- alerts ---------- */
 /* levels: numbers, plus "50d" / "200d" moving averages (from daily history) */
 function effLevels(w){
+  if (w.auto){ const a = autoLevels((w.sym||"").toUpperCase()); if (a && a.length) return a.map(x => x.p); }
   let lv = (w.levels||[]).slice(); if (w.split && etNow().date >= w.split.date) lv = lv.map(x => +(x / w.split.ratio).toFixed(2));
   const h = hist[(w.sym||"").toUpperCase()];
   (w.ma||[]).forEach(n => { const v = h && h["sma"+n]; if (v) lv.push(+v.toFixed(2)); });
   return lv.sort((a,b)=>b-a);
 }
-const lvName = (w, L) => { const h = hist[(w.sym||"").toUpperCase()]; const m = (w.ma||[]).find(n => h && h["sma"+n] && +h["sma"+n].toFixed(2) === L); return m ? `${m}-day average (${fmt$(L)})` : fmt$(L); };
+const lvName = (w, L) => { if (w.auto){ const a = autoLevels((w.sym||"").toUpperCase()), x = a && a.find(x => x.p === L); if (x) return `auto ${fmtL(L)} (${x.why})`; } const h = hist[(w.sym||"").toUpperCase()]; const m = (w.ma||[]).find(n => h && h["sma"+n] && +h["sma"+n].toFixed(2) === L); return m ? `${m}-day average (${fmt$(L)})` : fmt$(L); };
 const volOf = sym => { const h = hist[sym]; return h && h.vol ? h.vol : null; };
 function snoozed(sym){ const t = settings.snooze[sym]; return t && t > Date.now(); }
 function pausedNow(){ return settings.pauseUntil && settings.pauseUntil > Date.now(); }
@@ -1110,6 +1195,14 @@ function evaluate(w){
     if (inZone && st[sym]===false) out.push({id:`${sym}-off`, kind:"off", sym, msg:`${sym} just fell ${off.toFixed(1)}% below its 52-week high (${fmt$(hi)})${erTxt}`});
     if (st[sym]!==inZone){ st[sym]=inZone; store.set("offState", st); }
   }
+  // VWAP reclaim: the price dropped well under today's VWAP, then climbed back over it (selling may have paused)
+  const vs = w.vwapOn !== false && sessVwap(sym);
+  if (vs && q.l){
+    const vst = (ticks.vw = ticks.vw || {}), side = px >= vs.vw ? "above" : "below", prev = vst[sym];
+    const flushPct = Math.max(2, vol || 0), flushed = q.l <= vs.vw * (1 - flushPct/100);
+    vst[sym] = side;
+    if (flushed && prev === "below" && side === "above") out.push({id:`${sym}-vwap`, kind:"vwap", sym, msg:`${sym} climbed back above today's VWAP (${fmt$(vs.vw)}) after dropping ${((1 - q.l/vs.vw)*100).toFixed(1)}% under it. The selling may have paused (now ${fmt$(px)})${erTxt}`});
+  }
   if (w.levelsOn!==false){
     const lv = effLevels(w), hit = lv.filter(L => px <= L);
     // one alert per ticker names the deepest level reached; the levels above it count as done for today
@@ -1120,12 +1213,12 @@ function evaluate(w){
   return out;
 }
 function firedToday(){ const day = etNow().date; let f = store.get("fired", {}); if (f.day !== day) f = {day, ids:{}, log:[], unseen:0}; return f; }
-const SHORT = {level:"level", fast:"fast drop", red:"red day", sig:"unusual drop", hd:"off today's high", off:"off 52w high", near:"near a level"};
+const SHORT = {level:"level", fast:"fast drop", red:"red day", sig:"unusual drop", hd:"off today's high", off:"off 52w high", near:"near a level", vwap:"VWAP reclaim"};
 const BUNDLE_MS = 15*60e3;   // one alert per ticker per 15 min, unless a new level breaks or it drops another leg
 function checkAlerts(){
   const f = firedToday(), fresh = [];
   f.lastBy = f.lastBy || {}; f.unseenSyms = f.unseenSyms || [];
-  const rank = {level:0, fast:1, red:1, sig:1, hd:2, off:3, near:5};
+  const rank = {level:0, vwap:1, fast:1, red:1, sig:1, hd:2, off:3, near:5};
   if (!pausedNow()) cfg.watch.forEach(w => {
     const sym = (w.sym||"").toUpperCase(); if (snoozed(sym)) return;
     const news = evaluate(w).filter(a => !f.ids[a.id]);
@@ -1163,7 +1256,7 @@ function markSeen(){ const f = firedToday(); f.unseen = 0; f.unseenSyms = []; st
 let bannerSyms = [], bannerDay = "", lastLoud = 0, lastToast = 0, lastAlertAt = 0, heldToasts = [];   // held: {sym, msg}
 const QUIET_MS = 5*60e3;   // in a flush: at most one sound and one pop-up every 5 minutes (new levels always get through)
 function notify(list){
-  const rank = {level:0, fast:1, red:1, sig:1, hd:2, off:3, near:5, test:6};
+  const rank = {level:0, vwap:1, fast:1, red:1, sig:1, hd:2, off:3, near:5, test:6};
   list = list.slice().sort((a,b)=>(rank[a.kind]??4)-(rank[b.kind]??4));
   const main = list[0], urgent = list.filter(a => a.kind !== "near");
   const syms = list.map(a=>a.sym).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i);
@@ -1540,15 +1633,16 @@ function renderWatch(){
     const parts = [];
     if (useLv && px){
       if (hitL.length) parts.push(`<span class="st hit">${levelText(I)}</span>${next?`<span>· next ${fmtL(next)}</span>`:""}`);
-      else if (next) parts.push(`<span title="Your next buy level below today's price (from Settings → Watchlist).">Next buy <b>${fmtL(next)}</b></span><span class="st ${I.st}" title="How far the price has to fall to reach that level. σ = how many normal days' moves away it is for this stock (1σ ≈ one typical day).">${dist.toFixed(1)}% away${vol && dist/vol < 15 ?` · ${(dist/vol).toFixed(1)}σ`:""}</span>`);
+      else if (next) parts.push(`<span title="${w.auto ? "Next auto buy level: " + esc(lvName(w, next)) + ". Auto levels reset before each open from the latest daily data." : "Your next buy level below today's price (from Settings → Watchlist)."}">Next buy <b>${fmtL(next)}</b>${w.auto ? ` <span class="chip auto">auto</span>` : ""}</span><span class="st ${I.st}" title="How far the price has to fall to reach that level. σ = how many normal days' moves away it is for this stock (1σ ≈ one typical day).">${dist.toFixed(1)}% away${vol && dist/vol < 15 ?` · ${(dist/vol).toFixed(1)}σ`:""}</span>`);
       else parts.push(`<span class="muted">Below all your levels</span>`);
     }
     if (I.red) parts.push(`<span class="st hit">Red day ${fmtPct(q.dp,1)}</span>`);
     if (!parts.length) parts.push(`<span class="muted">${px ? "Watching" : "Waiting for a price"}</span>`);
     if (!off){ if (I.st==="hit") hits++; else if (I.st==="near") nears++; }
     const rel = px && bq && bq.dp!=null && sym !== bench && q.dp!=null ? q.dp - bq.dp : null;
+    const sv = px && session().s === "open" ? sessVwap(sym) : null, vwd = sv ? (px / sv.vw - 1) * 100 : null;
     const sn = snoozed(sym);
-    const right = `<span class="r">${rel!=null?`<span class="num" title="Today's move minus ${esc(bench)}'s: separates a sector-wide dip from a stock-specific drop">vs ${esc(bench)} <b class="${cls(rel)}">${fmtPct(rel,1)}</b></span>`:""}${fromHi!=null?`<span class="num" title="From the 52-week high">${fromHi>=0?"−":"+"}${Math.abs(fromHi).toFixed(1)}% hi</span>`:""}${off?`<span class="chip">alerts off</span>`:sn?`<span class="chip" title="Snoozed until ${timeStr(settings.snooze[sym])}">snoozed</span>`:""}<button class="rbtn" data-ref="${esc(sym)}" title="Refresh just ${esc(sym)}" aria-label="Refresh ${esc(sym)}">↻</button></span>`;
+    const right = `<span class="r">${vwd!=null?`<span class="num" title="Price vs today's VWAP (${fmt$(sv.vw)}), the average price paid today weighted by volume. Under it, sellers have the upper hand today; climbing back over it after a drop often means the selling has paused.">VWAP <b class="${cls(vwd)}">${fmtPct(vwd,1)}</b></span>`:""}${rel!=null?`<span class="num" title="Today's move minus ${esc(bench)}'s: separates a sector-wide dip from a stock-specific drop">vs ${esc(bench)} <b class="${cls(rel)}">${fmtPct(rel,1)}</b></span>`:""}${fromHi!=null?`<span class="num" title="From the 52-week high">${fromHi>=0?"−":"+"}${Math.abs(fromHi).toFixed(1)}% hi</span>`:""}${off?`<span class="chip">alerts off</span>`:sn?`<span class="chip" title="Snoozed until ${timeStr(settings.snooze[sym])}">snoozed</span>`:""}<button class="rbtn" data-ref="${esc(sym)}" title="Refresh just ${esc(sym)}" aria-label="Refresh ${esc(sym)}">↻</button></span>`;
     const open = openRows.has("w:"+sym);
     let det = "";
     if (open){
@@ -1556,6 +1650,12 @@ function renderWatch(){
       det = `<div class="wdet num">
         ${q&&q.h?`<span>Off today's high <b class="${px<q.h?"down":""}">${fmtPct((px/q.h-1)*100,1)}</b></span>`:""}
         ${vol&&q?`<span>Today in σ <b class="${cls(q.dp)}">${(q.dp/vol>=0?"+":"−")+Math.abs(q.dp/vol).toFixed(1)}σ</b> <span class="muted">(±${vol.toFixed(1)}%)</span></span>`:""}
+        ${(()=>{ const sv2 = sessVwap(sym, 60), av = anchorVwap(sym), ds = dailyStats(sym), al = w.auto ? autoLevels(sym) : null; let o = "";
+          if (sv2 && px) o += `<span title="Average price paid today, weighted by volume (from 5-minute bars, updated about every 10 min)">VWAP today <b>${fmt$(sv2.vw)}</b> <span class="muted">${fmtPct((px/sv2.vw-1)*100,1)}</span></span>`;
+          if (av && px) o += `<span title="Average price paid by everyone since ${av.why === "gap" ? "the " + mdLabel(av.d) + " gap (usually earnings)" : "the " + mdLabel(av.d) + " high"}, weighted by volume. Price under it means most of those buyers are losing money, which often caps rallies.">VWAP since ${mdLabel(av.d)} <b>${fmt$(av.vw)}</b> <span class="muted">${fmtPct((px/av.vw-1)*100,1)}</span></span>`;
+          if (ds) o += `<span title="Average true range over 14 days: how far this stock normally moves in a day. Auto levels are spaced by it.">Daily range (ATR) <b>${fmt$(ds.atr, ds.atr < 10 ? 2 : 0)}</b> <span class="muted">${ds.atrPct.toFixed(1)}%</span></span>`;
+          if (al && al.length) o += `<span style="grid-column:1/-1" title="Reset before each open from the latest completed day. They never move during the day.">Auto levels ${al.map(x => `<b title="${esc(x.why)}">${fmtL(x.p)}</b>`).join(" · ")} <span class="muted">from the ${mdLabel(hist[sym].bars[0][0])} close</span></span>`;
+          return o; })()}
         ${h.sma50&&px?`<span>50-day avg <b>${fmt$(h.sma50,0)}</b> <span class="muted">${fmtPct((px/h.sma50-1)*100,1)}</span></span>`:""}
         ${h.sma200&&px?`<span>200-day avg <b>${fmt$(h.sma200,0)}</b> <span class="muted">${fmtPct((px/h.sma200-1)*100,1)}</span></span>`:""}
         ${m.beta!=null?`<span>Beta <b>${m.beta.toFixed(2)}</b></span>`:""}${erInfo(sym)?`<span>Earnings <b>${erInfo(sym).label.slice(3)}</b> <span class="muted">${erInfo(sym).days}d</span></span>`:""}
@@ -1970,7 +2070,9 @@ function showTab(tab){
             <label title="Scaled to how much this stock normally moves in a day (needs a Twelve Data key)"><input type="checkbox" data-k="sigOn" ${ck2("sigOn","sigDrop")}> Unusual drop: at least</label><span><input type="number" step="0.5" min="0.5" data-n="sigDrop" value="${w.sigDrop??2}"> σ</span>
             <label title="Price fell this much from its highest point in the last N minutes (a flush), even if the day is barely red"><input type="checkbox" data-k="fastOn" ${ck2("fastOn","fastDrop")}> Fast drop: down</label><span><input type="number" step="0.5" min="0.5" data-n="fastDrop" value="${w.fastDrop??2}"> % in <input type="number" step="5" min="5" max="120" data-n="fastMins" value="${w.fastMins??15}" style="width:48px"> min</span>
             <label title="The dip rules above only fire when this stock is falling harder than your benchmark, so a sector-wide dip doesn't trigger them. Buy levels always fire."><input type="checkbox" data-k="lagOn" ${w.lagOn?"checked":""}> Dip rules only if lagging ${esc(settings.bench)} by</label><span><input type="number" step="0.5" min="0.5" data-n="lagBy" value="${w.lagBy??2}"> %</span>
-            <label title="Prices, and 20d / 50d / 100d / 200d for moving averages"><input type="checkbox" data-k="levelsOn" ${ck("levelsOn")}> Buy levels</label><span><input type="text" data-l="1" value="${esc([...(w.levels||[]), ...(w.ma||[]).map(n=>n+"d")].join(", "))}" placeholder="e.g. 150, 140, 200d"></span>
+            <label title="Prices, and 20d / 50d / 100d / 200d for moving averages"><input type="checkbox" data-k="levelsOn" ${ck("levelsOn")}> Buy levels</label><span><input type="text" data-l="1" value="${esc([...(w.levels||[]), ...(w.ma||[]).map(n=>n+"d")].join(", "))}" placeholder="e.g. 150, 140, 200d" ${w.auto?"disabled":""}></span>
+            <label title="Three buy levels worked out before every open from the latest daily data: 1, 2 and 3 average days' ranges under the last close, snapped to recent lows, each at least 5% under the one above. Your own levels are kept and come back if you turn this off."><input type="checkbox" data-k="auto" ${w.auto?"checked":""}> Auto levels instead</label><span class="muted" data-autolv style="font-size:11px">${(a => !settings.tdKey ? "Needs a Twelve Data key" : a && a.length ? a.map(x => fmtL(x.p)).join(", ") + " today" : "Ready after the next data load")(autoLevels((w.sym||"").toUpperCase()))}</span>
+            <label title="Alert when the price has dropped well under today's VWAP and then climbs back over it. Uses about 40 Twelve Data credits a day per ticker (first 8 tickers)."><input type="checkbox" data-k="vwapOn" ${w.vwapOn!==false?"checked":""}> VWAP reclaim after a flush</label><span class="muted" style="font-size:11px">${settings.tdKey ? "Alert + VWAP on the row" : "Needs a Twelve Data key"}</span>
             <label><input type="checkbox" data-k="nearOn" ${ck("nearOn")}> Heads-up within</label><span><input type="number" step="0.5" min="0" data-n="near" value="${w.near??1.5}"> %</span>
             <label title="How much you plan to buy at each level. The Watchlist then shows how many levels your cash covers.">Plan to buy per level</label><span>$ <input type="number" step="50" min="0" data-n="buyAmt" value="${w.buyAmt??""}" placeholder="—" style="width:70px"></span>
           </div></div>`; }).join("")}</div>
@@ -1981,6 +2083,7 @@ function showTab(tab){
     $("aList").onchange = e=>{
       const r = e.target.closest(".rule"); if (!r) return; const w = cfg.watch[+r.dataset.i], t = e.target;
       if (t.dataset.k){ w[t.dataset.k] = t.checked; if (t.dataset.k==="on") r.querySelector(".opts").classList.toggle("dis", !t.checked);
+        if (t.dataset.k==="auto"){ r.querySelector("[data-l]").disabled = t.checked; if (t.checked) loadHist([(w.sym||"").toUpperCase()]); mwLog("info", "auto levels " + (t.checked ? "on" : "off") + " for " + w.sym); }
         const nf = {hiOn:"hiDrop", sigOn:"sigDrop", fastOn:"fastDrop", lagOn:"lagBy"}[t.dataset.k]; if (nf && t.checked && !w[nf]) w[nf] = +r.querySelector(`[data-n=${nf}]`).value || 2;
         if (t.dataset.k==="fastOn" && t.checked && !w.fastMins) w.fastMins = +r.querySelector(`[data-n=fastMins]`).value || 15; }
       if (t.dataset.n){ const v = parseFloat(t.value); if (isFinite(v) && v>=0) w[t.dataset.n] = v; }
