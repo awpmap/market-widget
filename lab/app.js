@@ -60,6 +60,9 @@ const ACCT_COLORS = ["#5b9dff","#a78bfa","#2dd4bf","#f59e0b","#f472b6","#94a3b8"
 /* ---------- storage (graceful when blocked) ---------- */
 const mem = {};
 const NS = "mwlab_";
+/* the same code runs as the beta (/lab/, storage "mwlab_") and, after labdev/promote.mjs, as the regular MW
+   (storage "mw_"); BETA turns on the parts that only make sense in the beta (switching back, copying from MW) */
+const BETA = NS === "mwlab_", BETA_NAME = "MW" + " Beta";   // spelled in two parts so promote.mjs leaves it alone
 const store = {
   get(k, d){ try{ const v = localStorage.getItem(NS+k); if (v!=null) return JSON.parse(v); }catch(e){} return (k in mem) ? mem[k] : d; },
   set(k, v){ mem[k] = v; try{ localStorage.setItem(NS+k, JSON.stringify(v)); }catch(e){ if (!store.warned){ store.warned = true; setTimeout(()=>{ try{ mwLog("warn", "browser storage is full or blocked: " + e.message); }catch(_){} }, 0); } } }
@@ -131,7 +134,7 @@ function initSentry(){
   initSentry.loading = true;
   const sc = document.createElement("script");
   sc.src = SENTRY_SRC; sc.integrity = SENTRY_SRI; sc.crossOrigin = "anonymous"; sc.referrerPolicy = "no-referrer";
-  sc.onload = ()=>{ try{ window.Sentry.init({ dsn, release: "mwlab@" + APP_VERSION, environment: NATIVE ? "lab-desktop" : "lab-browser", sendDefaultPii: false,
+  sc.onload = ()=>{ try{ window.Sentry.init({ dsn, release: (BETA ? "mwlab@" : "mw@") + APP_VERSION, environment: (BETA ? "lab-" : "") + (NATIVE ? "desktop" : "browser"), sendDefaultPii: false,
       beforeBreadcrumb: () => null, beforeSend: ev => { try{ return JSON.parse(scrubKeys(JSON.stringify(ev))); }catch(e){ return null; } } });
       window.Sentry.setTag("shell", NATIVE ? "desktop-app" : "browser");
       mwLog("info", "Sentry connected"); const st = document.getElementById("dSentryState"); if (st) st.textContent = "Connected: crash reports are on.";
@@ -871,7 +874,7 @@ function idbOpen(){
   if (IDB.db) return Promise.resolve(IDB.db);
   if (IDB.opening) return IDB.opening;
   IDB.opening = new Promise((res, rej) => {
-    let rq; try{ rq = indexedDB.open("mwlab", 1); }catch(e){ rej(e); return; }
+    let rq; try{ rq = indexedDB.open(BETA ? "mwlab" : "mw", 1); }catch(e){ rej(e); return; }
     rq.onupgradeneeded = () => { const db = rq.result;
       if (!db.objectStoreNames.contains("bars")) db.createObjectStore("bars", {keyPath:"sym"});
       if (!db.objectStoreNames.contains("journal")) db.createObjectStore("journal", {keyPath:"id"});
@@ -883,6 +886,25 @@ function idbOpen(){
   return IDB.opening;
 }
 const idbReq = (st, mode, fn) => idbOpen().then(db => new Promise((res, rej) => { const tx = db.transaction(st, mode), r = fn(tx.objectStore(st)); tx.oncomplete = () => res(r && r.result); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); }));
+/* moving to MW 4 from the beta: boot.js copied the beta's settings; this copies its database (price history,
+   alert journal, daily closes) once, so the scorecard keeps its record. Fails soft: MW starts either way. */
+function idbFromBeta(){
+  if (BETA || raw.get("mw_idbFrom") !== "mwlab") return Promise.resolve();
+  const STORES = ["bars","journal","snaps","tape"];
+  return new Promise(res => {
+    let rq; try{ rq = indexedDB.open("mwlab", 1); }catch(e){ res(); return; }
+    rq.onupgradeneeded = () => { try{ rq.transaction.abort(); }catch(e){} };   // no beta database here: nothing to copy
+    rq.onerror = rq.onblocked = () => res();
+    rq.onsuccess = () => { const src = rq.result, have = STORES.filter(n => src.objectStoreNames.contains(n));
+      if (!have.length){ src.close(); res(); return; }
+      const tx = src.transaction(have, "readonly"), out = {};
+      have.forEach(n => { const r = tx.objectStore(n).getAll(); r.onsuccess = () => { out[n] = r.result || []; }; });
+      tx.oncomplete = () => { src.close();
+        Promise.all(have.filter(n => n !== "tape").flatMap(n => out[n].map(v => idbPut(n, v).catch(()=>{}))))
+          .then(() => { mwLog("info", "moved the beta's database over (" + have.filter(n => n !== "tape").map(n => out[n].length + " " + n).join(", ") + ")"); res(); }); };
+      tx.onerror = () => { src.close(); res(); }; };
+  }).then(() => { try{ localStorage.removeItem("mw_idbFrom"); }catch(e){} });
+}
 const idbPut = (st, v) => idbReq(st, "readwrite", s => s.put(v));
 const idbGet = (st, k) => idbReq(st, "readonly", s => s.get(k));
 const idbAll = st => idbReq(st, "readonly", s => s.getAll());
@@ -988,6 +1010,7 @@ function tapeAdd(src, what, data){
 
 /* ---------- copy your setup from the live MW in this browser (read-only) ---------- */
 function liveSetup(){
+  if (!BETA) return null;
   const c = liveStore.get("cfg"), s = liveStore.get("settings");
   return c && E.validCfg(c) ? {cfg:c, settings:s || {}} : null;
 }
@@ -1006,6 +1029,8 @@ function importFromLive(silent){
 }
 /* in the separate MW Lab desktop app (Ctrl+Alt+L) there is no regular MW to go back to */
 const labShell = () => !!(nat.state && nat.state.hotkey_label === "Ctrl+Alt+L");
+/* the show/hide hotkey: Ctrl+Alt+M in the MW app, Ctrl+Alt+L in the MW Lab app (older apps don't say, and are MW) */
+const hotkeyName = () => (nat.state && nat.state.hotkey_label) || "Ctrl+Alt+M";
 function leaveBeta(){
   if (!confirm("Switch back to the regular MW?\n\nYour regular setup is just as you left it. Changes you made in the beta stay in the beta, and come back if you join again.")) return;
   raw.set("mw_channel", "stable"); mwLog("info", "left the beta"); location.replace("../");
@@ -1590,6 +1615,9 @@ $("bCompact").onclick = ()=>{ settings.compact = !settings.compact; saveSettings
 $("bRefresh").onclick = ()=>{ schedule(true); if (session().s !== "open") toast("Showing 4 PM close prices · after-hours isn't in the free data"); };
 $("bAlerts").onclick = ()=>{ markSeen(); settings.collapsed.log = false; settings.compact = false; saveSettings(); renderAll(); $("log-sec").scrollIntoView({behavior:"smooth", block:"start"}); };
 $("bSettings").onclick = ()=>{ closeMenu(); openSheet(settings.sheetTab || "general"); };
+/* in the beta that MW opened, the menu has a way back too (it's also at the top of Settings → General) */
+if (BETA && onBeta()) $("bLeave").hidden = false;
+$("bLeave").onclick = ()=>{ closeMenu(); leaveBeta(); };
 function closeMenu(){ $("menu").classList.add("hide"); $("bMore").setAttribute("aria-expanded","false"); }
 $("bMore").onclick = e=>{ e.stopPropagation(); const m = $("menu"), open = m.classList.contains("hide"); m.classList.toggle("hide", !open); $("bMore").setAttribute("aria-expanded", String(open)); if (open) m.querySelector("button").focus(); };
 document.addEventListener("click", e=>{ if (!e.target.closest("#menu,#bMore")) closeMenu(); }, true);
@@ -1615,7 +1643,7 @@ function showTab(tab){
   const B = $("shBody");
   B.onclick = B.oninput = B.onchange = null;   // each tab sets its own handlers
   if (tab==="general"){
-    B.innerHTML = `${labShell() ? "" : `<div class="callout" style="margin-bottom:14px"><b>${onBeta() ? "You're using MW Beta" : "This is MW Beta"}</b>${onBeta() ? "MW opens this beta version until you switch back. Your regular setup is kept as you left it." : "You opened the beta directly. Make it the version MW opens?"}<div style="margin-top:8px"><button class="btn" id="sChannel">${onBeta() ? "Switch back to regular MW" : "Use the beta by default"}</button></div></div>`}
+    B.innerHTML = `${!BETA ? "" : labShell() ? "" : `<div class="callout" style="margin-bottom:14px"><b>${onBeta() ? "You're using MW Beta" : "This is MW Beta"}</b>${onBeta() ? "MW opens this beta version until you switch back. Your regular setup is kept as you left it." : "You opened the beta directly. Make it the version MW opens?"}<div style="margin-top:8px"><button class="btn" id="sChannel">${onBeta() ? "Switch back to regular MW" : "Use the beta by default"}</button></div></div>`}
       <div class="field"><label for="sKey">Finnhub API key</label><input id="sKey" type="password" value="${esc(settings.key)}" placeholder="Paste your free key" autocomplete="off" spellcheck="false">
         <p>Free at finnhub.io. A market-data key only, not a brokerage login. Stored on this PC.</p></div>
       <div class="field"><label for="sTd">Twelve Data key (optional)</label><input id="sTd" type="password" value="${esc(settings.tdKey)}" placeholder="Paste a free Twelve Data key" autocomplete="off" spellcheck="false">
@@ -1635,7 +1663,7 @@ function showTab(tab){
           <span>Start with Windows</span><label class="sw"><input type="checkbox" data-shell="autostart"><span></span></label>
           <span>Start hidden in the tray</span><label class="sw"><input type="checkbox" data-shell="start_hidden"><span></span></label>
           <span>Keep on top of other windows (T)</span><label class="sw"><input type="checkbox" data-shell="on_top"><span></span></label>
-          <span>Show / hide from anywhere: Ctrl+Alt+L</span><label class="sw"><input type="checkbox" data-shell="hotkey"><span></span></label>
+          <span>Show / hide from anywhere: ${hotkeyName()}</span><label class="sw"><input type="checkbox" data-shell="hotkey"><span></span></label>
           <span>Opening animation when MW starts</span><label class="sw"><input type="checkbox" id="sSplash" ${settings.splash!==false?"checked":""}><span></span></label>
         </div></div><p>Closing the window (X or Esc) keeps MW Beta running in the tray so alerts still pop up. Quit from the tray icon's menu. <span id="appVer"></span></p></div>` : ""}
       <div class="field"><label for="sNtfy">Phone alerts (optional)</label><input id="sNtfy" type="text" value="${esc(settings.ntfy)}" placeholder="ntfy topic, e.g. mk-dips-8x2q (hard to guess)">
@@ -1645,17 +1673,22 @@ function showTab(tab){
         <p>So you hear about it when MW Beta can't watch, even if this PC is off. Free at healthchecks.io: add a check with the schedule <code>*/10 10-15 * * 1-5</code>, time zone America/New_York, grace time 20 minutes, then paste its ping URL here. While the market is open MW Beta pings it about every 5 minutes; if the pings stop (or MW Beta reports it can't see prices), Healthchecks emails you. Expect one email on market holidays and 1 pm early closes.</p></div>
       <div class="field"><label style="display:flex;gap:7px;align-items:center;font-weight:400"><input type="checkbox" id="sOvernight" ${settings.overnight?"checked":""}> Show Nasdaq's overnight session in the clock (from Dec 6, 2026; subject to SEC approval)</label>
         <p>Clock text only: the free price feeds carry no overnight prices, and alerts only run in regular hours.</p></div>
+      ${BETA ? "" : `<div class="field"><label>Beta version</label><p>${window.__mwBetaFailed ? `<b style="color:var(--warn)">${BETA_NAME} didn't start last time, so MW opened this regular version.</b> ` : ""}${BETA_NAME} gets new features first. It starts with a copy of your setup and keeps its own, so this version stays exactly as it is. Switch back any time in the beta under Settings → General.</p><button class="btn" id="sBeta">${window.__mwBetaFailed ? "Try the beta again" : "Try the beta"}</button></div>`}
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="sSave">Save</button><button class="btn" id="sTest">Send a test alert</button><button class="btn" id="sKeys">Test my keys</button></div>
       <div id="keyRes" class="note" style="white-space:pre-line"></div>
       <p class="note">Data use: Finnhub allows 60 calls a minute with no daily cap. Twelve Data allows 800 credits a day, shared out between history, VWAP, backups, fund prices and checks so no one feature can use it all; ${tdBudget().n} used today. Click the status pill for the breakdown.</p>
       ${liveSetup() ? `<div class="callout" style="margin-top:12px"><b>Copy your setup from MW</b>MW Beta keeps its own settings. This copies your holdings, watchlist, keys and preferences from the MW in this browser. MW itself is not changed.<div style="margin-top:8px"><button class="btn" id="sImport">Copy from MW</button></div></div>` : ""}
       <p class="note" style="margin-top:14px">Shortcuts: R refresh · C compact · A mark alerts seen · P pause alerts · / add a ticker · 1–4 jump to a section · , settings · Esc close${NATIVE?" or hide to tray · T keep on top":""}. ${esc(verLine())}.</p>`;
     if ($("sChannel")) $("sChannel").onclick = ()=> onBeta() ? leaveBeta() : joinBetaHere();
+    if ($("sBeta")) $("sBeta").onclick = ()=>{
+      try{ localStorage.setItem("mw_channel", "beta"); localStorage.removeItem("mw_betaTry"); localStorage.removeItem("mw_betaOk"); }catch(e){ toast("This browser blocks storage, so the beta can't be turned on"); return; }
+      mwLog("info", "switching to " + BETA_NAME); location.replace("lab/");
+    };
     if ($("sImport")) $("sImport").onclick = ()=>{ if (importFromLive()){ closeSheet(); renderAll(); schedule(true); } };
     $("sTheme").value = settings.theme; $("sTheme").onchange = e => { document.documentElement.dataset.theme = e.target.value; }; $("sTz").value = TZ_CHOICES.some(c => c[0] === settings.tz) ? settings.tz : "auto"; $("sRefresh").value = String(settings.refresh); $("sSound").value = settings.sound;
     if (NATIVE){
       const box = $("appOpts");
-      nat.invoke("shell_state").then(st => { nat.state = st; box.querySelectorAll("[data-shell]").forEach(i => i.checked = !!st[i.dataset.shell]); $("appVer").textContent = "App version " + st.version + "." + (st.hotkey && !st.hotkey_ok ? " Ctrl+Alt+L is taken by another app, so the hotkey is off." : ""); }).catch(()=>{});
+      nat.invoke("shell_state").then(st => { nat.state = st; box.querySelectorAll("[data-shell]").forEach(i => i.checked = !!st[i.dataset.shell]); $("appVer").textContent = "App version " + st.version + "." + (st.hotkey && !st.hotkey_ok ? " " + hotkeyName() + " is taken by another app, so the hotkey is off." : ""); }).catch(()=>{});
       box.onchange = e => { if (e.target.id === "sSplash"){ settings.splash = e.target.checked; saveSettings(); toast(e.target.checked ? "Opening animation on" : "Opening animation off"); return; }
         const k = e.target.dataset.shell; if (!k) return; nat.invoke("shell_set", {key:k, value:e.target.checked}).then(syncNative).catch(err => { toast(String(err)); e.target.checked = !e.target.checked; }); };
     }
@@ -2166,8 +2199,8 @@ addEventListener("resize", ()=>{ clearTimeout(renderPill._r); renderPill._r = se
 mwLog("info", "MW Beta " + APP_VERSION + " started" + (NATIVE ? " in the desktop app" : " in the browser"));
 safe("sentry", initSentry);
 // first visit after "Try the beta" in MW: bring the setup over without asking again (the person just opted in)
-if (firstRun && onBeta() && liveSetup()) safe("beta setup", ()=>{ if (importFromLive(true)) mwLog("info", "beta: copied your MW setup on first start"); });
+if (BETA && firstRun && onBeta() && liveSetup()) safe("beta setup", ()=>{ if (importFromLive(true)) mwLog("info", "beta: copied your MW setup on first start"); });
 renderAll(); safe("badge", updateBadge); safe("health", ()=>renderBlind());
-if (onBeta()) raw.set("mw_betaOk", String(Date.now()));   // tells MW the beta started, so it keeps opening it
-loadBarsMem().then(fillOutcomes);
+if (BETA && onBeta()) raw.set("mw_betaOk", String(Date.now()));   // tells MW the beta started, so it keeps opening it
+idbFromBeta().then(loadBarsMem).then(fillOutcomes);
 schedule(true);
