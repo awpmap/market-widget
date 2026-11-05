@@ -1,7 +1,7 @@
 // MW Beta service worker. Its scope is /market-widget/lab/ only, so it never touches the live MW.
 // Offline shell, network first so updates always arrive (market data is never cached).
 // The live MW's GitHub background checker (Web Push) is retired in the lab (R9): this worker has no push handler.
-const CACHE = "mwlab-shell-v2";
+const CACHE = "mwlab-shell-v3";
 const SHELL = ["./", "./index.html", "./app.js", "./engine.js", "./boot.js", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith("mwlab-") && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
