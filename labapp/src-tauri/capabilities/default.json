@@ -1,13 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "mw-main",
-  "description": "What the MW Lab page may ask the shell to do: window controls, toasts, start with Windows, open links. Applies to the bundled launcher page and to the hosted widget only.",
+  "description": "What the MW Lab page may ask the shell to do: window controls, toasts, start with Windows, open links. Tauri matches remote pages by origin only (a path pattern such as /market-widget/lab/* silently blocks every command), so this is the narrowest rule that works; the launcher only ever opens /market-widget/lab/.",
   "windows": [
     "main"
   ],
   "remote": {
     "urls": [
-      "https://awpmap.github.io/market-widget/lab/*"
+      "https://awpmap.github.io/*"
     ]
   },
   "permissions": [

@@ -1,6 +1,6 @@
 [package]
 name = "mw-lab-desktop"
-version = "1.3.0"
+version = "1.3.1"
 description = "MW Lab (test copy of Market Widget) for Windows: tray app around the hosted widget. Info only, never trades."
 edition = "2021"
 publish = false
