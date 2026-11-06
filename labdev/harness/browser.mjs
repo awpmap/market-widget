@@ -431,6 +431,42 @@ console.log("Earnings, charts and alert repeat (4.5)");
   await ctx4.close();
 }
 
+/* ---------- beta only: Monitor layout, watchlist sections and sort, headline strip (made-up tickers and headlines) ---------- */
+console.log("Beta: Monitor layout, sections, headlines");
+{
+  const ctx5 = await browser.newContext({viewport:{width:1400, height:900}, timezoneId:"America/Chicago"});
+  const p5 = await ctx5.newPage(); await mock(p5);
+  const errs5 = []; p5.on("pageerror", e => errs5.push(e.message));
+  let t5 = Date.parse("2026-11-05T15:30:00Z");
+  await p5.route(/https:\/\/finnhub\.io\/api\/v1\/company-news.*/, route => { const sym = new URL(route.request().url()).searchParams.get("symbol");
+    return route.fulfill({json:[{headline:`${sym} test headline one`, source:"Testwire", url:`https://example.com/${sym}/1`, datetime:Math.floor(t5 / 1000) - 600}, {headline:`${sym} test headline two`, source:"Testwire", url:`https://example.com/${sym}/2`, datetime:Math.floor(t5 / 1000) - 7200}]}); });
+  await p5.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
+    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", refresh:60}));
+    localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"AAA", shares:1, acct:"Taxable"}], fixed:[], watch:[{sym:"AAA", grp:"Alpha"}, {sym:"BBB"}, {sym:"CCC", grp:"Alpha"}, {sym:"DDD"}]}));
+  });
+  await p5.clock.install({time:t5});
+  const adv = async (ms, step = 1000) => { for (let t = 0; t < ms; t += step) { t5 += step; simNow = t5; await p5.clock.runFor(step); await p5.waitForTimeout(25); } };
+  simNow = t5; Object.keys(px).forEach(k => delete px[k]); px.BBB = +(pcOf("BBB") * 0.95).toFixed(2); px.DDD = +(pcOf("DDD") * 0.98).toFixed(2);
+  await p5.goto(BASE); await adv(30000); await adv(60000, 5000);
+  check(await p5.evaluate(() => { const L = [...document.querySelectorAll("#cols .sec:not(.hide)")].map(s => Math.round(s.getBoundingClientRect().left)); return document.body.classList.contains("wide") && new Set(L).size >= 2; }), "a wide window lays the sections out side by side");
+  check(JSON.stringify(await p5.locator("#wl-body .wgrp").allInnerTexts().then(a => a.map(t => t.replace(/\s+/g, " ").trim()))) === JSON.stringify(["ALPHA 2", "OTHER 2"]) || JSON.stringify(await p5.locator("#wl-body .wgrp").allInnerTexts()).includes("Alpha"), "watchlist sections group the tickers");
+  check(JSON.stringify(await p5.locator("#wl-body .wrow .tk").allInnerTexts()) === JSON.stringify(["AAA","CCC","BBB","DDD"]), "rows sit under their section, in your order");
+  await p5.locator('#wl-body [data-wsort="day"]').click(); await adv(300, 100);
+  check(JSON.stringify(await p5.locator("#wl-body .wrow .tk").allInnerTexts()) === JSON.stringify(["AAA","CCC","BBB","DDD"].length ? await p5.evaluate(() => { const by = s => quotes[s].dp; const a = ["AAA","CCC"].sort((x, y) => by(x) - by(y)), b = ["BBB","DDD"].sort((x, y) => by(x) - by(y)); return [...a, ...b]; }) : []), "Biggest drop sorts within each section");
+  check(await p5.evaluate(() => cfg.watch.map(w => w.sym).join() === "AAA,BBB,CCC,DDD"), "the sort doesn't change your saved order");
+  await p5.locator('#wl-body [data-wsort="mine"]').click();
+  for (let i = 0; i < 24 && !(await p5.evaluate(() => heads.items.length)); i++) await adv(5000, 1000);   // headlines are low-priority calls
+  check(/new/.test(await p5.locator("#heads .hd-new").innerText().catch(() => "")) && /test headline one/.test(await p5.locator("#heads").innerText()), "the headline strip shows the newest headline with an N new count");
+  await p5.locator("#heads [data-hd]").click(); await adv(300, 100);
+  check(await p5.locator("#heads .hd-list a").count() >= 3 && await p5.locator("#heads .hd-new").count() === 0, "opening the list shows more and clears the count");
+  if (SHOTS) await p5.screenshot({path:path.join(SHOTS, "9-monitor.png")});
+  await p5.setViewportSize({width:420, height:900}); await adv(1000, 250);
+  check(await p5.evaluate(() => !document.body.classList.contains("wide") && !document.getElementById("cols")), "a narrow window goes back to one column");
+  check(errs5.length === 0, "no page errors in the beta layout" + (errs5.length ? ": " + errs5.slice(0, 4).join(" | ") : ""));
+  await ctx5.close();
+}
+
 await browser.close(); server.close();
 console.log(fail.length ? `\n${fail.length} check(s) failed` : "\nAll browser checks passed");
 process.exit(fail.length ? 1 : 0);
