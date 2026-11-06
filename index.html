@@ -432,6 +432,33 @@ span.fx-dn,small.fx-dn{animation:fxDn 1.1s ease-out;border-radius:3px}
 .macro b{color:var(--fg);font-weight:600}
 .macro.today{background:color-mix(in srgb,var(--warn) 14%,var(--surface-2))}
 .macro.today svg{color:var(--warn)}
+/* earnings panel (4.5) */
+.erp{margin:2px 0 4px}
+.erwk{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:8px 0 2px}
+.erw{display:grid;grid-template-columns:minmax(52px,auto) 1fr auto;gap:2px 10px;align-items:baseline;padding:6px 0;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);font-size:12px}
+.erw .s b{font-weight:600}
+.erw .s small{display:block;font-size:9.5px;color:var(--muted)}
+.erw .when{color:var(--fg-2);font-size:11.5px;min-width:0}
+.erw .mv{font-weight:600;font-size:12px;color:var(--fg)}
+.erw .sub{grid-column:2/-1;font-size:10.5px;color:var(--muted)}
+.erw .sub b{font-weight:600}
+/* chart window (4.5) */
+#chart{position:fixed;inset:0;z-index:55;background:rgba(5,8,14,.45);display:flex;justify-content:center;align-items:center;padding:12px}
+#chart.hide{display:none}
+.chwin{width:min(760px,100%);background:var(--surface);border:1px solid var(--line-2);border-radius:12px;box-shadow:var(--shadow);padding:12px 12px 8px;display:flex;flex-direction:column;gap:8px;max-height:100%}
+.ch-h{display:flex;align-items:baseline;gap:10px}
+.ch-h #chSym{font:600 16px var(--font-d)}
+.ch-h #chPx{font-size:12.5px;color:var(--fg);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ch-h #chPx b{font-weight:600}
+.ch-h .x{margin-left:auto}
+#chRange{align-self:flex-start}
+#chBox{height:min(56vh,420px);min-height:220px;position:relative}
+.ch-leg{display:flex;flex-wrap:wrap;gap:6px}
+.ch-leg button{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);background:transparent;border:1px solid var(--line);border-radius:10px;padding:2px 8px;cursor:pointer}
+.ch-leg button.on{color:var(--fg-2);background:var(--surface-2);border-color:transparent}
+.ch-leg button i{width:10px;height:2px;border-radius:1px;display:inline-block}
+.ch-leg button:not(.on) i{opacity:.35}
+#chNote{margin:0;min-height:1em}
 /* Ctrl+K */
 #pal{position:fixed;inset:0;z-index:60;background:rgba(5,8,14,.45);display:flex;justify-content:center;align-items:flex-start;padding:min(14vh,90px) 12px 12px}
 #pal.hide{display:none}
@@ -630,6 +657,13 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
 
 <div id="toast"></div>
 <div id="tip" role="tooltip"></div>
+<div id="chart" class="hide" role="dialog" aria-label="Chart"><div class="chwin">
+  <div class="ch-h"><b id="chSym"></b><span id="chPx" class="num"></span><button class="x" id="chX" aria-label="Close the chart" title="Close (Esc)">✕</button></div>
+  <div class="seg" id="chRange"></div>
+  <div id="chBox"></div>
+  <div class="ch-leg" id="chLeg"></div>
+  <p class="note" id="chNote"></p>
+</div></div>
 <div id="pal" class="hide" role="dialog" aria-label="Find a ticker or command"><div class="pbox">
   <input id="palIn" placeholder="Type a ticker or a command…" autocomplete="off" spellcheck="false" aria-controls="palList">
   <div id="palList" role="listbox"></div>

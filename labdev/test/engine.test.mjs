@@ -426,3 +426,45 @@ test("parseTickers: separators, exchange prefixes, junk", () => {
   assert.deepEqual(r.bad, ["12x", "too-long-ticker"]);
   assert.deepEqual(E.parseTickers("").ok, []);
 });
+
+test("price alert repeat: every cross re-arms only after 30 min and a 0.3% climb back", () => {
+  const t0 = at("2026-11-05", "10:00"), m = 60e3;
+  let s = E.levelCross(null, 100, 101, t0);                       // above: nothing yet
+  assert.deepEqual([s.n, s.below], [0, false]);
+  s = E.levelCross(s, 100, 99.5, t0 + m);                         // first hit: alert #0
+  assert.deepEqual([s.n, s.below, s.t], [0, true, t0 + m]);
+  s = E.levelCross(s, 100, 100.5, t0 + 10*m);                     // back above, but too soon
+  assert.equal(s.n, 0);
+  s = E.levelCross(s, 100, 100.2, t0 + 40*m);                     // late enough, but only 0.2% above
+  assert.equal(s.n, 0);
+  s = E.levelCross(s, 100, 100.5, t0 + 41*m);                     // re-armed: the next hit is alert #1
+  assert.deepEqual([s.n, s.below], [1, false]);
+  s = E.levelCross(s, 100, 99.9, t0 + 50*m);
+  assert.deepEqual([s.n, s.below], [1, true]);
+  // the evaluator puts the tag on the id, so bundling treats each crossing as new
+  const w = {sym:"ABC"}, q = {c:99, pc:101, dp:-2, h:101, l:99, o:101, t:Math.floor((t0 + 50*m)/1000)};
+  const r = E.evaluate(w, baseCtx(q, {levels:[{L:100, name:"$100", tag:"#1"}]}), {});
+  assert.ok(r.alerts.some(a => a.id === "ABC-L100#1"));
+});
+test("price alert expiry: on through the last day, off after it", () => {
+  assert.equal(E.levelsLive({lvUntil:"2026-11-20"}, "2026-11-20"), true);
+  assert.equal(E.levelsLive({lvUntil:"2026-11-20"}, "2026-11-21"), false);
+  assert.equal(E.levelsLive({}, "2030-01-01"), true);
+});
+
+test("earnings-day moves: the biggest gap after each quarter", () => {
+  // 120 calm days from 2026-07-01 with one 8% gap up on 2026-08-20 and one 5% gap down on 2026-10-22
+  const asc = []; let c = 100, d = "2026-07-01";
+  for (let i = 0; i < 120; i++) {
+    let o = c * 1.001;
+    if (d === "2026-08-20") o = c * 1.08;
+    if (d === "2026-10-22") o = c * 0.95;
+    const cl = o * 1.002; asc.push([d, o, cl * 1.01, o * 0.99, cl, 1e6]); c = cl; d = E.addDays(d, 1);
+  }
+  const m = E.erMoves(asc.slice().reverse(), ["2026-06-30", "2026-09-30", "2026-12-31"]);
+  assert.equal(m.length, 2, "the Dec quarter hasn't reported yet");
+  assert.equal(m[0].d, "2026-08-20");
+  assert.ok(Math.abs(m[0].move - 8.2) < 0.1);
+  assert.equal(m[1].d, "2026-10-22", "a clear gap counts before the window closes");
+  assert.ok(Math.abs(m[1].move + 4.8) < 0.1);
+});

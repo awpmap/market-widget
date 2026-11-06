@@ -19,6 +19,9 @@ write("engine.js", HEAD + read("engine.js"));
 write("boot.js", HEAD + read("boot.js"));
 write("sw.js", HEAD.replace("/*", "//").replace(" */", "") + read("sw.js"));
 write("version.json", read("version.json"));
+// third-party files used as-is (the chart library and its license)
+fs.mkdirSync(path.join(OUT, "vendor"), {recursive:true});
+for (const f of fs.readdirSync(path.join(LAB, "vendor"))) { fs.copyFileSync(path.join(LAB, "vendor", f), path.join(OUT, "vendor", f)); console.log("copied " + path.join(OUT, "vendor", f)); }
 
 let html = read("index.html");
 html = swap(html, "<title>MW Beta</title>", "<title>Market Widget</title>", "index.html");

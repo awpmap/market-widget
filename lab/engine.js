@@ -6,7 +6,7 @@
 (function (root) {
 "use strict";
 const E = {};
-E.VERSION = "4.4.0";
+E.VERSION = "4.5.0";
 
 /* ====================================================================================
    1. Calendar (NYSE). Source: NYSE Group release of 2025-12-23, "2026, 2027 and 2028 Holiday
@@ -292,7 +292,7 @@ E.evaluate = function (w, ctx, state) {
   }
   if (w.levelsOn !== false && ctx.levels && ctx.levels.length) {
     const lv = ctx.levels.map(x => x.L), hit = ctx.levels.filter(x => px <= x.L);
-    if (hit.length) { const deep = hit[hit.length - 1]; out.push({id:`${sym}-L${deep.L}`, also:hit.map(x => `${sym}-L${x.L}`), kind:"level", sym, level:deep.L, msg:`${sym} reached your ${deep.name} price alert (now ${$(px)})${hit.length > 1 ? ` · through ${hit.length} alerts` : ""}${erTxt}`}); }
+    if (hit.length) { const deep = hit[hit.length - 1]; out.push({id:`${sym}-L${deep.L}${deep.tag || ""}`, also:hit.map(x => `${sym}-L${x.L}${x.tag || ""}`), kind:"level", sym, level:deep.L, msg:`${sym} reached your ${deep.name} price alert (now ${$(px)})${hit.length > 1 ? ` · through ${hit.length} alerts` : ""}${erTxt}`}); }
     const nx = ctx.levels.find(x => x.L < px);
     if (nx && on(w, "nearOn", "near") && w.near && px <= nx.L * (1 + w.near/100)) out.push({id:`${sym}-N${nx.L}`, kind:"near", sym, level:nx.L, msg:`${sym} is ${((px/nx.L - 1)*100).toFixed(1)}% above your ${nx.name} price alert`});
     void lv;
@@ -554,7 +554,7 @@ E.scorecard = function (records) {
    so one feature can't starve the others. Credits are charged when a call succeeds or is answered.
    ==================================================================================== */
 E.TD_DAILY = 800;
-E.TD_CAPS = {hist:300, vwap:220, backup:120, nav:40, intraday:60, xcheck:40, other:20};
+E.TD_CAPS = {hist:280, vwap:200, backup:120, nav:40, intraday:60, chart:40, xcheck:40, other:20};
 E.budgetFresh = (ledger, day) => (ledger && ledger.date === day) ? ledger : {date:day, n:0, by:{}};
 E.budgetAllow = function (ledger, cat, cost, caps) {
   caps = caps || E.TD_CAPS; cost = cost || 1;
@@ -701,6 +701,40 @@ E.fromSnapshot = function (snap, now) {
   if (tp.date === today && (tp.mins < 570 || tp.mins >= close) && tp.mins >= 240 && tp.mins < 1200)
     return {reg:null, ext:{p:+lt.p, t:tms, ph: tp.mins < 570 ? "pre" : "after"}};
   return {reg:null, ext:null};
+};
+
+/* price alert repeat and expiry (4.5). Per ticker: w.lvRepeat = "day" (default: each alert once a day), "once" (fires
+   once, then MW removes it) or "cross" (every time the price comes back down through it, at least 30 minutes after the
+   last time, and only after it climbed 0.3% back above). w.lvUntil = "YYYY-MM-DD": the last day price alerts are on. */
+E.LV_REARM_MS = 30*60e3; E.LV_REARM_PCT = 0.3;
+E.levelsLive = function (w, today) { return !(w && w.lvUntil && today > w.lvUntil); };
+/* one level's crossing memory {n, below, t} -> the next one, given the price now; the alert id carries "#n" */
+E.levelCross = function (st, L, px, now) {
+  const s = Object.assign({n:0, below:false, t:0}, st || {});
+  if (!(px > 0)) return s;
+  if (px <= L) { if (!s.below) { s.below = true; s.t = now; } }
+  else if (s.below && px > L * (1 + E.LV_REARM_PCT / 100) && now - s.t >= E.LV_REARM_MS) { s.below = false; s.n++; }
+  return s;
+};
+
+/* earnings-day moves (4.5), estimated from daily bars: for each reported quarter (its period end date), the report day
+   is taken as the biggest opening gap 14 to 75 days after the quarter ended (US companies report 3 to 8 weeks
+   after). bars: [[date, o, h, l, c, v], ...] newest first. Returns [{period, d, move (close-to-close %)}] */
+E.erMoves = function (bars, periods) {
+  const asc = (bars || []).slice().reverse(), out = [];
+  (periods || []).forEach(p => {
+    const a = E.addDays(p, 14), b = E.addDays(p, 75); let best = null;
+    for (let i = 1; i < asc.length; i++) {
+      const d = asc[i][0]; if (d < a) continue; if (d > b) break;
+      const pc = asc[i - 1][4]; if (!(pc > 0)) continue;
+      const gap = Math.abs(asc[i][1] / pc - 1);
+      if (!best || gap > best.gap) best = {d, gap, move:(asc[i][4] / pc - 1) * 100};
+    }
+    // a quarter counts once the bars cover its whole window, or show a clear 3%+ gap with a few days after it
+    const last = asc.length ? asc[asc.length - 1][0] : "";
+    if (best && (last > b || (best.gap >= 0.03 && last > E.addDays(best.d, 5)))) out.push({period:p, d:best.d, move:best.move});
+  });
+  return out;
 };
 
 /* a pasted list of tickers (4.4): commas, spaces, semicolons or new lines; "NASDAQ:MU" and "$MU" become MU.

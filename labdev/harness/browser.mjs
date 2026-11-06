@@ -373,6 +373,64 @@ console.log("Fast prices and quality of life (4.4)");
   await ctx3.close();
 }
 
+/* ---------- 4.5: earnings panel, chart window, price alert repeat and expiry (made-up tickers, dates and numbers) ---------- */
+console.log("Earnings, charts and alert repeat (4.5)");
+{
+  const ctx4 = await browser.newContext({viewport:{width:420, height:900}, timezoneId:"America/Chicago"});
+  const p4 = await ctx4.newPage(); await mock(p4);
+  const errs4 = []; p4.on("pageerror", e => errs4.push(e.message));
+  p4.on("console", m => { if (m.type() === "error" && !/Failed to load resource|sentry/i.test(m.text())) errs4.push("console: " + m.text()); });
+  let t4 = Date.parse("2026-11-05T15:30:00Z");
+  await p4.route(/https:\/\/finnhub\.io\/api\/v1\/(calendar\/earnings|stock\/earnings).*/, route => {
+    const u = new URL(route.request().url());
+    if (u.pathname.endsWith("calendar/earnings")) return route.fulfill({json:{earningsCalendar:[{symbol:"AAA", date:"2026-11-10", hour:"amc", epsEstimate:1.23, revenueEstimate:4.5e9}, {symbol:"BBB", date:"2026-11-12", hour:"bmo", epsEstimate:0.5, revenueEstimate:9e8}]}});
+    return route.fulfill({json:[{period:"2026-09-30", actual:1.3, estimate:1.2, surprisePercent:8.3}, {period:"2026-06-30", actual:1.1, estimate:1.15, surprisePercent:-4.3}, {period:"2026-03-31", actual:1, estimate:0.9, surprisePercent:11.1}, {period:"2025-12-31", actual:0.9, estimate:0.85, surprisePercent:5.9}]});
+  });
+  await p4.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
+    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", tdKey:"test", refresh:60}));
+    localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[], fixed:[], watch:[{sym:"AAA", levels:[], dayDrop:30, near:0}, {sym:"BBB", levels:[], dayDrop:30, near:0}, {sym:"CCC", levels:[], dayDrop:30, near:0}]}));
+  });
+  await p4.clock.install({time:t4});
+  const adv = async (ms, step = 1000) => { for (let t = 0; t < ms; t += step) { t4 += step; simNow = t4; await p4.clock.runFor(step); await p4.waitForTimeout(25); } };
+  simNow = t4; Object.keys(px).forEach(k => delete px[k]);
+  await p4.goto(BASE); await adv(30000); await adv(150000, 5000);
+  const er = await p4.locator("#mk-body .erp").innerText().catch(() => "");
+  check(/AAA/.test(er) && /Tue 11\/10 · after the close/.test(er) && /EPS est \$1\.23/.test(er) && /beat by 8\.3%/.test(er), "the earnings panel lists the report with its estimates and last surprise");
+  check(/±\d/.test(await p4.locator('#mk-body .erw:has-text("AAA") .mv').innerText().catch(() => "")), "and the typical report-day move from price history");
+  // chart window from a row's details
+  await p4.locator('#wl-body [data-row="w:AAA"]').click(); await adv(1000, 250);
+  await p4.locator('#wl-body [data-chart="AAA"]').click(); await adv(3000, 250);
+  check(await p4.locator("#chart:not(.hide) #chBox canvas").count() > 0, "Chart opens a candle chart");
+  check(await p4.evaluate(() => chSeries && chSeries.data().length >= 120 && chSeries.data().length <= 128), "6M shows about six months of daily candles");
+  check(await p4.locator("#chLeg [data-ov=ma50].on").count() === 1 && /50-day avg/.test(await p4.locator("#chLeg").innerText()), "the legend lists the overlays");
+  if (SHOTS) await p4.screenshot({path:path.join(SHOTS, "8-chart.png")});
+  await p4.locator('#chRange [data-r="1Y"]').click(); await adv(500, 250);
+  check(await p4.evaluate(() => chSeries.data().length >= 240), "1Y shows a year of candles");
+  await p4.locator('#chRange [data-r="1D"]').click(); await adv(2000, 250);
+  check(/5-minute|Loading|Couldn't/.test(await p4.locator("#chNote").innerText()), "1D asks for today's 5-minute bars");
+  await p4.evaluate(() => setChartRange("6M"));
+  await p4.keyboard.press("Escape"); await adv(300, 100);
+  check(await p4.locator("#chart.hide").count() === 1, "Esc closes the chart");
+  // price alert: once, then remove
+  const pcA = pcOf("AAA");
+  await p4.evaluate(L => { const w = cfg.watch.find(x => x.sym === "AAA"); w.levels = [L]; w.lvRepeat = "once"; saveCfg(); }, Math.round(pcA * 0.95));
+  px.AAA = +(pcA * 0.94).toFixed(2); await adv(75000, 5000);
+  check(await p4.evaluate(() => /AAA reached/.test(firedToday().log.map(l => l.msg).join("|")) && cfg.watch.find(x => x.sym === "AAA").levels.length === 0), "a once-only price alert fires, then comes off the list");
+  // expired price alerts stay quiet and say so
+  await p4.evaluate(L => { const w = cfg.watch.find(x => x.sym === "BBB"); w.levels = [L]; w.lvUntil = "2026-11-04"; saveCfg(); renderAll(); }, Math.round(pcOf("BBB") * 1.05));
+  await adv(65000, 5000);
+  check(await p4.evaluate(() => !/BBB reached/.test(firedToday().log.map(l => l.msg).join("|"))) && /alerts ended/.test(await p4.locator('#wl-body [data-row="w:BBB"]').innerText()), "price alerts past their end date stay quiet and the row says so");
+  // the Settings rule card has the repeat and end-date fields
+  await p4.evaluate(() => openSheet("alerts"));
+  check(await p4.locator('#aList [data-s="lvRepeat"]').count() === 3 && await p4.locator('#aList [data-s="lvUntil"]').count() === 3, "Settings → Watchlist has repeat and end-date fields");
+  await p4.locator('#aList .rule[data-i="2"] [data-s="lvRepeat"]').selectOption("cross"); await adv(300, 100);
+  check(await p4.evaluate(() => cfg.watch[2].lvRepeat === "cross"), "choosing every cross saves it");
+  await p4.evaluate(() => closeSheet());
+  check(errs4.length === 0, "no page errors in 4.5 features" + (errs4.length ? ":\n    " + errs4.slice(0, 6).join("\n    ") : ""));
+  await ctx4.close();
+}
+
 await browser.close(); server.close();
 console.log(fail.length ? `\n${fail.length} check(s) failed` : "\nAll browser checks passed");
 process.exit(fail.length ? 1 : 0);
