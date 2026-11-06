@@ -387,10 +387,11 @@ async function fastTick(){
     if (alpSt.fail <= 3 || e.auth) mwLog("warn", "fast prices: " + e.message);
   }finally{ fastBusy = false; }
 }
-function fastSchedule(){
+function fastSchedule(spent){
   clearTimeout(fastTimer);
   const s = session().s, ms = !alpOn() ? 30e3 : s === "open" ? 5e3 : s === "ext" ? 15e3 : 60e3;
-  fastTimer = setTimeout(async ()=>{ try{ await fastTick(); }catch(e){} fastSchedule(); }, ms);
+  // the next call is timed from the start of this one, so a slow answer doesn't stretch the 5 seconds
+  fastTimer = setTimeout(async ()=>{ const t0 = Date.now(); try{ await fastTick(); }catch(e){} fastSchedule(Date.now() - t0); }, Math.max(250, ms - (spent || 0)));
 }
 /* the latest pre-market or after-hours trade for a ticker, against the regular close it follows */
 function extFor(sym){

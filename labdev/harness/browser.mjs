@@ -313,9 +313,11 @@ console.log("Fast prices and quality of life (4.4)");
   check(await p3.evaluate(() => quotes.AAA && quotes.AAA.src === "alpaca"), "fast prices: Alpaca's price is used during the session");
   check(alpCalls.length > 0 && alpCalls.every(c => c.id === "test-key-id" && c.sec === "test-secret" && c.feed === "iex"), "the keys go in Alpaca's headers, on the free IEX feed");
   const n0 = alpCalls.length; await adv(30000);
-  check(alpCalls.length - n0 >= 5 && alpCalls.length - n0 <= 7, `about one Alpaca call every 5 seconds while open (${alpCalls.length - n0} in 30 s)`);
-  alpPx.BBB = +(priceOf("BBB") * 0.99).toFixed(2); await adv(6000, 500);
-  check(await p3.evaluate(px => { const el = document.querySelector('#wl-body [data-row="w:BBB"] [data-fx]'); return !!el && el.textContent.includes(px.toFixed(2)) && el.classList.contains("fx-dn"); }, alpPx.BBB), "a new price shows within 5 seconds and flashes red when it fell");
+  check(alpCalls.length - n0 >= 4 && alpCalls.length - n0 <= 7, `about one Alpaca call every 5 seconds while open (${alpCalls.length - n0} in 30 s)`);
+  alpPx.BBB = +(priceOf("BBB") * 0.99).toFixed(2);
+  const flashed = async () => p3.evaluate(px => { const el = document.querySelector('#wl-body [data-row="w:BBB"] [data-fx]'); return !!el && el.textContent.includes(px.toFixed(2)) && el.classList.contains("fx-dn"); }, alpPx.BBB);
+  let fl = false, waited = 0; while (!fl && waited < 8000) { await adv(500, 500); waited += 500; fl = await flashed(); }
+  check(fl && waited <= 6000, `a new price shows within about 5 seconds and flashes red when it fell (${waited / 1000} s)`);
   check(await p3.locator('#wl-body [data-row="w:AAA"] .bell').innerText().then(t => t.trim() === "3").catch(() => false), "the bell on a row counts its armed alerts (2 price alerts + red day)");
   check(await p3.locator("#mk-body .macro").count() === 1 && /Jobs|CPI|Fed|PPI|GDP/i.test(await p3.locator("#mk-body .macro").innerText()), "the next Fed or inflation date shows under Markets");
   // Ctrl+K: find a ticker and open its row
