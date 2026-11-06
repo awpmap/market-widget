@@ -442,6 +442,29 @@ span.fx-dn,small.fx-dn{animation:fxDn 1.1s ease-out;border-radius:3px}
 .erw .mv{font-weight:600;font-size:12px;color:var(--fg)}
 .erw .sub{grid-column:2/-1;font-size:10.5px;color:var(--muted)}
 .erw .sub b{font-weight:600}
+/* beta: Monitor layout, watchlist sections and sort, headline strip */
+body.wide main{padding:12px 14px 16px}
+body.wide #cols{display:grid;grid-template-columns:repeat(var(--n,2),minmax(0,1fr));gap:12px;align-items:start}
+body.wide #cols > .col{display:flex;flex-direction:column;gap:12px;min-width:0}
+body.wide #cols .sec{margin:0}
+.wsort{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:10.5px}
+.wsort .seg button{font-size:10.5px}
+body.wsorted #wl-body .grip{visibility:hidden}
+.wgrp{display:flex;align-items:center;gap:5px;font:600 10.5px var(--font);text-transform:uppercase;letter-spacing:.6px;color:var(--muted);padding:8px 0 3px;cursor:pointer}
+.wgrp .chev{width:10px;height:10px}
+.wgrp span{font-weight:400;margin-left:2px}
+#heads{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:6px 9px;margin:0 0 10px;font-size:11.5px}
+#heads.hide{display:none}
+#heads .hd-top{display:flex;align-items:baseline;gap:8px;min-width:0}
+#heads a{color:var(--fg-2);text-decoration:none;min-width:0;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+#heads a:hover{color:var(--fg)}
+#heads a b{color:var(--fg);font-weight:600;margin-right:3px}
+#heads a small{color:var(--muted);margin-left:6px}
+#heads .hd-new,#heads .hd-all{flex:none;font:600 10px var(--font);border-radius:10px;padding:2px 8px;border:0;cursor:pointer}
+#heads .hd-new{background:var(--accent);color:var(--accent-fg)}
+#heads .hd-all{background:var(--surface-2);color:var(--fg-2)}
+#heads .hd-list{margin-top:4px;border-top:1px solid var(--line);padding-top:2px}
+#heads .hd-list a{padding:4px 0}
 /* chart window (4.5) */
 #chart{position:fixed;inset:0;z-index:55;background:rgba(5,8,14,.45);display:flex;justify-content:center;align-items:center;padding:12px}
 #chart.hide{display:none}
@@ -583,6 +606,7 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
 <main id="main">
   <div id="update" class="callout"></div>
   <div id="paused"></div>
+  <div id="heads" class="hide" aria-live="polite"></div>
   <div id="since" title="Click to clear"></div>
   <div id="banner" role="alert"></div>
   <div id="blind" class="callout" role="alert"></div>

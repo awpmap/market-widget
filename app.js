@@ -205,11 +205,28 @@ const SEC_NAMES = {portfolio:"Portfolio", markets:"Markets", watch:"Watchlist", 
 function layoutOrder(){ const L = (Array.isArray(settings.layout) ? settings.layout : []).filter(k => DEFAULT_LAYOUT.includes(k)); DEFAULT_LAYOUT.forEach(k => { if (!L.includes(k)) L.push(k); }); return L; }
 function applyLayout(){
   const main = $("main"), anchor = $("err"); if (!main || !anchor) return;
+  // beta: on a wide window (900 px and up) the sections flow into side-by-side columns (Monitor layout)
+  const wide = BETA && settings.wide !== false && !settings.compact && document.body.clientWidth >= 900;
+  document.body.classList.toggle("wide", wide);
+  const want = layoutOrder().filter(k => document.querySelector(`.sec[data-sec="${k}"]`)), sec = k => document.querySelector(`.sec[data-sec="${k}"]`);
+  want.forEach(k => sec(k).classList.toggle("hide", !!(settings.hideSec||{})[k]));
+  if (wide){
+    // visible sections take turns across 2 columns (3 from 1320 px), in your section order
+    const n = document.body.clientWidth >= 1320 ? 3 : 2, vis = want.filter(k => !(settings.hideSec||{})[k]), sig = n + ":" + vis.join();
+    let cols = $("cols");
+    if (cols && cols.dataset.sig === sig) return;   // already laid out this way: leave it (moving a section steals the focus)
+    if (!cols){ cols = document.createElement("div"); cols.id = "cols"; main.insertBefore(cols, anchor); }
+    const boxes = Array.from({length:n}, () => { const c = document.createElement("div"); c.className = "col"; return c; });
+    vis.forEach((k, i) => boxes[i % n].appendChild(sec(k)));
+    want.filter(k => !vis.includes(k)).forEach(k => boxes[n - 1].appendChild(sec(k)));
+    cols.replaceChildren(...boxes); cols.dataset.sig = sig; cols.style.setProperty("--n", n);
+    return;
+  }
   // move sections only when the order changed: moving a section takes the focus away from a box inside it
-  const want = layoutOrder().filter(k => document.querySelector(`.sec[data-sec="${k}"]`));
   const have = [...main.querySelectorAll(":scope > .sec[data-sec]")].map(el => el.dataset.sec);
-  const moved = want.join() !== have.filter(k => want.includes(k)).join();
-  want.forEach(k => { const el = document.querySelector(`.sec[data-sec="${k}"]`); if (moved) main.insertBefore(el, anchor); el.classList.toggle("hide", !!(settings.hideSec||{})[k]); });
+  const moved = want.join() !== have.filter(k => want.includes(k)).join() || want.some(k => sec(k).parentElement !== main);
+  if (moved) want.forEach(k => main.insertBefore(sec(k), anchor));
+  if ($("cols")) $("cols").remove();
 }
 if (!PERIODS.some(p=>p.k===settings.period)) settings.period = settings.period==="MTD" ? "1M" : "1D";
 /* funds typed as "ABCDX (12.3 sh ...)" get their ticker and shares picked up automatically */
@@ -371,10 +388,11 @@ async function fastTick(){
     if (alpSt.fail <= 3 || e.auth) mwLog("warn", "fast prices: " + e.message);
   }finally{ fastBusy = false; }
 }
-function fastSchedule(){
+function fastSchedule(spent){
   clearTimeout(fastTimer);
   const s = session().s, ms = !alpOn() ? 30e3 : s === "open" ? 5e3 : s === "ext" ? 15e3 : 60e3;
-  fastTimer = setTimeout(async ()=>{ try{ await fastTick(); }catch(e){} fastSchedule(); }, ms);
+  // the next call is timed from the start of this one, so a slow answer doesn't stretch the 5 seconds
+  fastTimer = setTimeout(async ()=>{ const t0 = Date.now(); try{ await fastTick(); }catch(e){} fastSchedule(Date.now() - t0); }, Math.max(250, ms - (spent || 0)));
 }
 /* the latest pre-market or after-hours trade for a ticker, against the regular close it follows */
 function extFor(sym){
@@ -782,7 +800,7 @@ async function tick(){
     loadMarketStatus().then(renderFrame);
     loadNavs(false);
     loadHist([...cfg.watch.map(w=>(w.sym||"").toUpperCase()), ...marketSyms(), ...mySyms(), "SPY", "SMH"].filter(Boolean));
-    loadIntraday(); loadVwap();
+    loadIntraday(); loadVwap(); if (BETA) loadHeadlines();
     loadEarnings().then(()=>{ renderAll(); const up = erUpcoming().map(x => x.sym); if (settings.tdKey) loadHist(up); return loadErHist(up); }).then(()=>safe("markets", renderMarkets));
     loadMetrics(syms).then(()=>{ renderAll(); checkAlerts(); });
   } finally {
@@ -1489,7 +1507,7 @@ function renderWatch(){
   if (dragSym) return;   // don't redraw under a drag in progress
   let hits = 0, nears = 0; const fk = focusKey();
   const bench = settings.bench, bq = quotes[bench];
-  const html = cfg.watch.map(w=>{
+  const html = watchLayout().map(x => x.hdr != null ? x.hdr : (w => {
     const I = watchInfo(w), {sym, q, m, off, lv, useLv, px, hitL, next, dist, vol} = I;
     const fromHi = m.hi && px ? (1 - px/m.hi)*100 : null;
     const parts = [];
@@ -1540,10 +1558,12 @@ function renderWatch(){
       <div class="v num" style="text-align:right" title="${esc(srcLine(q))}"><span data-fx="${esc(sym)}">${px?fmt$(px):"—"}</span>${heldChip(sym)?`<br>${heldChip(sym)}`:""}</div>
       <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}</div></div>
       <div class="wmeta">${parts.join("")}${right}</div>${det}</div>`;
-  }).join("");
+  })(x.w)).join("");
   const undo = watchUndo && Date.now() - watchUndo.t < 12e3 ? `<div class="wundo">Removed <b>${esc(watchUndo.w.sym)}</b><button class="lnk" data-wundo="1">Undo</button></div>` : "";
   const keep = document.activeElement && document.activeElement.id === "wAddSym" ? $("wAddSym").value : null;
-  $("wl-body").innerHTML = `<form class="wadd" id="wAdd" autocomplete="off"><input id="wAddSym" placeholder="Add a ticker, e.g. NVDA" maxlength="10" spellcheck="false" aria-label="Add a ticker to your watchlist"><button class="btn" type="submit">Add</button></form>`
+  const sorter = BETA && cfg.watch.length > 2 ? `<div class="wsort"><div class="seg">${[["mine","My order"],["day","Biggest drop"],["alert","Closest to an alert"]].map(([k, n]) => `<button data-wsort="${k}" class="${wSort === k ? "on" : ""}">${n}</button>`).join("")}</div>${wSort !== "mine" ? `<span class="muted" title="This sort is for now only: MW goes back to your order when it restarts. Dragging is off while sorted.">for now</span>` : ""}</div>` : "";
+  document.body.classList.toggle("wsorted", wSort !== "mine");
+  $("wl-body").innerHTML = sorter + `<form class="wadd" id="wAdd" autocomplete="off"><input id="wAddSym" placeholder="Add a ticker, e.g. NVDA" maxlength="10" spellcheck="false" aria-label="Add a ticker to your watchlist"><button class="btn" type="submit">Add</button></form>`
     + undo + (html || `<div class="empty" style="padding:14px 0 6px">Nothing on your watchlist yet. Type a ticker above.</div>`);
   if (keep != null){ const i = $("wAddSym"); i.value = keep; i.focus(); }
   flashPass($("wl-body"), "wl"); refocus(fk);
@@ -1553,6 +1573,20 @@ function renderWatch(){
   $("strip").innerHTML = rows.map(I => !I.px ? `<div class="srow num"><span class="s"><span class="s1"><span class="tk">${esc(I.sym)}</span>${erChip(I.sym)}</span></span><span class="muted">—</span><span></span><span class="d">waiting</span></div>` : `<div class="srow num"><span class="s"><span class="s1"><span class="tk">${esc(I.sym)}</span>${erChip(I.sym)}</span></span><span data-fx="${esc(I.sym)}">${fmt$(I.px)}</span><span class="${cls(I.q.dp)}">${fmtPct(I.q.dp,1)}</span>
     <span class="d ${I.hitL.length||I.red?"hit":I.st}">${I.hitL.length ? levelText(I, true) : I.next ? `${I.dist.toFixed(1)}% → ${fmtL(I.next)}` : I.red ? "red day" : "—"}</span></div>`).join("") || `<div class="muted" style="grid-column:1/-1;font-size:11.5px">No tickers on your watchlist yet.</div>`;
   flashPass($("strip"), "st");
+}
+/* beta: watchlist sections (Settings → Watchlist → Section) and a sort that lasts until MW restarts */
+let wSort = "mine";
+function watchLayout(){
+  const key = w => { const I = watchInfo(w); return wSort === "day" ? (I.q && I.q.dp != null ? I.q.dp : 1e9) : wSort === "alert" ? (I.hitL.length ? -1e9 + I.hitL.length : I.dist != null ? I.dist : 1e9) : 0; };
+  const sorted = list => wSort === "mine" ? list : list.slice().sort((a, b) => key(a) - key(b));
+  if (!BETA || !cfg.watch.some(w => w.grp)) return sorted(cfg.watch).map(w => ({w}));
+  const groups = []; cfg.watch.forEach(w => { const g = w.grp || ""; let G = groups.find(x => x.g === g); if (!G) groups.push(G = {g, list:[]}); G.list.push(w); });
+  groups.sort((a, b) => (a.g === "") - (b.g === ""));   // the unnamed group goes last
+  const out = [];
+  groups.forEach(G => { const k = "wg:" + (G.g || "_"), shut = !!(settings.grpCollapsed || {})[k];
+    out.push({hdr:`<div class="wgrp" data-grp="${esc(k)}" role="button" tabindex="0" aria-expanded="${!shut}"><svg class="chev" style="${shut ? "transform:rotate(-90deg)" : ""}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>${esc(G.g || "Other")}<span>${G.list.length}</span></div>`});
+    if (!shut) sorted(G.list).forEach(w => out.push({w})); });
+  return out;
 }
 /* add and remove watchlist tickers (main screen and Settings → Watchlist share these) */
 let watchUndo = null;
@@ -1657,6 +1691,7 @@ function renderAll(){
     document.title = (settings.compact && Object.keys(quotes).length && cfg.holdings.length) ? `${fmt$(P.total,0)} ${fmtPct(P.dayPct)} · MW` : "MW"; });
   safe("tray", updateTray);
   safe("chart", chartLive);
+  if (BETA) safe("headlines", renderHeads);
 }
 function renderStatus(){
   const ses = session(), ds = dataState(), d = etNow().date, L = tdBudget();
@@ -1797,6 +1832,8 @@ document.addEventListener("click", e=>{
   if (e.target.closest("#wAdd")) return;   // typing in the add box never opens a row
   if (e.target.closest("[data-act=secref]")){ refreshMany(MARKETS.sectors.filter(m => !cfg.hiddenMk.includes(m.sym)).map(m => m.sym), "Sectors"); return; }
   { const c = e.target.closest("[data-chart]"); if (c){ e.stopPropagation(); openChart(c.dataset.chart); return; } }
+  { const s = e.target.closest("[data-wsort]"); if (s){ wSort = s.dataset.wsort; renderWatch(); return; } }
+  { const h = e.target.closest("[data-hd]"); if (h){ e.preventDefault(); headsToggle(); return; } }
   if (e.target.closest("[data-act=erpanel]")){ settings.erHide = !settings.erHide; saveSettings(); renderMarkets(); return; }
   if (e.target.closest("[data-act=sectors]")){ settings.secHide = !settings.secHide; saveSettings(); renderMarkets(); return; }
   // desktop app: open web links in the default browser
@@ -1814,7 +1851,7 @@ document.addEventListener("click", e=>{
     else settings.collapsed[t.dataset.toggle] = !settings.collapsed[t.dataset.toggle];
     saveSettings(); renderAll(); return;
   }
-  if (t.dataset.grp != null){ settings.grpCollapsed[t.dataset.grp] = !settings.grpCollapsed[t.dataset.grp]; saveSettings(); renderPortfolio(); return; }
+  if (t.dataset.grp != null){ settings.grpCollapsed[t.dataset.grp] = !settings.grpCollapsed[t.dataset.grp]; saveSettings(); t.dataset.grp.startsWith("wg:") ? renderWatch() : renderPortfolio(); return; }
   if (t.dataset.row){ if (e.target.closest(".detail,.wdet")) return; const k = t.dataset.row;
     if (openRows.has(k)) openRows.delete(k); else { openRows.add(k); loadNews(k.split(":")[1]); }
     k.startsWith("w:") ? renderWatch() : renderPortfolio(); return; }
@@ -2045,7 +2082,7 @@ function showTab(tab){
         const on = w.on!==false, ck = k => w[k]!==false ? "checked" : "", ck2 = (k, v) => (w[k]===true || (w[k]!==false && w[v])) ? "checked" : "";
         return `<div class="rule" data-i="${i}">
           <div class="rule-h"><label class="sw"><input type="checkbox" data-k="on" ${on?"checked":""}><span></span></label>${esc(w.sym)}
-            <input data-note="1" value="${esc(w.note||"")}" placeholder="note" style="flex:1;min-width:0;font-size:11px;padding:3px 6px;font-weight:400">
+            <input data-note="1" value="${esc(w.note||"")}" placeholder="note" style="flex:1;min-width:0;font-size:11px;padding:3px 6px;font-weight:400">${BETA ? `<input data-g="1" value="${esc(w.grp||"")}" placeholder="section" maxlength="24" list="grpNames" title="Put tickers with the same section name together on the watchlist, e.g. Chips or Power" style="width:78px;font-size:11px;padding:3px 6px;font-weight:400">` : ""}
             <button class="x" data-wmv="${i}:up" title="Move up the watchlist" ${i===0?"disabled":""}>↑</button><button class="x" data-wmv="${i}:down" title="Move down the watchlist" ${i===cfg.watch.length-1?"disabled":""}>↓</button><button class="x" data-wdel="${i}" title="Remove">✕</button></div>
           <div class="opts ${on?"":"dis"}">
             <label><input type="checkbox" data-k="redOn" ${ck("redOn")}> Red day: down at least</label><span><input type="number" step="0.5" min="0.5" data-n="dayDrop" value="${w.dayDrop??3}"> %</span>
@@ -2060,6 +2097,7 @@ function showTab(tab){
             <label title="Off unless you turn it on. Alerts when the price has dropped well under today's VWAP and then climbs back over it. Uses about 40 Twelve Data credits a day per ticker (first 8 tickers), from VWAP's share of the day's budget."><input type="checkbox" data-k="vwapOn" ${w.vwapOn===true?"checked":""}> VWAP reclaim after a flush</label><span class="muted" style="font-size:11px">${settings.tdKey ? "Alert + VWAP on the row" : "Needs a Twelve Data key"}</span>
             <label title="A quiet note when the price gets this close to your next price alert"><input type="checkbox" data-k="nearOn" ${ck("nearOn")}> Heads-up within</label><span><input type="number" step="0.5" min="0" data-n="near" value="${w.near??1.5}"> % of a price alert</span>
           </div></div>`; }).join("")}</div>
+      ${BETA ? `<datalist id="grpNames">${[...new Set(cfg.watch.map(w => w.grp).filter(Boolean))].map(g => `<option value="${esc(g)}">`).join("")}</datalist>` : ""}
       <div style="display:flex;gap:6px;margin-top:4px"><input id="aSym" placeholder="Add a ticker, e.g. NVDA" maxlength="10" style="flex:1;text-transform:uppercase"><button class="btn primary" id="aAdd">Add</button></div>
       <div class="field" style="margin-top:16px"><label for="aBulk">Paste a list of tickers</label><textarea id="aBulk" rows="2" placeholder="e.g. NVDA, AMD TSM or NASDAQ:MU" spellcheck="false" style="width:100%;resize:vertical"></textarea>
         <p id="aBulkRes">${BULK_HINT}</p>
@@ -2077,6 +2115,7 @@ function showTab(tab){
         w.levels = toks.map(Number).filter(x=>x>0).sort((a,b)=>b-a);
         w.ma = [...new Set(toks.map(x=>(x.match(/^(20|50|100|200)d$/i)||[])[1]).filter(Boolean).map(Number))]; }
       if (t.dataset.note) w.note = t.value;
+      if (t.dataset.g){ const g = t.value.trim().slice(0, 24); if (g) w.grp = g; else delete w.grp; }
       if (t.dataset.s){ if (t.value) w[t.dataset.s] = t.value; else delete w[t.dataset.s]; }
       save();
     };
@@ -2336,6 +2375,34 @@ $("palIn").addEventListener("keydown", e => {
 $("palList").addEventListener("click", e => { const r = e.target.closest("[data-pi]"); if (r) palRun(+r.dataset.pi); });
 $("palList").addEventListener("mousemove", e => { const r = e.target.closest("[data-pi]"); if (r && +r.dataset.pi !== palSel) palMove(+r.dataset.pi - palSel); });
 $("pal").addEventListener("mousedown", e => { if (e.target.id === "pal") palClose(); });
+
+/* ---------- beta: headline strip. The newest headline about your tickers, with "N new" since you last opened the list.
+   Finnhub company news, one low-priority call per ticker every 15 minutes (up to 20 tickers). ---------- */
+let heads = store.get("heads", {at:0, items:[]}), headsOpen = false;
+async function loadHeadlines(){
+  if (!BETA || !settings.key || loadHeadlines.busy || Date.now() - heads.at < 15*60e3) return;
+  loadHeadlines.busy = true;
+  try{
+    const to = etNow().date, from = addDays(to, -2), all = [];
+    for (const sym of mySyms().slice(0, 20)){
+      try{ const j = await limited(()=>api(`company-news?symbol=${encodeURIComponent(sym)}&from=${from}&to=${to}`), true);
+        (Array.isArray(j) ? j : []).slice(0, 6).forEach(n => { if (n.headline && /^https?:\/\//.test(n.url || "")) all.push({sym, h:String(n.headline).slice(0, 240), src:String(n.source || "").slice(0, 40), url:n.url, t:+n.datetime * 1000}); }); }
+      catch(e){}
+    }
+    const seen = new Set(), items = all.sort((a, b) => b.t - a.t).filter(n => { const k = n.h.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 30);
+    heads = {at:Date.now(), items}; store.set("heads", heads); safe("headlines", renderHeads);
+  } finally { loadHeadlines.busy = false; }
+}
+function renderHeads(){
+  const el = $("heads"); if (!el) return;
+  if (!BETA || !heads.items.length || settings.compact){ el.classList.add("hide"); return; }
+  const seenAt = settings.headsSeen || 0, nNew = heads.items.filter(n => n.t > seenAt).length, top = heads.items[0];
+  const ago = t => { const m = Math.max(0, Math.round((Date.now() - t) / 60e3)); return m < 60 ? m + "m" : m < 1440 ? Math.round(m / 60) + "h" : Math.round(m / 1440) + "d"; };
+  const line = n => `<a href="${esc(n.url)}" target="_blank" rel="noopener"><b>${esc(n.sym)}</b> ${esc(n.h)}<small>${esc(n.src)} · ${ago(n.t)} ago</small></a>`;
+  el.classList.remove("hide");
+  el.innerHTML = `<div class="hd-top">${nNew ? `<button class="hd-new" data-hd="1" title="Headlines since you last opened the list">${nNew} new</button>` : `<button class="hd-all" data-hd="1" title="Show the latest headlines">${headsOpen ? "Hide" : "All"}</button>`}${line(top)}</div>${headsOpen ? `<div class="hd-list">${heads.items.slice(1, 12).map(line).join("")}</div>` : ""}`;
+}
+function headsToggle(){ headsOpen = !headsOpen; if (headsOpen){ settings.headsSeen = Date.now(); saveSettings(); } renderHeads(); }
 
 /* ---------- chart window (4.5): TradingView Lightweight Charts (Apache-2.0, in vendor/, loaded on first use) ----------
    Daily candles come from the price history MW already keeps (Twelve Data, on this PC); 1D is today's 5-minute bars
@@ -2638,6 +2705,7 @@ renderVersion(); setTimeout(()=>checkUpdates(), 4000); setInterval(()=>checkUpda
 // (this catches refreshes that stopped altogether, not just ones that came back empty)
 setInterval(()=>{ safe("frame", renderFrame); safe("health", watchHealth); updateTray(); }, 30e3);
 setInterval(()=>{ try{ renderPill(); }catch(e){} }, 10e3);   // keeps the countdown to the minute
+if (BETA) addEventListener("resize", ()=>{ clearTimeout(applyLayout._r); applyLayout._r = setTimeout(()=> safe("layout", applyLayout), 150); });
 addEventListener("resize", ()=>{ clearTimeout(renderPill._r); renderPill._r = setTimeout(()=>{ try{ renderPill(); }catch(e){} }, 120); });
 
 mwLog("info", "MW " + APP_VERSION + " started" + (NATIVE ? " in the desktop app" : " in the browser"));
