@@ -7,7 +7,7 @@
 (function (root) {
 "use strict";
 const E = {};
-E.VERSION = "4.3.0";
+E.VERSION = "4.3.1";
 
 /* ====================================================================================
    1. Calendar (NYSE). Source: NYSE Group release of 2025-12-23, "2026, 2027 and 2028 Holiday
