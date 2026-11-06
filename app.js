@@ -557,6 +557,7 @@ async function loadHist(syms){
       hist[sym] = {v:5, date:today, last:vals[0], refs, sma20:avg(20), sma50:avg(50), sma100:avg(100), sma200:avg(200), vol, ve, c4, bars, n:allBars.length, src:"Twelve Data daily bars"};
       delete statsCache[sym];
       barsMem[sym] = allBars; idbPut("bars", {sym, date:today, bars:allBars}).catch(()=>{});
+      if (chSym === sym) safe("chart", drawChart);
       store.set("hist", hist); renderMarkets(); riskDirty = true;
     }).catch(e => fail(sym, String(e && e.message || e))).finally(()=>loadHist.busy.delete(sym));
   }
@@ -593,6 +594,49 @@ function erTip(sym){
   const e = erInfo(sym), m = earn.map && earn.map[sym]; if (!e) return "";
   return `Earnings ${e.d}${e.hour==="amc"?" after the close":e.hour==="bmo"?" before the open":""} (${e.days===0?"today":e.days===1?"tomorrow":"in "+e.days+" days"})`
     + (m && (m.eps != null || m.rev != null) ? `\nAnalysts expect${m.eps != null ? " EPS " + fmt$(m.eps) : ""}${m.eps != null && m.rev != null ? " and" : ""}${m.rev != null ? " revenue " + fmtBig$(m.rev) : ""} (Finnhub consensus)` : "");
+}
+/* ---------- earnings panel (4.5): this week and next, for your tickers, tiles and the chip bellwethers ---------- */
+let erHist = store.get("erHist", {});   // sym -> {date, rows:[{period, actual, estimate, sp}]}: the last reported quarters (Finnhub)
+async function loadErHist(syms){
+  const today = etNow().date; let got = 0;
+  for (const sym of syms){
+    const h = erHist[sym], e = earn.map && earn.map[sym];
+    if (h && h.date > addDays(today, -7) && !(e && h.date <= e.d && today > e.d)) continue;   // weekly, and again after it reports
+    try{ const j = await limited(()=>api("stock/earnings?symbol=" + encodeURIComponent(sym)));
+      erHist[sym] = {date:today, rows:(Array.isArray(j) ? j : []).slice(0, 8).map(x => ({period:x.period, actual:num(x.actual), estimate:num(x.estimate), sp:num(x.surprisePercent)}))}; got++; }
+    catch(e){ mwLog("warn", "earnings history " + sym + ": " + e.message); }
+  }
+  if (got) store.set("erHist", erHist);
+}
+/* reports from today to the end of next week (on a weekend, "this week" is the coming one) */
+function erUpcoming(){
+  const today = etNow().date, wd = E.weekday(today), base = wd === 6 ? addDays(today, 2) : wd === 0 ? addDays(today, 1) : today;
+  const endThis = addDays(base, 7 - E.weekday(base)), endNext = addDays(endThis, 7), mine = new Set(mySyms());
+  return [...new Set([...mySyms(), ...cfg.myMk, ...BELLWETHERS])].map(sym => ({sym, e:earn.map && earn.map[sym], mine:mine.has(sym)}))
+    .filter(x => x.e && x.e.d >= today && x.e.d < endNext)
+    .map(x => Object.assign(x, {wk: x.e.d < endThis ? "This week" : "Next week"}))
+    .sort((a, b) => a.e.d.localeCompare(b.e.d) || (a.e.hour === "bmo" ? -1 : 1) - (b.e.hour === "bmo" ? -1 : 1));
+}
+function erMoveOf(sym){
+  const h = erHist[sym], bars = barsMem[sym]; if (!h || !h.rows.length || !bars) return null;
+  const mv = E.erMoves(bars, h.rows.slice(0, 4).map(r => r.period).filter(Boolean)); if (!mv.length) return null;
+  return {avg: mv.reduce((s, m) => s + Math.abs(m.move), 0) / mv.length, list: mv};
+}
+function erPanelHtml(){
+  const up = erUpcoming(); if (!up.length) return "";
+  const hdr = `<div class="toolbar"><button class="sec-t" data-act="erpanel" style="flex:1;font-size:11px;text-align:left;display:flex;align-items:center;gap:4px" title="Show or hide upcoming earnings"><svg class="chev" style="width:11px;height:11px;${settings.erHide?"transform:rotate(-90deg)":""}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>Earnings · ${up.length} in the next two weeks</button></div>`;
+  if (settings.erHide) return hdr;
+  let wk = "";
+  return hdr + `<div class="erp">` + up.map(x => {
+    const e = x.e, h = erHist[x.sym], last = h && h.rows.find(r => r.actual != null), mv = erMoveOf(x.sym);
+    const day = new Date(e.d + "T12:00:00Z").toLocaleDateString("en-US", {weekday:"short", timeZone:"UTC"}) + " " + (+e.d.slice(5, 7)) + "/" + (+e.d.slice(8, 10));
+    const when = day + (e.hour === "amc" ? " · after the close" : e.hour === "bmo" ? " · before the open" : "");
+    const est = [e.eps != null ? "EPS est " + fmt$(e.eps) : "", e.rev != null ? "sales est " + fmtBig$(e.rev) : ""].filter(Boolean).join(" · ");
+    const lastTxt = last && last.sp != null ? `last quarter ${last.sp >= 0 ? "beat" : "missed"} by <b class="${cls(last.sp)}">${Math.abs(last.sp).toFixed(1)}%</b>` : "";
+    const mvTip = mv ? `Average move on its last ${mv.list.length} report day${mv.list.length > 1 ? "s" : ""}, close to close: ${mv.list.map(m => m.d.slice(5).replace("-", "/") + " " + fmtPct(m.move, 1)).join(", ")}. Report days are estimated from daily prices (the biggest opening gap after each quarter).` : "Typical report-day move: needs this ticker's price history (Twelve Data key) and its past results.";
+    const head = x.wk !== wk ? `<div class="erwk">${(wk = x.wk)}</div>` : "";
+    return head + `<div class="erw"><span class="s"><b>${esc(x.sym)}</b>${x.mine ? "" : `<small title="Not on your lists: a chip bellwether that moves the group">bellwether</small>`}</span><span class="when">${esc(when)}</span><span class="mv num" title="${esc(mvTip)}">${mv ? "±" + mv.avg.toFixed(1) + "%" : "—"}</span>${est || lastTxt ? `<span class="sub">${[esc(est), lastTxt].filter(Boolean).join(" · ")}</span>` : ""}</div>`;
+  }).join("") + `<div class="note" style="margin-top:4px">± is the typical report-day move. Estimates are Finnhub's analyst consensus.</div></div>`;
 }
 const erChip = sym => { const e = erInfo(sym); return e ? `<span class="er ${e.days<=5?"soon":""}" title="${esc(erTip(sym))}">${e.label}</span>` : ""; };
 /* ---------- daily range (ATR) + VWAP ----------
@@ -739,7 +783,7 @@ async function tick(){
     loadNavs(false);
     loadHist([...cfg.watch.map(w=>(w.sym||"").toUpperCase()), ...marketSyms(), ...mySyms(), "SPY", "SMH"].filter(Boolean));
     loadIntraday(); loadVwap();
-    loadEarnings().then(renderAll);
+    loadEarnings().then(()=>{ renderAll(); const up = erUpcoming().map(x => x.sym); if (settings.tdKey) loadHist(up); return loadErHist(up); }).then(()=>safe("markets", renderMarkets));
     loadMetrics(syms).then(()=>{ renderAll(); checkAlerts(); });
   } finally {
     busy = false; $("bRefresh").classList.remove("spin");
@@ -830,10 +874,11 @@ function snoozed(sym){ const t = settings.snooze[sym]; return t && t > Date.now(
 function pausedNow(){ return settings.pauseUntil && settings.pauseUntil > Date.now(); }
 function ctxFor(w){
   const sym = (w.sym||"").toUpperCase(), q = quotes[sym], now = Date.now(), fr = freshOf(q), bq = quotes[settings.bench];
-  const levels = effLevels(w).map(L => ({L, name:lvName(w, L)}));
+  const lvMem = lvSt[sym] || {}, levels = !E.levelsLive(w, etNow().date) ? [] : effLevels(w).map(L => ({L, name:lvName(w, L), tag: w.lvRepeat === "cross" ? "#" + ((lvMem[L] || {}).n || 0) : ""}));
   return {sym, q, now, today:etNow().date, vol:volOf(sym), hi52: metrics[sym] && metrics[sym].hi, benchSym:settings.bench, benchDp: bq && bq.dp != null ? bq.dp : null,
     er:erInfo(sym), ticks:(ticks.day === etNow().date && ticks.s[sym]) || [], vwap: sessVwap(sym), levels, alertOk: fr.ok && !settings.allOff, fresh:fr};
 }
+let lvSt = store.get("lvSt", {});        // "every cross" price alerts: per ticker, per level {n, below, t} (4.5)
 let ruleSt = store.get("ruleSt", {});    // today's rule memory per ticker: fast-drop arming, VWAP side
 let offSt = store.get("offState", {});   // inside the 52-week-high zone or not (kept across days)
 function evaluate(w){
@@ -843,10 +888,29 @@ function evaluate(w){
 function firedToday(){ const day = etNow().date; let f = store.get("fired", {}); if (f.day !== day) f = {day, ids:{}, log:[], unseen:0}; return f; }
 const SHORT = {}; E.RULES.forEach(r => SHORT[r.id] = r.short);
 const BUNDLE_MS = E.BUNDLE_MS;
+/* "every cross": move each level's crossing memory on with a fresh price (a stale one could fake a crossing) */
+function stepCross(w){
+  const sym = (w.sym||"").toUpperCase(), q = quotes[sym]; if (!q || !(q.c > 0) || !freshOf(q).ok) return;
+  const m = lvSt[sym] || (lvSt[sym] = {}), now = Date.now(), keep = {};
+  effLevels(w).forEach(L => { keep[L] = E.levelCross(m[L], L, q.c, now); });
+  lvSt[sym] = keep; store.set("lvSt", lvSt);
+}
+/* "once, then remove": a price alert that fired comes off the list (moving-average alerts stay) */
+function doneOnce(logged){
+  logged.forEach(a => {
+    if (!(a.all || [a]).some(x => x.kind === "level")) return;
+    const w = cfg.watch.find(x => (x.sym||"").toUpperCase() === a.sym); if (!w || w.lvRepeat !== "once") return;
+    const q = quotes[a.sym], gone = (w.levels || []).filter(L => q && q.c <= L); if (!gone.length) return;
+    w.levels = w.levels.filter(L => !gone.includes(L)); saveCfg("watchlist");
+    mwLog("info", `${a.sym}: price alert ${gone.join(", ")} fired and was removed (set to once)`);
+    toast(`${a.sym} ${gone.map(fmtL).join(", ")} alert done and removed`);
+  });
+}
 function checkAlerts(){
   const day = etNow().date; if (ruleSt.day !== day) ruleSt = {day, s:{}};
   const items = [];
   cfg.watch.forEach(w => {
+    if (w.lvRepeat === "cross") stepCross(w);
     const ctx = ctxFor(w); if (!ctx.q) return;
     const r = E.evaluate(w, ctx, Object.assign({}, ruleSt.s[ctx.sym] || {}, {off: offSt[ctx.sym]}));
     ruleSt.s[ctx.sym] = {fast:r.state.fast, vw:r.state.vw};
@@ -858,6 +922,7 @@ function checkAlerts(){
   const r = E.bundle(items, firedToday(), alertT, {paused:pausedNow(), allOff:settings.allOff, snoozed, timeStr});
   store.set("fired", r.fired); renderLog(); updateBadge();
   (r.logged || []).forEach(a => { if (a.sym) firedAt[a.sym] = Date.now(); });
+  doneOnce(r.logged || []);
   if ((r.logged || []).length) safe("watchlist", renderWatch);
   if (r.fresh.length) notify(r.fresh, alertT);
 }
@@ -988,7 +1053,8 @@ function fundHtml(sym){
 function armedRules(w, I){
   if (I.off) return [];
   const on = (k, n) => w[k] === true || (w[k] !== false && !!w[n]), a = [];
-  if (I.useLv) I.lv.forEach(L => a.push("price alert " + fmtL(L)));
+  if (I.useLv) I.lv.forEach(L => a.push("price alert " + fmtL(L) + (w.lvRepeat === "once" ? " (once)" : w.lvRepeat === "cross" ? " (every cross)" : "")));
+  if (I.useLv && w.lvUntil) a.push("price alerts end after " + w.lvUntil);
   if (on("redOn", "dayDrop")) a.push(`red day ${w.dayDrop}%`);
   if (w.offHigh && w.offOn !== false) a.push(`${w.offHigh}% under the 52-week high`);
   if (on("hiOn", "hiDrop")) a.push(`${w.hiDrop}% off today's high`);
@@ -1309,6 +1375,7 @@ function holdRow(r, total){
       ${m.beta!=null?`<span>Beta <b>${m.beta.toFixed(2)}</b></span>`:""}${erInfo(r.sym)?`<span title="${esc(erTip(r.sym))}">Earnings <b>${erInfo(r.sym).label.slice(3)}</b></span>`:""}
       ${fundHtml(r.sym)}
       ${q?rangeBar(q.l,q.h,q.c,"Day low","high"):""}
+      ${r.sym && q ? `<span style="grid-column:1/-1"><button class="rbtn" data-chart="${esc(r.sym)}" title="Candles with averages and past report days (G)">Chart</button></span>` : ""}
       ${m.hi&&m.lo&&q?rangeBar(m.lo,m.hi,q.c,"52w low","high"):""}
       ${newsHtml(r.sym)}
       <span style="grid-column:1/-1;text-align:right"><button class="rbtn" data-ref="${esc(r.sym)}">↻ Refresh</button></span>
@@ -1382,17 +1449,16 @@ function renderMarkets(){
     if (settings.heatOrder === "rank") a = a.sort((x,y)=>(y.p??-1e9)-(x.p??-1e9));
     return a.map(m => `<button class="tile ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" data-fx="${m.sym}" style="background:${heatColor(m.p, cap)}" title="${esc(m.name)} (${m.sym})${quotes[m.sym] ? " " + fmt$(quotes[m.sym].c) : ""}\n${esc(multi(m.sym))}\nClick to highlight and refresh just this one."><span class="n">${esc(m.name)}${erChip(m.sym)}</span><span class="b"><span class="p num">${fmtPct(m.p, dec)}</span><span class="t">${m.sym===m.name?"":m.sym}</span></span></button>`).join(""); };
   const anyPeriod = per==="1D" || sec.some(m => pctFor(m.sym, per) != null);
-  const bell = BELLWETHERS.map(sym => ({sym, e:erInfo(sym)})).filter(x => x.e && x.e.days <= 7);
   $("mk-body").innerHTML = `
     ${rg ? `<div class="regime num" title="${esc(rg.label + ": " + (rg.why.join(", ") || "no strong signal either way") + "\n\n" + RG_TIP)}"><span class="muted" style="font-size:10.5px">${esc((w => w ? w[0].toUpperCase() + w.slice(1) : "No strong signal")(rg.why.join(", ")))}</span>${rg.chips.map(([n,v,minor,inv])=>`<span class="xa ${minor?"mk-up":""}" title="${esc(XA_TIPS[n]||"")}">${esc(n)} <b class="${cls(inv ? -v : v)}">${fmtPct(v,1)}</b></span>`).join("")}</div>` : ""}
     ${macroHtml()}
-    ${bell.length ? `<div class="note" style="margin:0 0 8px">Chip earnings this week: ${bell.map(x=>`<b>${x.sym}</b> ${x.e.label.slice(3)}`).join(" · ")}</div>` : ""}
     <div class="seg perseg" id="perSeg">${PERIODS.map(p=>`<button data-per="${p.k}" class="${per===p.k?"on":""}" title="Show the change over ${p.label === "1D" ? "today" : p.label === "YTD" ? "this year so far" : "the last " + p.label}">${p.label}</button>`).join("")}</div>
     <div class="idx num">${[...idx, ...oth, ...my].map(m=>{ const q = quotes[m.sym], p = pctFor(m.sym, per); return `<button class="c ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" data-fx="${m.sym}" title="${esc(m.name === m.sym ? m.sym : m.name + " (" + m.sym + ")")}\n${esc(multi(m.sym))}\nClick to refresh just this one."><span>${esc(m.name)}${erChip(m.sym)}</span><b class="${cls(p)}">${fmtPct(p, dec)}</b><em>${q?fmt$(q.c):"—"}</em>${(()=>{ const x = extFor(m.sym); return x ? `<i class="${cls(x.pct)}" title="${x.ph === "pre" ? "Pre-market" : "After hours"} ${fmt$(x.p)} on IEX">${x.ph === "pre" ? "Pre" : "AH"} ${fmtPct(x.pct,1)}</i>` : ""; })()}</button>`; }).join("")}</div>
     <div class="toolbar"><button class="sec-t" data-act="sectors" style="flex:1;font-size:11px;text-align:left;display:flex;align-items:center;gap:4px" title="Show or hide the sector tiles"><svg class="chev" style="width:11px;height:11px;${settings.secHide?"transform:rotate(-90deg)":""}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>Sectors</button>
       <div class="seg" id="ordSeg"><button data-ord="fixed" class="${settings.heatOrder!=="rank"?"on":""}" title="Tiles stay in the same place">Fixed</button><button data-ord="rank" class="${settings.heatOrder==="rank"?"on":""}" title="Best to worst">Ranked</button></div><button class="rbtn secref" data-act="secref" title="Refresh every sector tile now" aria-label="Refresh sectors" ${refreshMany.busy?"disabled":""}>${refreshMany.busy?"…":"↻"}</button><button class="rbtn" data-open="markets" title="Add your own tickers to the market tiles, or hide any tile (Settings → Markets)">Edit</button></div>
     ${settings.secHide ? "" : `<div class="heat">${tiles(sec)}</div>`}
     ${secP.length?`<div class="breadth" title="How many of the 11 S&amp;P sector funds (XLK to XLRE) are up today, and how many trade above their 50-day average. Chips, power grid and software are left out because they overlap those 11."><span>${upN} of ${secP.length} sectors up today${above.length?` · ${aboveN} of ${above.length} above 50-day`:""}</span><span class="bar"><i style="width:${(upN/secP.length*100).toFixed(0)}%"></i></span></div>`:""}
+    ${erPanelHtml()}
     ${anyPeriod?"":`<div class="note">${per} isn't loaded yet. ${settings.tdKey?"History loads in the background (about 3 minutes the first time each day).":"Add a free Twelve Data key in Settings to unlock 1M, 3Y and 5Y and make every time frame exact."}</div>`}
     ${per!=="1D"&&refDate(per)?`<div class="note">${per} change since ${(d=>(+d.slice(5,7))+"/"+(+d.slice(8,10))+"/"+d.slice(2,4))(refDate(per))}</div>`:""}`;
   flashPass($("mk-body"), "mk");
@@ -1401,12 +1467,12 @@ function renderMarkets(){
 /* ---------- watchlist ---------- */
 function watchInfo(w){
   const sym = (w.sym||"").toUpperCase(), q = quotes[sym], m = metrics[sym] || {}, off = w.on===false || settings.allOff;
-  const lv = effLevels(w), useLv = w.levelsOn!==false && lv.length, px = q && q.c;
+  const ended = !E.levelsLive(w, etNow().date), lv = ended ? [] : effLevels(w), useLv = w.levelsOn!==false && lv.length, px = q && q.c;
   const hitL = useLv && px ? lv.filter(L => px <= L) : [], next = useLv && px ? lv.find(L => L < px) : null;
   const dist = next ? (px/next - 1)*100 : null, vol = volOf(sym);
   const red = !!(px && q.dp!=null && w.redOn!==false && w.dayDrop && q.dp <= -w.dayDrop);
   let st = hitL.length || red ? "hit" : (dist!=null && w.nearOn!==false && w.near && dist <= w.near) ? "near" : "";
-  return {sym, q, m, off, lv, useLv, px, hitL, next, dist, vol, red, st};
+  return {sym, q, m, off, lv, useLv, px, hitL, next, dist, vol, red, st, ended: ended && (w.levels||[]).length ? w.lvUntil : ""};
 }
 /* what to say about a ticker's level position (row, compact strip, tray) */
 const fmtL = L => fmt$(L, L < 100 ? 2 : 0);   // levels under $100 keep their cents
@@ -1441,6 +1507,7 @@ function renderWatch(){
     const insane = px && useLv ? E.levelSanity(lv, px) : [];
     void fr; void ses0;
     const flags = ageChip(sym, q, off) + extChip(sym)
+      + (I.ended && !off ? `<span class="chip" title="The price alerts for ${esc(sym)} were set to end on ${esc(I.ended)}. Change or clear the date in Settings → Watchlist.">alerts ended</span>` : "")
       + (insane.length ? `<span class="chip flag" title="${esc(insane.map(fmtL).join(", "))} ${insane.length > 1 ? "are" : "is"} more than 3x away from today's price. A stock split, or a typo? Check Settings → Watchlist.">check alerts</span>` : "");
     const right = `<span class="r">${flags}${vwd!=null?`<span class="num" title="Price vs today's VWAP (${fmt$(sv.vw)}), the average price paid today weighted by volume. Under it, sellers have the upper hand today; climbing back over it after a drop often means the selling has paused.">VWAP <b class="${cls(vwd)}">${fmtPct(vwd,1)}</b></span>`:""}${rel!=null?`<span class="num" title="Today's move minus ${esc(bench)}'s: separates a sector-wide dip from a stock-specific drop">vs ${esc(bench)} <b class="${cls(rel)}">${fmtPct(rel,1)}</b></span>`:""}${fromHi!=null?`<span class="num" title="How far the price is from its 52-week high (${fmt$(m.hi)})">52w high <b class="${fromHi>0?"down":""}">${fromHi>=0?"−":"+"}${Math.abs(fromHi).toFixed(1)}%</b></span>`:""}${off?`<span class="chip">alerts off</span>`:sn?`<span class="chip" title="Snoozed until ${timeStr(settings.snooze[sym])}">snoozed</span>`:""}<button class="rbtn" data-ref="${esc(sym)}" title="Refresh just ${esc(sym)}" aria-label="Refresh ${esc(sym)}">↻</button><button class="rbtn wrm" data-wrm="${esc(sym)}" title="Remove ${esc(sym)} from your watchlist" aria-label="Remove ${esc(sym)}">✕</button></span>`;
     const open = openRows.has("w:"+sym);
@@ -1461,7 +1528,7 @@ function renderWatch(){
         ${fundHtml(sym)}
         ${q?rangeBar(q.l,q.h,q.c,"Day low","high"):""}${m.hi&&m.lo&&px?rangeBar(m.lo,m.hi,px,"52w low","high"):""}
         ${newsHtml(sym)}
-        <span style="grid-column:1/-1;display:flex;gap:6px;justify-content:flex-start;flex-wrap:wrap"><button class="rbtn" data-wmove="${esc(sym)}:top" title="Put ${esc(sym)} first on your watchlist">⤒ Move to top</button><button class="rbtn" data-wmove="${esc(sym)}:up" title="Move up one">↑</button><button class="rbtn" data-wmove="${esc(sym)}:down" title="Move down one">↓</button></span>
+        <span style="grid-column:1/-1;display:flex;gap:6px;justify-content:flex-start;flex-wrap:wrap"><button class="rbtn" data-chart="${esc(sym)}" title="Candles with averages, your price alerts and past report days (G)">Chart</button><button class="rbtn" data-wmove="${esc(sym)}:top" title="Put ${esc(sym)} first on your watchlist">⤒ Move to top</button><button class="rbtn" data-wmove="${esc(sym)}:up" title="Move up one">↑</button><button class="rbtn" data-wmove="${esc(sym)}:down" title="Move down one">↓</button></span>
         ${off?"":`<span style="grid-column:1/-1;display:flex;gap:6px;justify-content:flex-end"><button class="rbtn" data-snzsym="${esc(sym)}" data-how="30">Snooze 30m</button><button class="rbtn" data-snzsym="${esc(sym)}" data-how="day">Mute today</button></span>`}
       </div>`;
     }
@@ -1589,6 +1656,7 @@ function renderAll(){
   safe("title", ()=>{ const P = portfolioCalc();
     document.title = (settings.compact && Object.keys(quotes).length && cfg.holdings.length) ? `${fmt$(P.total,0)} ${fmtPct(P.dayPct)} · MW` : "MW"; });
   safe("tray", updateTray);
+  safe("chart", chartLive);
 }
 function renderStatus(){
   const ses = session(), ds = dataState(), d = etNow().date, L = tdBudget();
@@ -1618,8 +1686,8 @@ function renderStatus(){
     ${lastErr ? `<div class="err" style="margin:6px 0 0">${esc(lastErr)}</div>` : ""}`;
 }
 /* one Twelve Data budget for the day, split by feature (R13) */
-const BUDGET_NAMES = {hist:"history", vwap:"VWAP", backup:"backup quotes", nav:"fund prices", intraday:"intraday charts", xcheck:"cross-checks", other:"other"};
-const BUDGET_COLORS = {hist:"#5b9dff", vwap:"#f59e0b", backup:"#f472b6", nav:"#2dd4bf", intraday:"#a78bfa", xcheck:"#94a3b8", other:"#64748b"};
+const BUDGET_NAMES = {hist:"history", vwap:"VWAP", backup:"backup quotes", nav:"fund prices", intraday:"intraday charts", chart:"chart window", xcheck:"cross-checks", other:"other"};
+const BUDGET_COLORS = {hist:"#5b9dff", vwap:"#f59e0b", backup:"#f472b6", nav:"#2dd4bf", intraday:"#a78bfa", chart:"#34d399", xcheck:"#94a3b8", other:"#64748b"};
 function sessFrac(){ const t = etNow(); if (!isTradingDay(t.date)) return 1; const c = closeMins(t.date); return Math.max(0, Math.min(1, (t.mins - 570) / (c - 570))); }
 function budgetHtml(L, ses){
   const proj = ses.s === "open" ? E.budgetProjection(L, sessFrac()) : L.n;
@@ -1728,6 +1796,8 @@ document.addEventListener("click", e=>{
   if (e.target.closest("[data-wundo]")){ watchRestore(); return; }
   if (e.target.closest("#wAdd")) return;   // typing in the add box never opens a row
   if (e.target.closest("[data-act=secref]")){ refreshMany(MARKETS.sectors.filter(m => !cfg.hiddenMk.includes(m.sym)).map(m => m.sym), "Sectors"); return; }
+  { const c = e.target.closest("[data-chart]"); if (c){ e.stopPropagation(); openChart(c.dataset.chart); return; } }
+  if (e.target.closest("[data-act=erpanel]")){ settings.erHide = !settings.erHide; saveSettings(); renderMarkets(); return; }
   if (e.target.closest("[data-act=sectors]")){ settings.secHide = !settings.secHide; saveSettings(); renderMarkets(); return; }
   // desktop app: open web links in the default browser
   const a = e.target.closest("a[href^='http']");
@@ -1763,6 +1833,8 @@ document.addEventListener("keydown", e=>{
   if (e.altKey && !e.ctrlKey && !e.metaKey && rowK.startsWith("w:") && (e.key === "ArrowUp" || e.key === "ArrowDown")){ e.preventDefault(); moveWatch(rowK.slice(2), e.key === "ArrowUp" ? "up" : "down"); refocus(rowK); return; }
   if (e.target.matches("input,textarea,select") || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase(), sheetOpen = !$("sheet").classList.contains("hide");
+  if (e.key==="Escape" && !$("chart").classList.contains("hide")){ closeChart(); return; }
+  if (!$("chart").classList.contains("hide") && !sheetOpen){ const r = {"1":"1D","2":"1M","3":"3M","4":"6M","5":"1Y","6":"5Y"}[e.key]; if (r){ setChartRange(r); return; } }
   if (e.key==="Escape"){
     if (!$("menu").classList.contains("hide")) closeMenu();
     else if (!$("statusPop").classList.contains("hide")) $("statusPop").classList.add("hide");
@@ -1780,6 +1852,7 @@ document.addEventListener("keydown", e=>{
   if (rowK.startsWith("w:") && (e.key === "Delete" || e.key === "Backspace")){
     e.preventDefault(); const rows = [...document.querySelectorAll('[data-row^="w:"]')].filter(r => r.offsetParent !== null), i = rows.indexOf(e.target), nx = rows[i + 1] || rows[i - 1];
     const sym = rowK.slice(2), nk = nx && nx.dataset.row; watchRemove(sym); toast(sym + " removed · Undo is on the watchlist"); if (nk) refocus(nk); return; }
+  if (k==="g" && rowK){ const s = rowK.split(":")[1]; if (s) openChart(s); return; }
   if (k==="r") schedule(true);
   else if (k==="c") $("bCompact").click();
   else if (k==="a"){ dismissBanner(); toast("Alerts marked as seen"); }
@@ -1865,7 +1938,7 @@ function showTab(tab){
       <div id="keyRes" class="note" style="white-space:pre-line"></div>
       <p class="note">Data use: Finnhub allows 60 calls a minute with no daily cap. Twelve Data allows 800 credits a day, shared out between history, VWAP, backups, fund prices and checks so no one feature can use it all; ${tdBudget().n} used today. Alpaca allows 200 calls a minute; fast prices use 12. Click the status pill for the breakdown.</p>
       ${liveSetup() ? `<div class="callout" style="margin-top:12px"><b>Copy your setup from MW</b>MW keeps its own settings. This copies your holdings, watchlist, keys and preferences from the MW in this browser. MW itself is not changed.<div style="margin-top:8px"><button class="btn" id="sImport">Copy from MW</button></div></div>` : ""}
-      <p class="note" style="margin-top:14px">Shortcuts: Ctrl+K find a ticker or command · R refresh · C compact · A mark alerts seen · P pause alerts · / add a ticker · 1–4 jump to a section · ↑ ↓ move between rows · Alt+↑ ↓ reorder the watchlist · Delete take a ticker off the watchlist · , settings · Esc close${NATIVE?" or hide to tray · T keep on top":""}. ${esc(verLine())}.</p>`;
+      <p class="note" style="margin-top:14px">Shortcuts: Ctrl+K find a ticker or command · G chart the focused row · R refresh · C compact · A mark alerts seen · P pause alerts · / add a ticker · 1–4 jump to a section · ↑ ↓ move between rows · Alt+↑ ↓ reorder the watchlist · Delete take a ticker off the watchlist · , settings · Esc close${NATIVE?" or hide to tray · T keep on top":""}. ${esc(verLine())}.</p>`;
     if ($("sChannel")) $("sChannel").onclick = ()=> onBeta() ? leaveBeta() : joinBetaHere();
     if ($("sBeta")) $("sBeta").onclick = ()=>{
       try{ localStorage.setItem("mw_channel", "beta"); localStorage.removeItem("mw_betaTry"); localStorage.removeItem("mw_betaOk"); }catch(e){ toast("This browser blocks storage, so the beta can't be turned on"); return; }
@@ -1982,6 +2055,8 @@ function showTab(tab){
             <label title="Price fell this much from its highest point in the last N minutes (a flush), even if the day is barely red"><input type="checkbox" data-k="fastOn" ${ck2("fastOn","fastDrop")}> Fast drop: down</label><span><input type="number" step="0.5" min="0.5" data-n="fastDrop" value="${w.fastDrop??2}"> % in <input type="number" step="5" min="5" max="120" data-n="fastMins" value="${w.fastMins??15}" style="width:48px"> min</span>
             <label title="The dip rules above only fire when this stock is falling harder than your benchmark, so a sector-wide dip doesn't trigger them. Price alerts always fire."><input type="checkbox" data-k="lagOn" ${w.lagOn?"checked":""}> Dip rules only if lagging ${esc(settings.bench)} by</label><span><input type="number" step="0.5" min="0.5" data-n="lagBy" value="${w.lagBy??2}"> %</span>
             <label title="Alert when the price falls to any of these. Prices, or 20d / 50d / 100d / 200d for moving averages."><input type="checkbox" data-k="levelsOn" ${ck("levelsOn")}> Price alerts at</label><span><input type="text" data-l="1" value="${esc([...(w.levels||[]), ...(w.ma||[]).map(n=>n+"d")].join(", "))}" placeholder="e.g. 150, 140, 200d"></span>
+            <label title="Once a day: each price alert can fire once per day. Once: it fires one time, then MW takes it off the list. Every cross: it fires each time the price comes back down through it, at least 30 minutes apart and only after a 0.3% climb back above.">Price alerts repeat</label><span><select data-s="lvRepeat"><option value="" ${!w.lvRepeat?"selected":""}>once a day</option><option value="once" ${w.lvRepeat==="once"?"selected":""}>once, then remove</option><option value="cross" ${w.lvRepeat==="cross"?"selected":""}>every cross</option></select></span>
+            <label title="Price alerts for this ticker stop after this day. Leave empty to keep them on.">Price alerts end after</label><span><input type="date" data-s="lvUntil" value="${esc(w.lvUntil||"")}" style="width:auto"></span>
             <label title="Off unless you turn it on. Alerts when the price has dropped well under today's VWAP and then climbs back over it. Uses about 40 Twelve Data credits a day per ticker (first 8 tickers), from VWAP's share of the day's budget."><input type="checkbox" data-k="vwapOn" ${w.vwapOn===true?"checked":""}> VWAP reclaim after a flush</label><span class="muted" style="font-size:11px">${settings.tdKey ? "Alert + VWAP on the row" : "Needs a Twelve Data key"}</span>
             <label title="A quiet note when the price gets this close to your next price alert"><input type="checkbox" data-k="nearOn" ${ck("nearOn")}> Heads-up within</label><span><input type="number" step="0.5" min="0" data-n="near" value="${w.near??1.5}"> % of a price alert</span>
           </div></div>`; }).join("")}</div>
@@ -2002,6 +2077,7 @@ function showTab(tab){
         w.levels = toks.map(Number).filter(x=>x>0).sort((a,b)=>b-a);
         w.ma = [...new Set(toks.map(x=>(x.match(/^(20|50|100|200)d$/i)||[])[1]).filter(Boolean).map(Number))]; }
       if (t.dataset.note) w.note = t.value;
+      if (t.dataset.s){ if (t.value) w[t.dataset.s] = t.value; else delete w[t.dataset.s]; }
       save();
     };
     $("aList").onclick = e=>{
@@ -2227,6 +2303,7 @@ function palRender(){
   const score = s => !Q ? (inW(s) ? 2 : 0) : s === Q ? 100 : s.startsWith(Q) ? 50 - s.length : (names[s]||"").toUpperCase().includes(Q) ? 10 : 0;
   const items = syms.map(s => ({s, sc:score(s)})).filter(x => x.sc > 0).sort((a, b) => b.sc - a.sc).slice(0, Q ? 8 : 5).map(({s}) => { const qq = quotes[s];
     return {n:s, sub:[names[s] && names[s] !== s ? names[s] : "", inW(s) ? "Watchlist" : inH(s) ? "Holding" : "Market tile"].filter(Boolean).join(" · "), px:qq && qq.c ? fmt$(qq.c) + " " + fmtPct(qq.dp, 1) : "", c:qq ? cls(qq.dp) : "", run:()=>palGo(s)}; });
+  if (Q && items.length && items[0].n === Q) items.splice(1, 0, {n:"Chart " + Q, sub:"Candles, averages and your alerts", k:"G", run:()=>openChart(Q)});
   if (Q && !syms.includes(Q) && E.parseTickers(Q).ok[0] === Q) items.push({n:`Add ${Q} to the watchlist`, sub:"New ticker with the default dip rules", run:()=>{ if (watchAdd(Q)) setTimeout(()=>palGo(Q), 80); }});
   const ql = q.toLowerCase(); items.push(...palCmds().filter(c => !ql || c.n.toLowerCase().includes(ql)).slice(0, Q ? 6 : 14));
   palItems = items; palSel = 0;
@@ -2259,6 +2336,127 @@ $("palIn").addEventListener("keydown", e => {
 $("palList").addEventListener("click", e => { const r = e.target.closest("[data-pi]"); if (r) palRun(+r.dataset.pi); });
 $("palList").addEventListener("mousemove", e => { const r = e.target.closest("[data-pi]"); if (r && +r.dataset.pi !== palSel) palMove(+r.dataset.pi - palSel); });
 $("pal").addEventListener("mousedown", e => { if (e.target.id === "pal") palClose(); });
+
+/* ---------- chart window (4.5): TradingView Lightweight Charts (Apache-2.0, in vendor/, loaded on first use) ----------
+   Daily candles come from the price history MW already keeps (Twelve Data, on this PC); 1D is today's 5-minute bars
+   (1 Twelve Data credit, at most every 5 minutes). Today's candle follows the live price. */
+const CH_RANGES = {"1D":0, "1M":22, "3M":64, "6M":127, "1Y":253, "5Y":1300};
+let chSym = null, chObj = null, chSeries = null, chLastBar = null;
+const chIntra = {};   // sym -> {at, day, bars}
+function loadLwc(){
+  if (window.LightweightCharts) return Promise.resolve();
+  return loadLwc.p || (loadLwc.p = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "vendor/lightweight-charts-4.2.3.js";
+    s.onload = res; s.onerror = () => { loadLwc.p = null; rej(new Error("the chart library didn't load")); }; document.head.appendChild(s); }));
+}
+/* a moment shown as the wall-clock time in your time zone (the chart library labels times as UTC) */
+function wallSec(ms){
+  const p = {}; new Intl.DateTimeFormat("en-US", {timeZone:tzName(), year:"numeric", month:"numeric", day:"numeric", hour:"numeric", minute:"numeric", hourCycle:"h23"}).formatToParts(ms).forEach(x => p[x.type] = +x.value);
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute) / 1000;
+}
+function chOv(){ return Object.assign({ma50:true, ma200:true, lv:true, hi:true, er:true}, settings.chOv || {}); }
+async function openChart(sym){
+  sym = String(sym || "").toUpperCase(); if (!sym) return;
+  closeMenu(); chSym = sym; $("chart").classList.remove("hide"); $("chSym").textContent = sym; $("chNote").textContent = ""; chartHead();
+  $("chX").focus({preventScroll:true});
+  try{ await loadLwc(); }catch(e){ $("chNote").textContent = "The chart couldn't open: " + e.message + ". Check your connection and try again."; return; }
+  if (chSym !== sym) return;
+  drawChart();
+  if (!barsMem[sym] && settings.tdKey) loadHist([sym]);
+  loadErHist([sym]).then(()=>{ if (chSym === sym && (settings.chRange || "6M") !== "1D") safe("chart", drawChart); });
+}
+function closeChart(){ $("chart").classList.add("hide"); if (chObj){ chObj.remove(); chObj = null; } chSeries = null; chLastBar = null; const k = chSym; chSym = null; if (k) refocus(document.querySelector(`[data-row="${CSS.escape("w:" + k)}"]`) ? "w:" + k : ""); }
+function setChartRange(r){ settings.chRange = r; saveSettings(); drawChart(); }
+function chartHeadPx(){
+  const q = quotes[chSym], names = {}; [...MARKETS.indices, ...MARKETS.sectors, ...MARKETS.other, ...XASSET].forEach(m => names[m.sym] = m.name);
+  $("chPx").innerHTML = q && q.c ? `${fmt$(q.c)} <b class="${cls(q.dp)}">${fmtPct(q.dp)}</b>${names[chSym] ? ` <span class="muted">${esc(names[chSym])}</span>` : ""}` : "";
+}
+function chartHead(){
+  chartHeadPx();
+  const r = settings.chRange || "6M";
+  $("chRange").innerHTML = Object.keys(CH_RANGES).map(k => `<button data-r="${k}" class="${k === r ? "on" : ""}">${k}</button>`).join("");
+  const o = chOv(), lv = cfg.watch.some(w => (w.sym||"").toUpperCase() === chSym);
+  $("chLeg").innerHTML = (r === "1D" ? [] : [["ma50", "50-day avg", "var(--accent)"], ["ma200", "200-day avg", "var(--warn)"], ["hi", "52-week high and low", "var(--muted)"], ["er", "report days", "var(--fg-2)"]]).concat(lv ? [["lv", "your price alerts", "var(--down)"]] : [])
+    .map(([k, n, c]) => `<button data-ov="${k}" class="${o[k] ? "on" : ""}" aria-pressed="${!!o[k]}"><i style="background:${c}"></i>${n}</button>`).join("");
+}
+function chIntraLoad(sym){
+  const c = chIntra[sym], day = etNow().date; if (c && (c.loading || Date.now() - c.at < 5*60e3)) return;
+  if (!settings.tdKey){ return; }
+  chIntra[sym] = Object.assign({}, c || {}, {loading:true});
+  tdCall("time_series?symbol=" + encodeURIComponent(sym) + "&interval=5min&outputsize=90", "chart").then(js => {
+    const v = (js.values || []).slice().reverse(), last = v.length ? v[v.length - 1].datetime.slice(0, 10) : day;
+    chIntra[sym] = {at:Date.now(), day:last, bars:v.filter(x => x.datetime.slice(0, 10) === last).map(x => { const [d, t] = x.datetime.split(" "), [hh, mm] = t.split(":").map(Number);
+      return {time:wallSec(etMs(d, hh*60 + mm)), open:+x.open, high:+x.high, low:+x.low, close:+x.close}; })};
+  }).catch(e => { chIntra[sym] = {at:Date.now(), day, bars:(c && c.bars) || [], err:e.message}; })
+    .finally(() => { if (chSym === sym && (settings.chRange || "6M") === "1D") safe("chart", drawChart); });
+}
+function drawChart(){
+  const sym = chSym, box = $("chBox"); if (!sym || !window.LightweightCharts) return;
+  chartHead();
+  if (chObj){ chObj.remove(); chObj = null; } chSeries = null; chLastBar = null;
+  const css = getComputedStyle(document.documentElement), v = n => css.getPropertyValue(n).trim(), r = settings.chRange || "6M", o = chOv(), q = quotes[sym];
+  const note = [];
+  let data = [];
+  if (r === "1D"){
+    const c = chIntra[sym]; chIntraLoad(sym);
+    data = c && c.bars ? c.bars.slice() : [];
+    if (!settings.tdKey) note.push("The 1D chart needs a free Twelve Data key (Settings → General).");
+    else if (!data.length) note.push(c && c.err ? "Couldn't load today's bars: " + c.err : "Loading today's 5-minute bars…");
+    else note.push(`5-minute bars for ${c.day === etNow().date ? "today" : mdLabel(c.day)}, times in ${tzAbbr(Date.now())}.`);
+  } else {
+    const bars = (barsMem[sym] || []).slice().reverse();
+    data = bars.map(b => ({time:b[0], open:b[1], high:b[2], low:b[3], close:b[4]})).filter(b => b.open > 0 && b.close > 0);
+    const today = etNow().date;
+    if (data.length && q && q.c > 0 && q.o > 0 && isTradingDay(today) && etNow().mins >= 570 && data[data.length - 1].time < today && q.at && etDateOf(q.at) === today)
+      data.push({time:today, open:q.o, high:Math.max(q.h || q.c, q.c), low:Math.min(q.l || q.c, q.c), close:q.c});
+    if (!data.length) note.push(settings.tdKey ? "Loading price history… (about a minute the first time)" : "Daily charts need a free Twelve Data key (Settings → General).");
+  }
+  const font = css.getPropertyValue("--font").trim() || "system-ui";
+  chObj = LightweightCharts.createChart(box, {autoSize:true,
+    layout:{background:{type:"solid", color:v("--surface")}, textColor:v("--fg-2"), fontFamily:font, fontSize:11},
+    grid:{vertLines:{visible:false}, horzLines:{color:v("--line")}},
+    rightPriceScale:{borderVisible:false, scaleMargins:{top:0.12, bottom:0.08}}, timeScale:{borderVisible:false, timeVisible:r === "1D", secondsVisible:false, rightOffset:2},
+    crosshair:{mode:0}, localization:{priceFormatter:p => fmt$(p)}, handleScale:{axisPressedMouseMove:false}});
+  if (!data.length){ $("chNote").textContent = note.join(" "); return; }
+  const shown = r === "1D" ? data : data.slice(-CH_RANGES[r]), from = shown[0].time;
+  chSeries = chObj.addCandlestickSeries({upColor:v("--up"), downColor:v("--down"), borderVisible:false, wickUpColor:v("--up"), wickDownColor:v("--down"), priceLineColor:v("--muted")});
+  chSeries.setData(shown); chLastBar = Object.assign({}, shown[shown.length - 1]);
+  if (r !== "1D"){
+    const sma = n => { let s = 0; const out = []; data.forEach((d, i) => { s += d.close; if (i >= n) s -= data[i - n].close; if (i >= n - 1 && d.time >= from) out.push({time:d.time, value:s / n}); }); return out; };
+    const line = (col, pts) => { if (pts.length) chObj.addLineSeries({color:col, lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false}).setData(pts); };
+    if (o.ma50) line(v("--accent"), sma(50));
+    if (o.ma200) line(v("--warn"), sma(200));
+    const m = metrics[sym] || {};
+    if (o.hi && m.hi) chSeries.createPriceLine({price:m.hi, color:v("--muted"), lineStyle:1, lineWidth:1, axisLabelVisible:false, title:"52w high"});
+    if (o.hi && m.lo) chSeries.createPriceLine({price:m.lo, color:v("--muted"), lineStyle:1, lineWidth:1, axisLabelVisible:false, title:"52w low"});
+    if (o.er){ const mv = erMoveOf(sym), e = erInfo(sym);
+      if (mv) chSeries.setMarkers(mv.list.filter(x => x.d >= from).sort((a, b) => a.d.localeCompare(b.d)).map(x => ({time:x.d, position:x.move >= 0 ? "belowBar" : "aboveBar", shape:"circle", color:v("--fg-2"), text:"ER " + fmtPct(x.move, 1)})));
+      if (e) note.push(`Next report ${new Date(e.d + "T12:00:00Z").toLocaleDateString("en-US", {weekday:"short", timeZone:"UTC"})} ${+e.d.slice(5, 7)}/${+e.d.slice(8, 10)}${e.hour === "amc" ? " after the close" : e.hour === "bmo" ? " before the open" : ""}${mv ? `, typical move ±${mv.avg.toFixed(1)}%` : ""}.`); }
+  }
+  const w = cfg.watch.find(x => (x.sym||"").toUpperCase() === sym);
+  if (o.lv && w && E.levelsLive(w, etNow().date)) effLevels(w).forEach(L => chSeries.createPriceLine({price:L, color:v("--down"), lineStyle:2, lineWidth:1, axisLabelVisible:true, title:"alert " + fmtL(L)}));
+  chObj.timeScale().fitContent();
+  $("chNote").textContent = note.join(" ");
+}
+/* the newest candle follows the live price */
+function chartLive(){
+  if (!chSym || !chSeries || !chLastBar) return;
+  chartHeadPx();
+  const q = quotes[chSym], r = settings.chRange || "6M"; if (!q || !(q.c > 0) || !q.at || etDateOf(q.at) !== etNow().date || session().s !== "open") return;
+  let b = Object.assign({}, chLastBar);
+  if (r === "1D"){
+    const c = chIntra[chSym]; if (!c || c.day !== etNow().date) return;
+    const t = wallSec(Math.floor(Date.now() / 300e3) * 300e3);
+    b = t > b.time ? {time:t, open:b.close, high:Math.max(b.close, q.c), low:Math.min(b.close, q.c), close:q.c} : Object.assign(b, {high:Math.max(b.high, q.c), low:Math.min(b.low, q.c), close:q.c});
+  } else {
+    if (b.time !== etNow().date) return;
+    Object.assign(b, {high:Math.max(b.high, q.c), low:Math.min(b.low, q.c), close:q.c});
+  }
+  try{ chSeries.update(b); chLastBar = b; }catch(e){}
+}
+$("chX").onclick = closeChart;
+$("chart").addEventListener("mousedown", e => { if (e.target.id === "chart") closeChart(); });
+$("chRange").addEventListener("click", e => { const b = e.target.closest("[data-r]"); if (b) setChartRange(b.dataset.r); });
+$("chLeg").addEventListener("click", e => { const b = e.target.closest("[data-ov]"); if (!b) return; const o = chOv(); o[b.dataset.ov] = !o[b.dataset.ov]; settings.chOv = o; saveSettings(); drawChart(); });
 
 /* ---------- loop ---------- */
 let timer = null;
