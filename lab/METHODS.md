@@ -27,7 +27,7 @@ After 2028 the calendar reports "unknown" and alerts stop, instead of guessing.
 
 **Bad-print screen.** A quote is rejected if the price is missing or zero, if its % change disagrees with price ÷ previous close by more than 0.5 points, or if the day high is below the day low. A jump bigger than the *jump limit* since the last refresh (or 1.5× that limit from yesterday's close for the first price of the day) is held, not used, until the next refresh agrees within 2%. Jump limit = the larger of 6 normal days' moves and 8% for a stock (4% for a broad ETF).
 
-**Level check.** A buy level more than 3× above the price, or under a third of it, gets a "check levels" chip (a split or a typo).
+**Price-alert check.** A price alert more than 3× above the price, or under a third of it, gets a "check alerts" chip (a split or a typo).
 
 ## Volatility ("a normal day")
 
@@ -36,26 +36,25 @@ From daily closes, simple returns:
 - **σ (the one alerts use):** exponentially weighted (RiskMetrics, λ = 0.94) over the last 250 days, seeded with the first 20 days. Falls back to the plain 60-day standard deviation when there is too little history.
 - **Robust check:** 1.4826 × median absolute deviation over 250 days (ignores a few huge days).
 - **Tail quantiles:** the 2nd and 5th percentile daily return over 250 days (shown when there are at least 100 days).
-- **ATR:** Wilder's 14-day average true range, used for auto levels.
+- **ATR:** Wilder's 14-day average true range, shown as "Daily range" in a watchlist row's details.
 
 ## Alert rules
 
-One registry (`E.RULES`) defines every rule; the live check, the rule lab and the scorecard all read it.
+One registry (`E.RULES`) defines every rule.
 
 | Rule | Fires when |
 |---|---|
-| Buy level | Price at or under one of your levels (or auto levels). The deepest level hit is named. |
+| Price alert | Price at or under one of your price alerts. The deepest one reached is named. |
 | Fast drop | Down N% from the highest price of the last M minutes. Re-arms after the price bounces half the drop off its low. Needs the window mostly covered by refreshes. |
 | Red day | Down at least N% on the day. |
 | Unusual drop | Day change ÷ σ is at or under −N. |
 | Off today's high | N% under today's high. |
 | Off 52-week high | Just crossed N% under the 52-week high (once per crossing). |
 | VWAP reclaim | Off unless you turn it on. Flushed at least max(2%, σ) under the anchored VWAP, then climbed back over it. |
-| Near a level | Heads-up only: within N% above the next level. Never loud, never journaled. |
+| Near a price alert | Heads-up only: within N% above the next price alert. Never loud. |
 
-**Bundling.** At most one loud alert per ticker per 15 minutes, unless a new level breaks or the price drops another leg (the fast-drop % doubled each leg, three legs at most). Other rules that fired at the same moment are listed as "also …".
+**Bundling.** At most one loud alert per ticker per 15 minutes, unless a new price alert is reached or the price drops another leg (the fast-drop % doubled each leg, three legs at most). Other rules that fired at the same moment are listed as "also …".
 
-**Auto levels.** Three levels at 1, 2 and 3 ATRs under the last close, each snapped to a nearby swing low or 20/60-day low when one is within 0.4 ATR. The first is at least 3% under the close, each next one at least 5% under the one before.
 
 ## Phone alerts (ntfy)
 
@@ -86,17 +85,8 @@ For holdings with at least 60 days of history, aligned on common dates:
 
 Each fund's dollars are split into its holdings using the weights you pasted; direct holdings add on top. The table shows each company's total, how many places it comes from, and how much of each fund was not listed.
 
-## Buy sizing (optional)
 
-Amount per level = your base amount × (reference σ ÷ the ticker's σ), kept between 0.5× and 2× and rounded to $5. A warning shows when the buy would take the position over your concentration cap (25% by default).
 
-## Rule lab
-
-Replays the daily rules (red day, unusual drop, off today's high, off 52-week high, auto levels) over the stored history, starting after the first 260 days. A fill is the rule's trigger price, or the open if the day gapped through it. Each rule's average and median return and hit rate are shown 5, 20 and 60 sessions later, next to buying at every close and buying at the open on the first trading day of each month. Each auto level fills at most once per 20 sessions. Intraday rules can't be replayed from daily bars. Price returns only; past results don't predict the next alert.
-
-## Journal and scorecard
-
-Every loud alert is recorded (time, price, source, trade time, rule settings). Mark it Bought or Skipped. After 1, 5 and 20 sessions the outcome is filled from daily closes, plus the worst close within 20 sessions. The scorecard groups by rule. Kept in the browser only.
 
 ## Cross-asset tone
 

@@ -1,5 +1,5 @@
 // MW Lab browser harness (R1, R17): runs the real page in Chromium against SYNTHETIC market data and a fake clock,
-// then checks the things that matter: it renders, an alert fires and is journaled, a feed outage is announced
+// then checks the things that matter: it renders, an alert fires and is logged, a feed outage is announced
 // loudly and its recovery too, phone alerts carry no tickers or prices, and the live MW's storage is never touched.
 // Run: node labdev/harness/browser.mjs [--shots dir]   (needs Playwright with Chromium)
 // All tickers here (AAA, BBB, CCC) and all prices are made up.
@@ -38,7 +38,7 @@ const hash = s => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
 const px = {}, pcOf = s => 50 + hash(s) % 200;
 const priceOf = s => px[s] ?? pcOf(s);
 let finnhubDown = false, tdDown = false, finnhubBadKey = false;
-const sent = {ntfy:[], hc:0};
+const sent = {ntfy:[], hc:0}, quoteCalls = {};
 function dailyBars(sym, today) {
   let seed = hash(sym) || 1; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const out = []; let d = E.prevTradingDay(today), c = pcOf(sym);
@@ -56,6 +56,7 @@ async function mock(page) {
   await page.route(/https:\/\/finnhub\.io\/.*/, route => {
     const u = new URL(route.request().url()), p = u.pathname.replace("/api/v1/", ""), sym = u.searchParams.get("symbol");
     if (finnhubBadKey) return route.fulfill({status:401, json:{error:"Invalid API key"}});
+    if (p === "quote") quoteCalls[sym] = (quoteCalls[sym] || 0) + 1;
     if (p === "quote") return finnhubDown ? route.fulfill({status:502, body:"bad gateway"}) : route.fulfill({json: quote(sym)});
     if (p === "stock/metric") return route.fulfill({json: {metric: {"52WeekHigh": pcOf(sym) * 1.08, "52WeekLow": pcOf(sym) * 0.7, beta: 1.2}}});
     if (p === "stock/market-status") return route.fulfill({json: {isOpen: true, holiday: null}});
@@ -99,7 +100,12 @@ await page.addInitScript(([live]) => {
 }, [liveCfg]);
 await page.clock.install({time: simNow});
 const advance = async (ms, step = 5000) => { for (let t = 0; t < ms; t += step) { simNow += step; await page.clock.runFor(step); await page.waitForTimeout(40); } };
-const shot = async name => { if (SHOTS) await page.screenshot({path: path.join(SHOTS, name + ".png")}); };
+const shot = async name => { if (!SHOTS) return;
+  // grow the window to the page's full height for the picture, then put it back
+  const h = await page.evaluate(() => Math.max(...[document.documentElement, ...document.querySelectorAll("main, #app, .scroll, body")].map(e => e.scrollHeight)));
+  await page.setViewportSize({width:420, height:Math.min(Math.max(900, h + 40), 4000)}); await page.waitForTimeout(150);
+  await page.screenshot({path: path.join(SHOTS, name + ".png")});
+  await page.setViewportSize({width:420, height:900}); };
 
 console.log("MW Beta browser harness");
 await page.goto(BASE);
@@ -126,6 +132,34 @@ const stillOpen = await page.evaluate(() => !document.getElementById("sheet").cl
 await page.keyboard.press("Escape");
 check(stillOpen && await page.evaluate(() => document.getElementById("sheet").classList.contains("hide")), "Esc leaves a text box, then closes Settings");
 
+// a monitoring tool: no scorecard, rule lab or buy planner anywhere
+check(await page.evaluate(() => !document.querySelector('[data-open=journal],[data-open=lab],[data-tab=journal],[data-tab=lab],.lad')), "no Scorecard, Rule lab or buy ladder");
+check(!/planned buy|next buy|buy level|scorecard|auto level/i.test(await page.locator("main").innerText()), "no buy-planning text on the main screen");
+check(!/planned buy|buy per level|auto levels|size buys/i.test(await page.evaluate(() => { openSheet("alerts"); const t = document.getElementById("shBody").innerText; closeSheet(); return t; })), "no buy-planning options in Settings → Watchlist");
+// markets: indexes, other markets and your list share one grid; the sector heatmap has its own refresh
+check(await page.locator("#mk-body .idx .c").count() === 8 && !/Other markets|My list/.test(await page.locator("#mk-body").innerText()), "markets combined into one grid (indexes and other markets)");
+const xleBefore = quoteCalls.XLE || 0;
+await page.locator("#mk-body [data-act=secref]").click(); await advance(70000, 2000);   // waits its turn under the free 60-a-minute limit
+check((quoteCalls.XLE || 0) > xleBefore && await page.evaluate(() => logBuf.some(l => /Sectors refreshed: 14 of 14/.test(l))), "the sector ↻ refreshes all 14 sector tiles");
+// portfolio: every change figure in a red or green box
+check(await page.locator("#pf-body .hero .chg .cbox").count() === 1 && await page.locator("#pf-body .grp-h .cbox").count() >= 2, "portfolio totals use the same red/green boxes as the rows");
+// watchlist: add and remove from the main screen, with undo
+await page.locator("#wAddSym").fill("ccc"); await page.keyboard.press("Enter"); await advance(3000, 500);
+check(await page.locator("#wl-body .wrow").count() === 3 && await page.evaluate(() => cfg.watch.some(w => w.sym === "CCC")), "a ticker added from the main screen joins the watchlist");
+check(await page.evaluate(() => document.activeElement && document.activeElement.id === "wAddSym" && !document.activeElement.value), "the add box stays ready for the next ticker");
+await page.locator("#wAddSym").fill("AAA"); await page.keyboard.press("Enter"); await advance(1000, 500);
+check(await page.locator("#wl-body .wrow").count() === 3, "adding a ticker that's already there changes nothing");
+await page.locator('#wl-body [data-wrm="CCC"]').click(); await advance(1000, 500);
+check(await page.locator("#wl-body .wrow").count() === 2 && await page.locator("#wl-body .wundo").count() === 1, "✕ removes a ticker and offers Undo");
+await page.locator("#wl-body [data-wundo]").click(); await advance(1000, 500);
+check(await page.locator("#wl-body .wrow").count() === 3, "Undo puts it back");
+await page.locator('#wl-body [data-wrm="CCC"]').click(); await advance(14000, 1000);
+check(await page.locator("#wl-body .wundo").count() === 0 && await page.locator("#wl-body .wrow").count() === 2, "the Undo note goes away by itself");
+await page.locator("#wAddSym").blur(); await page.keyboard.press("/"); await advance(500, 250);
+check(await page.evaluate(() => document.activeElement && document.activeElement.id === "wAddSym"), "/ jumps to the add box");
+await page.locator("#wAddSym").blur();
+await shot("5-monitor");
+
 // a sharp drop in AAA: red day, unusual drop, off today's high, near the $90 level
 const pc = pcOf("AAA"); px.AAA = +(pc * 0.91).toFixed(2);
 note(`AAA drops from ${pc} to ${px.AAA}`);
@@ -135,8 +169,6 @@ const log = await page.locator("#log-body").innerText();
 check(/AAA/.test(log), "the drop is in today's alerts");
 check(sent.ntfy.length > 0, "a phone alert went out");
 check(sent.ntfy.every(b => !/AAA|BBB|\$|\d{2,}/.test(b)), "phone alerts carry no tickers or prices");
-const jn = await page.evaluate(() => new Promise(res => { const r = indexedDB.open("mwlab"); r.onsuccess = () => { const tx = r.result.transaction("journal"); const g = tx.objectStore("journal").getAll(); g.onsuccess = () => res(g.result); }; r.onerror = () => res([]); }));
-check(jn.length >= 1 && jn.some(j => j.sym === "AAA"), "the alert is in the journal (" + jn.length + " record)");
 await shot("2-alert");
 
 // first only Finnhub goes down: the Twelve Data backup keeps the watchlist covered, so no alarm
@@ -162,10 +194,10 @@ check(await page.locator("#keyBad:not(.hide)").count() === 1, "a rejected key sh
 finnhubBadKey = false; await page.evaluate(() => schedule(true)); await advance(150000, 2000);
 check(await page.locator("#keyBad.hide").count() === 1, "the notice clears when the key works again");
 // every settings tab opens without an error
-for (const tab of ["general","holdings","alerts","journal","lab","funds","markets","layout","backup","diag"]) {
-  await page.evaluate(t => { document.querySelector('[data-open="journal"]') && 0; openSheet(t); }, tab);
+for (const tab of ["general","holdings","alerts","funds","markets","layout","backup","diag"]) {
+  await page.evaluate(t => openSheet(t), tab);
   await advance(2000, 500);
-  if (tab === "lab" || tab === "journal" || tab === "backup") await shot("tab-" + tab);
+  if (tab === "alerts" || tab === "backup") await shot("tab-" + tab);
 }
 check(/Copy from MW/.test(await page.evaluate(() => { openSheet("backup"); return document.getElementById("shBody").innerText; })), "Backup offers to copy the live MW setup");
 await page.evaluate(() => closeSheet());
