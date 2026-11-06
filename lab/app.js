@@ -204,7 +204,11 @@ const SEC_NAMES = {portfolio:"Portfolio", markets:"Markets", watch:"Watchlist", 
 function layoutOrder(){ const L = (Array.isArray(settings.layout) ? settings.layout : []).filter(k => DEFAULT_LAYOUT.includes(k)); DEFAULT_LAYOUT.forEach(k => { if (!L.includes(k)) L.push(k); }); return L; }
 function applyLayout(){
   const main = $("main"), anchor = $("err"); if (!main || !anchor) return;
-  layoutOrder().forEach(k => { const el = document.querySelector(`.sec[data-sec="${k}"]`); if (el){ main.insertBefore(el, anchor); el.classList.toggle("hide", !!(settings.hideSec||{})[k]); } });
+  // move sections only when the order changed: moving a section takes the focus away from a box inside it
+  const want = layoutOrder().filter(k => document.querySelector(`.sec[data-sec="${k}"]`));
+  const have = [...main.querySelectorAll(":scope > .sec[data-sec]")].map(el => el.dataset.sec);
+  const moved = want.join() !== have.filter(k => want.includes(k)).join();
+  want.forEach(k => { const el = document.querySelector(`.sec[data-sec="${k}"]`); if (moved) main.insertBefore(el, anchor); el.classList.toggle("hide", !!(settings.hideSec||{})[k]); });
 }
 if (!PERIODS.some(p=>p.k===settings.period)) settings.period = settings.period==="MTD" ? "1M" : "1D";
 /* funds typed as "ABCDX (12.3 sh ...)" get their ticker and shares picked up automatically */

@@ -146,7 +146,7 @@ check(await page.locator("#pf-body .hero .chg .cbox").count() === 1 && await pag
 // watchlist: add and remove from the main screen, with undo
 await page.locator("#wAddSym").fill("ccc"); await page.keyboard.press("Enter"); await advance(3000, 500);
 check(await page.locator("#wl-body .wrow").count() === 3 && await page.evaluate(() => cfg.watch.some(w => w.sym === "CCC")), "a ticker added from the main screen joins the watchlist");
-check(await page.evaluate(() => document.activeElement && document.activeElement.id === "wAddSym" && !document.activeElement.value), "the add box stays ready for the next ticker");
+check(await page.evaluate(() => { renderAll(); renderAll(); return document.activeElement && document.activeElement.id === "wAddSym" && !document.activeElement.value; }), "the add box stays ready for the next ticker, even through a refresh");
 await page.locator("#wAddSym").fill("AAA"); await page.keyboard.press("Enter"); await advance(1000, 500);
 check(await page.locator("#wl-body .wrow").count() === 3, "adding a ticker that's already there changes nothing");
 await page.locator('#wl-body [data-wrm="CCC"]').click(); await advance(1000, 500);
