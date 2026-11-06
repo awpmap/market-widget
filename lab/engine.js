@@ -6,7 +6,7 @@
 (function (root) {
 "use strict";
 const E = {};
-E.VERSION = "4.2.1";
+E.VERSION = "4.3.2";
 
 /* ====================================================================================
    1. Calendar (NYSE). Source: NYSE Group release of 2025-12-23, "2026, 2027 and 2028 Holiday
@@ -241,14 +241,14 @@ E.autoLevels = function (s, opts) {
    ==================================================================================== */
 const on = (w, k, numKey) => w[k] === true || (w[k] !== false && (numKey ? !!w[numKey] : true));
 E.RULES = [
-  {id:"level", name:"Buy level", short:"level", rank:0, daily:true, intraday:true, desc:"Price at or under one of your buy levels (or auto levels)."},
+  {id:"level", name:"Price alert", short:"price alert", rank:0, daily:true, intraday:true, desc:"Price at or under one of your price alerts."},
   {id:"fast", name:"Fast drop", short:"fast drop", rank:1, daily:false, intraday:true, desc:"Down N% from the high of the last M minutes."},
   {id:"red", name:"Red day", short:"red day", rank:1, daily:true, intraday:true, desc:"Down at least N% on the day."},
   {id:"sig", name:"Unusual drop", short:"unusual drop", rank:1, daily:true, intraday:true, desc:"Down at least N normal days' moves (σ, EWMA)."},
   {id:"vwap", name:"VWAP reclaim", short:"VWAP reclaim", rank:1, daily:false, intraday:true, desc:"Flushed well under today's VWAP, then climbed back over it."},
   {id:"hd", name:"Off today's high", short:"off today's high", rank:2, daily:true, intraday:true, desc:"N% under today's high."},
   {id:"off", name:"Off 52-week high", short:"off 52w high", rank:3, daily:true, intraday:true, desc:"Just crossed N% under the 52-week high."},
-  {id:"near", name:"Near a level", short:"near a level", rank:5, daily:false, intraday:true, desc:"Within N% above the next buy level (heads-up only)."}
+  {id:"near", name:"Near a price alert", short:"near a price alert", rank:5, daily:false, intraday:true, desc:"Within N% above the next price alert (heads-up only)."}
 ];
 E.RULE = {}; E.RULES.forEach(r => E.RULE[r.id] = r);
 E.RANK = {}; E.RULES.forEach(r => E.RANK[r.id] = r.rank); E.RANK.test = 6; E.RANK.health = -1;
@@ -292,9 +292,9 @@ E.evaluate = function (w, ctx, state) {
   }
   if (w.levelsOn !== false && ctx.levels && ctx.levels.length) {
     const lv = ctx.levels.map(x => x.L), hit = ctx.levels.filter(x => px <= x.L);
-    if (hit.length) { const deep = hit[hit.length - 1]; out.push({id:`${sym}-L${deep.L}`, also:hit.map(x => `${sym}-L${x.L}`), kind:"level", sym, level:deep.L, msg:`${sym} hit your ${deep.name} buy level (now ${$(px)})${hit.length > 1 ? ` · through ${hit.length} levels` : ""}${erTxt}`}); }
+    if (hit.length) { const deep = hit[hit.length - 1]; out.push({id:`${sym}-L${deep.L}`, also:hit.map(x => `${sym}-L${x.L}`), kind:"level", sym, level:deep.L, msg:`${sym} reached your ${deep.name} price alert (now ${$(px)})${hit.length > 1 ? ` · through ${hit.length} alerts` : ""}${erTxt}`}); }
     const nx = ctx.levels.find(x => x.L < px);
-    if (nx && on(w, "nearOn", "near") && w.near && px <= nx.L * (1 + w.near/100)) out.push({id:`${sym}-N${nx.L}`, kind:"near", sym, level:nx.L, msg:`${sym} is ${((px/nx.L - 1)*100).toFixed(1)}% above your ${nx.name} level`});
+    if (nx && on(w, "nearOn", "near") && w.near && px <= nx.L * (1 + w.near/100)) out.push({id:`${sym}-N${nx.L}`, kind:"near", sym, level:nx.L, msg:`${sym} is ${((px/nx.L - 1)*100).toFixed(1)}% above your ${nx.name} price alert`});
     void lv;
   }
   return {alerts:out, state:next};
