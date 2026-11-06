@@ -85,7 +85,6 @@ body.wco main{margin-top:env(titlebar-area-height,40px)}
 .pill.open i{background:var(--up);box-shadow:0 0 0 3px color-mix(in srgb,var(--up) 25%,transparent)}
 .pill.ext i{background:var(--warn)}
 .pill span{font-variant-numeric:tabular-nums}
-.chip.auto{font-size:9.5px;padding:0 5px;color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
 .pill.open.closing{color:var(--warn)}
 .spacer{flex:1}
 .tb-btn{app-region:no-drag;-webkit-app-region:no-drag;width:30px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--fg-2);position:relative}
@@ -316,12 +315,6 @@ body.compact #log-sec, body.compact footer{display:none}
 .wtop{display:grid;grid-template-columns:minmax(64px,1fr) 64px minmax(70px,auto) 62px;gap:8px;align-items:center}
 .wtop .s{font-weight:600}
 .wtop .s small{display:block;font-weight:400;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lad{position:relative;height:30px;margin:8px 4px 0}
-.lad .track{position:absolute;left:0;right:0;top:7px;height:3px;background:var(--line-2);border-radius:3px}
-.lad .zone{position:absolute;top:7px;height:3px;background:color-mix(in srgb,var(--warn) 55%,transparent);border-radius:3px}
-.lad .tk{position:absolute;top:2px;width:2px;height:13px;margin-left:-1px;background:var(--warn);border-radius:1px}
-.lad .tl{position:absolute;top:17px;transform:translateX(-50%);font-size:10px;color:var(--fg-2);white-space:nowrap}
-.lad .now{position:absolute;top:3px;width:11px;height:11px;margin-left:-5.5px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 28%,transparent)}
 .wmeta{display:flex;align-items:center;gap:10px;margin-top:4px;font-size:11.5px;color:var(--fg-2)}
 .wmeta b{color:var(--fg);font-weight:600}
 .wmeta .st{font-weight:600}
@@ -452,12 +445,28 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
 .jrow .acts button{font-size:10.5px;padding:2px 7px;border-radius:6px;border:1px solid var(--line-2);background:var(--surface-2)}
 .jrow .acts button.on{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
 .jrow .out{grid-column:2/-1;color:var(--muted);font-size:10.5px}
-.labbars{display:grid;grid-template-columns:auto 1fr auto;gap:3px 8px;align-items:center;font-size:11px;margin:6px 0 12px}
-.labbars .bar{position:relative;height:9px;background:var(--line);border-radius:3px}
-.labbars .bar i{position:absolute;top:0;bottom:0;border-radius:3px}
-.labbars .bar .zero{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--muted)}
 .budget{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--line);margin:4px 0}
 .budget i{display:block;height:100%}
+/* every change figure in Portfolio sits in a red or green box, like the holding rows */
+.cbox{display:inline-block;font-weight:600;padding:2px 6px;border-radius:6px;font-variant-numeric:tabular-nums}
+.cbox.up,.kpi.up{background:color-mix(in srgb,var(--up) 15%,transparent)} .cbox.down,.kpi.down{background:color-mix(in srgb,var(--down) 15%,transparent)}
+.cbox.up,.kpi.up b{color:var(--up)} .cbox.down,.kpi.down b{color:var(--down)}
+.hero .chg .cbox{font-size:15px;padding:3px 8px}
+.hero .chg .cbox span{color:inherit}
+.grp-h .r .cbox{font-size:11.5px;padding:2px 6px;min-width:58px;text-align:right}
+/* watchlist: add a ticker and remove one right from the main screen */
+.wadd{display:flex;gap:6px;margin:2px 0 8px}
+.wadd input{flex:1;min-width:0;text-transform:uppercase;font-size:12px;padding:5px 9px}
+.wadd input::placeholder{text-transform:none}
+.wadd .btn{padding:5px 12px;font-size:12px}
+.wmeta .r .wrm{color:var(--muted);font-weight:500;padding:2px 5px}
+.wmeta .r .wrm:hover{color:var(--down);background:color-mix(in srgb,var(--down) 12%,transparent)}
+.wundo{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--fg-2);background:var(--surface-2);border-radius:var(--r-sm);padding:6px 10px;margin:0 0 8px}
+.wundo .lnk{margin-left:auto;font-weight:600}
+/* markets: one grid for indexes, other markets and your own tickers */
+.idx .c .er{margin-left:4px}
+.toolbar .secref{min-width:26px;text-align:center}
+.toolbar .secref[disabled]{opacity:.5;cursor:default}
 </style>
 </head>
 <body>
@@ -486,8 +495,6 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
   <button role="menuitem" data-open="alerts" data-tip="Your tickers and their alert rules"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8z"/></svg><span>Watchlist</span><kbd>/</kbd></button>
   <button role="menuitem" data-open="holdings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="4" width="11" height="9" rx="1.5"/><path d="M5.5 4V2.8h5V4"/></svg><span>Holdings</span></button>
   <button role="menuitem" id="bPause"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4v8M10 4v8"/></svg><span id="mPauseLbl">Pause alerts</span><kbd>P</kbd></button>
-  <button role="menuitem" data-open="journal"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13V8M6.5 13V4M10 13V7M13.5 13V2.5"/></svg><span>Scorecard</span></button>
-  <button role="menuitem" data-open="lab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M6 2.5h4M6.8 2.5v4L3 13a.8.8 0 0 0 .7 1.2h8.6A.8.8 0 0 0 13 13L9.2 6.5v-4"/></svg><span>Rule lab</span></button>
   <div class="msep"></div>
   <button role="menuitem" id="bSettings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg><span>Settings</span><kbd>,</kbd></button>
   <button role="menuitem" id="bLeave" hidden data-tip="Go back to the regular MW. Your regular setup is just as you left it."><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5H13v9h-3M7 5L4 8l3 3M4 8h7"/></svg><span>Switch back to regular MW</span></button>
@@ -561,8 +568,6 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
     <button data-tab="general" class="on">General</button>
     <button data-tab="holdings">Holdings</button>
     <button data-tab="alerts">Watchlist</button>
-    <button data-tab="journal">Scorecard</button>
-    <button data-tab="lab">Rule lab</button>
     <button data-tab="funds">Fund overlap</button>
     <button data-tab="markets">Markets</button>
     <button data-tab="layout">Layout</button>
