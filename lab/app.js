@@ -1322,7 +1322,10 @@ function watchRestore(){
   if (!cfg.watch.some(x => (x.sym||"").toUpperCase() === (w.sym||"").toUpperCase())) cfg.watch.splice(Math.min(i, cfg.watch.length), 0, w);
   saveCfg("watchlist"); renderAll(); toast(w.sym + " is back on your watchlist");
 }
-document.addEventListener("submit", e => { if (e.target.id !== "wAdd") return; e.preventDefault(); const i = $("wAddSym"), r = watchAdd(i.value); if (r && r !== "dup") i.value = ""; setTimeout(()=>{ const j = $("wAddSym"); if (j){ j.focus(); if (r === "dup") j.select(); } }, 0); });
+// the list redraws while adding, so clear and focus the box that is on screen afterwards, not the old one
+document.addEventListener("submit", e => { if (e.target.id !== "wAdd") return; e.preventDefault();
+  const r = watchAdd($("wAddSym").value), j = $("wAddSym"); if (!j) return;
+  if (r && r !== "dup") j.value = ""; j.focus(); if (r === "dup") j.select(); });
 function renderLog(){
   const f = firedToday();
   $("log-sum").innerHTML = f.log.length ? `<span>${f.log.length} today</span>` : `<span class="muted">none yet</span>`;
