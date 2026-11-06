@@ -284,6 +284,95 @@ await p3.goto(LIVE); await p3.waitForTimeout(800);
 check(!/\/lab\//.test(p3.url()), "and MW keeps opening itself after that");
 check(errs3.length === 0, "no page errors in the move" + (errs3.length ? ": " + errs3.slice(0, 4).join(" | ") : ""));
 
+/* ---------- 4.4: fast prices from Alpaca (made-up keys and prices), Ctrl+K, keyboard rows, pasted lists ---------- */
+console.log("Fast prices and quality of life (4.4)");
+{
+  const ctx3 = await browser.newContext({viewport:{width:420, height:900}, timezoneId:"America/Chicago"});
+  const p3 = await ctx3.newPage(); await mock(p3);
+  const errs3 = []; p3.on("pageerror", e => errs3.push(e.message));
+  p3.on("console", m => { if (m.type() === "error" && !/Failed to load resource|sentry/i.test(m.text())) errs3.push("console: " + m.text()); });
+  let t3 = Date.parse("2026-11-05T15:30:00Z"), alpDeny = false; const alpPx = {}, alpCalls = [];
+  await p3.route(/https:\/\/data\.alpaca\.markets\/.*/, route => {
+    const r = route.request(), u = new URL(r.url()), h = r.headers();
+    alpCalls.push({t:t3, id:h["apca-api-key-id"], sec:h["apca-api-secret-key"], feed:u.searchParams.get("feed")});
+    if (alpDeny) return route.fulfill({status:403, json:{message:"forbidden"}});
+    const day = new Date(t3).toISOString().slice(0, 10), out = {};
+    (u.searchParams.get("symbols") || "").split(",").forEach(s => { const c = alpPx[s] ?? +(priceOf(s) * 1.002).toFixed(2), pc = pcOf(s);
+      out[s] = {latestTrade:{t:new Date(t3 - 1500).toISOString(), p:c, s:100}, dailyBar:{t:day + "T04:00:00Z", o:pc, h:Math.max(pc, c), l:Math.min(pc, c), c, v:1e5}, prevDailyBar:{t:"2026-11-04T04:00:00Z", o:pc, h:pc, l:pc, c:pc, v:1e5}}; });
+    return route.fulfill({json:out});
+  });
+  await p3.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
+    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", alpKey:"test-key-id", alpSec:"test-secret", refresh:60}));
+    localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"AAA", shares:10, acct:"Taxable"}], fixed:[], watch:[{sym:"AAA", levels:[90, 80], dayDrop:3, near:1.5}, {sym:"BBB", levels:[], dayDrop:3}, {sym:"CCC", levels:[], dayDrop:3}]}));
+  });
+  await p3.clock.install({time:t3});
+  const adv = async (ms, step = 1000) => { for (let t = 0; t < ms; t += step) { t3 += step; simNow = t3; await p3.clock.runFor(step); await p3.waitForTimeout(25); } };
+  simNow = t3; Object.keys(px).forEach(k => delete px[k]);   // a clean synthetic market for this part
+  await p3.goto(BASE); await adv(20000);
+  check(await p3.evaluate(() => quotes.AAA && quotes.AAA.src === "alpaca"), "fast prices: Alpaca's price is used during the session");
+  check(alpCalls.length > 0 && alpCalls.every(c => c.id === "test-key-id" && c.sec === "test-secret" && c.feed === "iex"), "the keys go in Alpaca's headers, on the free IEX feed");
+  const n0 = alpCalls.length; await adv(30000);
+  check(alpCalls.length - n0 >= 5 && alpCalls.length - n0 <= 7, `about one Alpaca call every 5 seconds while open (${alpCalls.length - n0} in 30 s)`);
+  alpPx.BBB = +(priceOf("BBB") * 0.99).toFixed(2); await adv(6000, 500);
+  check(await p3.evaluate(px => { const el = document.querySelector('#wl-body [data-row="w:BBB"] [data-fx]'); return !!el && el.textContent.includes(px.toFixed(2)) && el.classList.contains("fx-dn"); }, alpPx.BBB), "a new price shows within 5 seconds and flashes red when it fell");
+  check(await p3.locator('#wl-body [data-row="w:AAA"] .bell').innerText().then(t => t.trim() === "3").catch(() => false), "the bell on a row counts its armed alerts (2 price alerts + red day)");
+  check(await p3.locator("#mk-body .macro").count() === 1 && /Jobs|CPI|Fed|PPI|GDP/i.test(await p3.locator("#mk-body .macro").innerText()), "the next Fed or inflation date shows under Markets");
+  // Ctrl+K: find a ticker and open its row
+  await p3.keyboard.press("Control+k"); await adv(300, 100);
+  check(await p3.locator("#pal:not(.hide)").count() === 1, "Ctrl+K opens the finder");
+  await p3.keyboard.type("bb"); await adv(200, 100);
+  check(/^BBB/.test(await p3.locator("#palList .pi.on").innerText()), "typing finds the ticker first");
+  if (SHOTS) await p3.screenshot({path:path.join(SHOTS, "7-finder.png")});
+  await p3.keyboard.press("Enter"); await adv(1500, 250);
+  check(await p3.evaluate(() => document.getElementById("pal").classList.contains("hide") && openRows.has("w:BBB") && document.activeElement && document.activeElement.dataset.row === "w:BBB"), "Enter opens that ticker's row and focuses it");
+  await p3.keyboard.press("Control+k"); await p3.keyboard.type("zzzq"); await adv(200, 100);
+  check(/Add ZZZQ to the watchlist/.test(await p3.locator("#palList").innerText()), "an unknown ticker offers Add to the watchlist");
+  await p3.keyboard.press("Escape"); await adv(200, 100);
+  check(await p3.locator("#pal.hide").count() === 1, "Esc closes the finder");
+  // keyboard rows
+  await p3.evaluate(() => document.querySelector('[data-row="w:AAA"]').focus());
+  await p3.keyboard.press("ArrowDown"); await adv(100, 100);
+  check(await p3.evaluate(() => document.activeElement.dataset.row === "w:BBB"), "↓ moves to the next row");
+  await p3.keyboard.press("Alt+ArrowUp"); await adv(300, 100);
+  check(await p3.evaluate(() => cfg.watch[0].sym === "BBB" && document.activeElement.dataset.row === "w:BBB"), "Alt+↑ moves the watchlist row up and keeps the focus");
+  await p3.keyboard.press("Delete"); await adv(300, 100);
+  check(await p3.evaluate(() => !cfg.watch.some(w => w.sym === "BBB") && document.querySelectorAll("#wl-body .wundo").length === 1), "Delete takes the row off, with Undo");
+  await p3.locator("#wl-body [data-wundo]").click(); await adv(500, 100);
+  check(await p3.evaluate(() => cfg.watch.some(w => w.sym === "BBB")), "Undo brings it back");
+  // pasting a list
+  await p3.evaluate(() => openSheet("alerts"));
+  await p3.locator("#aBulk").fill("NASDAQ:ABCD, aaa zz9! $EFG"); await adv(200, 100);
+  check(/Adds 2:.*ABCD, EFG/.test(await p3.locator("#aBulkRes").innerText()) && /already on it: AAA/.test(await p3.locator("#aBulkRes").innerText()) && /zz9!/.test(await p3.locator("#aBulkRes").innerText()), "a pasted list previews what it adds, what's already there and what it skips");
+  await p3.locator("#aBulkAdd").click(); await adv(1500, 250);
+  check(await p3.evaluate(() => ["ABCD","EFG"].every(s => cfg.watch.some(w => w.sym === s && w.dayDrop === 3))), "Add puts the new tickers on with the default rules");
+  await p3.evaluate(() => closeSheet());
+  // colour-blind friendly colors
+  const up0 = await p3.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--up").trim());
+  await p3.evaluate(() => { settings.cvd = true; applyCvd(); });
+  const up1 = await p3.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--up").trim());
+  check(up0 !== up1 && /4da3ff|0b62c4/i.test(up1), "the color-blind option turns up blue");
+  await p3.evaluate(() => { settings.cvd = false; applyCvd(); });
+  // market brief: no holdings unless asked
+  const brief = await p3.evaluate(() => [briefText(false), briefText(true)]);
+  check(/Watchlist: /.test(brief[0]) && !/Portfolio/.test(brief[0]) && /Portfolio: \$/.test(brief[1]), "the market brief leaves holdings out unless asked");
+  await p3.locator("#mkt").click(); await adv(500, 100);
+  check(/Fast prices\s*Alpaca IEX/.test(await p3.locator("#statusPop").innerText()), "the status pop-up shows fast prices working");
+  await p3.locator("#mkt").click();
+  // after hours: the latest trade shows beside the close, every 15 seconds
+  t3 = Date.parse("2026-11-05T21:40:00Z"); simNow = t3; await p3.clock.fastForward(Date.parse("2026-11-05T21:40:00Z") - (await p3.evaluate(() => Date.now())));
+  alpPx.AAA = +(priceOf("AAA") * 1.03).toFixed(2); const n1 = alpCalls.length; await adv(46000);
+  check(alpCalls.length - n1 >= 2 && alpCalls.length - n1 <= 4, `after hours, about one call every 15 seconds (${alpCalls.length - n1} in 46 s)`);
+  check(/AH .*\+/.test(await p3.locator('#wl-body [data-row="w:AAA"] .chip.ext').innerText().catch(() => "")), "an after-hours price shows on the row as AH");
+  if (SHOTS) await p3.screenshot({path:path.join(SHOTS, "6-after-hours.png"), fullPage:true});
+  check(/After hours/.test(await p3.locator("#pf-body .hero small.ah").innerText().catch(() => "")), "the portfolio total shows its after-hours move");
+  // rejected keys: pause, say so, no errors
+  alpDeny = true; await p3.evaluate(() => { alpSt.pauseUntil = 0; }); await adv(20000);
+  check(await p3.evaluate(() => /didn't accept/.test(alpSt.err) && alpSt.pauseUntil > Date.now() + 5*60e3), "rejected Alpaca keys pause fast prices and say why");
+  check(errs3.length === 0, "no page errors with fast prices" + (errs3.length ? ":\n    " + errs3.slice(0, 6).join("\n    ") : ""));
+  await ctx3.close();
+}
+
 await browser.close(); server.close();
 console.log(fail.length ? `\n${fail.length} check(s) failed` : "\nAll browser checks passed");
 process.exit(fail.length ? 1 : 0);

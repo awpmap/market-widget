@@ -372,3 +372,57 @@ test("journal records leave heads-ups out of the rule list", () => {
   const r = E.journalRecord({id:"ABC-red", sym:"ABC", kind:"red", msg:"x", all:[{kind:"red"}, {kind:"near"}]}, {q:{c:10, dp:-3}}, {dayDrop:3}, 1, "2026-11-05");
   assert.deepEqual(r.kinds, ["red"]); assert.equal(r.id, "ABC-red@2026-11-05");
 });
+
+/* ---------------- 4.4: macro calendar ---------------- */
+test("macro calendar: dates are valid, sorted, and the table runs to its end date", () => {
+  for (const ev of E.MACRO) { assert.match(ev.d, /^\d{4}-\d{2}-\d{2}$/); assert.ok(E.weekday(ev.d) >= 1 && E.weekday(ev.d) <= 5, ev.name + " " + ev.d + " is a weekday"); }
+  for (let i = 1; i < E.MACRO.length; i++) assert.ok(E.MACRO[i].t >= E.MACRO[i-1].t, "sorted");
+  for (const k of Object.keys(E.MACRO_DATES)) assert.ok(E.MACRO_DATES[k].at(-1) >= "2027-11-01", k + " runs into Nov 2027");
+  assert.equal(E.etParts(E.MACRO.find(e => e.k === "fomc").t).mins, 840, "FOMC at 2:00 PM ET");
+  assert.equal(E.etParts(E.MACRO.find(e => e.k === "cpi").t).mins, 510, "CPI at 8:30 AM ET");
+});
+test("macro calendar: next events, the hour after a release, and fail-closed past the table", () => {
+  const n = E.nextMacro(at("2026-11-09", "12:00"));
+  assert.equal(n.list[0].name, "CPI"); assert.equal(n.list[0].d, "2026-11-10"); assert.equal(n.expired, false);
+  const just = E.nextMacro(at("2026-11-10", "09:00")).list[0];
+  assert.equal(just.name, "CPI"); assert.equal(just.past, true, "still listed 30 min after release");
+  assert.notEqual(E.nextMacro(at("2026-11-10", "10:00")).list[0].name, "CPI", "gone after an hour");
+  assert.equal(E.nextMacro(at("2028-01-03", "10:00")).expired, true);
+  assert.ok(E.MACRO_VALID_TO >= "2027-12-31", "update the macro table before it runs out");
+});
+/* ---------------- 4.4: two feeds ---------------- */
+test("mergeQuote: newer trade sets the price; Finnhub's prev close, open, high and low win", () => {
+  const fh = {c:100, t:1000, pc:95, o:96, h:101, l:94, src:"finnhub"};
+  const al = {c:102, t:1005, pc:94.9, o:96.2, h:101.5, l:95, src:"alpaca"};
+  const m = E.mergeQuote(fh, al, true);
+  assert.equal(m.c, 102); assert.equal(m.src, "alpaca"); assert.equal(m.pc, 95, "keeps the consolidated prev close");
+  assert.equal(m.h, 102, "high includes the price shown"); assert.equal(m.l, 94);
+  assert.ok(Math.abs(m.dp - (102/95 - 1)*100) < 1e-9);
+  const back = E.mergeQuote(m, {c:99.5, t:1001, pc:95, o:96, h:101, l:94, src:"finnhub"}, true);
+  assert.equal(back.c, 102, "an older Finnhub trade doesn't roll the price back");
+  assert.equal(back.h, 102); assert.equal(back.pc, 95);
+  const fresh = E.mergeQuote(m, {c:103, t:1010, pc:95, o:96, h:103.2, l:94, src:"finnhub"}, true);
+  assert.equal(fresh.c, 103); assert.equal(fresh.h, 103.2);
+  const nd = E.mergeQuote(fh, al, false);
+  assert.equal(nd.c, 102); assert.equal(nd.pc, 94.9, "a new day starts from the new quote");
+});
+test("fromSnapshot: regular, pre-market and after-hours trades", () => {
+  const snap = (iso, p) => ({latestTrade:{p, t:iso}, dailyBar:{t:"2026-11-05T05:00:00Z", o:100, h:105, l:99, c:104}, prevDailyBar:{t:"2026-11-04T05:00:00Z", c:98}});
+  const now = at("2026-11-05", "11:00");
+  const r = E.fromSnapshot(snap(new Date(at("2026-11-05", "10:59")).toISOString(), 103), now);
+  assert.equal(r.reg.c, 103); assert.equal(r.reg.pc, 98); assert.equal(r.ext, null);
+  const pre = E.fromSnapshot(snap(new Date(at("2026-11-05", "08:15")).toISOString(), 101), at("2026-11-05", "08:20"));
+  assert.equal(pre.reg, null); assert.equal(pre.ext.ph, "pre"); assert.equal(pre.ext.p, 101);
+  const aft = E.fromSnapshot(snap(new Date(at("2026-11-05", "17:30")).toISOString(), 102), at("2026-11-05", "17:31"));
+  assert.equal(aft.ext.ph, "after");
+  const old = E.fromSnapshot(snap(new Date(at("2026-11-04", "17:30")).toISOString(), 102), at("2026-11-05", "08:00"));
+  assert.equal(old.reg, null); assert.equal(old.ext, null, "yesterday's after-hours trade is not today's pre-market");
+  assert.deepEqual(E.fromSnapshot({}, now), {reg:null, ext:null});
+});
+
+test("parseTickers: separators, exchange prefixes, junk", () => {
+  const r = E.parseTickers("nvda, AMD  TSM;NASDAQ:MU\n$ABCD brk.b nvda 12x too-long-ticker");
+  assert.deepEqual(r.ok, ["NVDA", "AMD", "TSM", "MU", "ABCD", "BRK.B"]);
+  assert.deepEqual(r.bad, ["12x", "too-long-ticker"]);
+  assert.deepEqual(E.parseTickers("").ok, []);
+});

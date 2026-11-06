@@ -6,7 +6,7 @@
 (function (root) {
 "use strict";
 const E = {};
-E.VERSION = "4.3.2";
+E.VERSION = "4.4.0";
 
 /* ====================================================================================
    1. Calendar (NYSE). Source: NYSE Group release of 2025-12-23, "2026, 2027 and 2028 Holiday
@@ -636,6 +636,84 @@ E.ntfyBody = function (list, full, app) {
   if (full) return list.map(a => a.msg).join("\n");
   const n = list.length, nm = app || "MW";
   return n === 1 ? nm + " has a new alert. Open " + nm + " for details." : nm + " has " + n + " new alerts. Open " + nm + " for details.";
+};
+
+
+/* ====================================================================================
+   10. Macro calendar (4.4). Official schedules, read 2026-11-06:
+   FOMC: federalreserve.gov/monetarypolicy/fomccalendars.htm (decision at 2:00 PM ET on the last meeting day;
+         2027 dates are tentative until confirmed at the meeting before).
+   CPI, jobs report, PPI: bls.gov/schedule/news_release/cpi.htm, empsit.htm, ppi.htm (8:30 AM ET).
+   GDP and PCE (Personal Income and Outlays): bea.gov/news/schedule and /next-year (8:30 AM ET, same day).
+   Past MACRO_VALID_TO MW says "check the schedule" instead of guessing (CI test fails a month before).
+   ==================================================================================== */
+E.MACRO_VALID_TO = "2027-12-31";
+E.MACRO_KINDS = {
+  fomc: {mins:840, name:"FOMC decision", tip:"The Fed's interest-rate decision: statement at 2:00 PM ET, press conference at 2:30."},
+  cpi:  {mins:510, name:"CPI", tip:"Consumer prices (inflation) for last month, 8:30 AM ET."},
+  jobs: {mins:510, name:"Jobs report", tip:"Payrolls and the unemployment rate, 8:30 AM ET."},
+  ppi:  {mins:510, name:"PPI", tip:"Producer (wholesale) prices for last month, 8:30 AM ET."},
+  gdp:  {mins:510, name:"GDP + PCE", tip:"GDP and the PCE inflation gauge the Fed watches most, 8:30 AM ET."}
+};
+E.MACRO_DATES = {
+  fomc: ["2026-12-09","2027-01-27","2027-03-17","2027-04-28","2027-06-09","2027-07-28","2027-09-15","2027-10-27","2027-12-08"],
+  cpi:  ["2026-11-10","2026-12-10","2027-01-13","2027-02-11","2027-03-10","2027-04-13","2027-05-12","2027-06-10","2027-07-14","2027-08-11","2027-09-14","2027-10-14","2027-11-10","2027-12-10"],
+  jobs: ["2026-11-06","2026-12-04","2027-01-08","2027-02-05","2027-03-05","2027-04-02","2027-05-07","2027-06-04","2027-07-02","2027-08-06","2027-09-03","2027-10-08","2027-11-05","2027-12-03"],
+  ppi:  ["2026-11-13","2026-12-15","2027-01-14","2027-02-12","2027-03-12","2027-04-14","2027-05-13","2027-06-11","2027-07-15","2027-08-10","2027-09-10","2027-10-15","2027-11-12","2027-12-15"],
+  gdp:  ["2026-11-25","2026-12-23","2027-01-28","2027-02-25","2027-03-31","2027-04-29","2027-05-27","2027-06-25","2027-07-29","2027-08-25","2027-09-30","2027-10-28","2027-11-24","2027-12-22"]
+};
+E.MACRO = [];
+Object.keys(E.MACRO_DATES).forEach(k => E.MACRO_DATES[k].forEach(d => E.MACRO.push({k, d, mins:E.MACRO_KINDS[k].mins, name:E.MACRO_KINDS[k].name, tip:E.MACRO_KINDS[k].tip, t:E.etMs(d, E.MACRO_KINDS[k].mins)})));
+E.MACRO.sort((a, b) => a.t - b.t || a.name.localeCompare(b.name));
+/* upcoming events: anything not yet released, plus today's for an hour after release ("just out").
+   {list:[{...ev, past}], expired} where expired = we are past the end of the table */
+E.nextMacro = function (now, n) {
+  const today = E.etDateOf(now), expired = today > E.MACRO_VALID_TO;
+  const list = E.MACRO.filter(ev => ev.t >= now - 60*60e3).slice(0, n || 3).map(ev => Object.assign({}, ev, {past: ev.t <= now, today: ev.d === today}));
+  return {list, expired};
+};
+
+/* ====================================================================================
+   11. Two price feeds (4.4). Finnhub (consolidated, about every 60 s) and Alpaca's free IEX feed
+   (one exchange, every few seconds). The newer trade sets the price; Finnhub's previous close, open,
+   high and low win when it has them (IEX alone sees only part of the day's trading).
+   ==================================================================================== */
+E.mergeQuote = function (prev, inc, sameDay) {
+  if (!inc || !(inc.c > 0)) return prev;
+  if (!prev || !sameDay || !(prev.c > 0)) { const o = Object.assign({}, inc); if (o.pc > 0) { o.d = o.c - o.pc; o.dp = (o.c / o.pc - 1) * 100; } return o; }
+  const out = Object.assign({}, prev);
+  if (!(prev.t > 0) || (inc.t || 0) >= prev.t) { out.c = inc.c; out.t = inc.t; out.src = inc.src; }
+  if (inc.src !== "alpaca") ["pc", "o", "h", "l"].forEach(k => { if (inc[k] > 0) out[k] = inc[k]; });
+  else { if (!(out.pc > 0) && inc.pc > 0) out.pc = inc.pc; if (!(out.o > 0) && inc.o > 0) out.o = inc.o; }
+  out.h = Math.max(out.h > 0 ? out.h : out.c, out.c);
+  out.l = Math.min(out.l > 0 ? out.l : out.c, out.c);
+  if (out.pc > 0) { out.d = out.c - out.pc; out.dp = (out.c / out.pc - 1) * 100; }
+  return out;
+};
+/* one Alpaca snapshot -> {reg: a quote for the regular session (or null), ext: {p, t (ms), ph:"pre"|"after"} (or null)} */
+E.fromSnapshot = function (snap, now) {
+  const lt = snap && snap.latestTrade; if (!lt || !(lt.p > 0)) return {reg:null, ext:null};
+  const tms = Date.parse(lt.t), today = E.etDateOf(now); if (!isFinite(tms)) return {reg:null, ext:null};
+  const tp = E.etParts(tms), close = E.closeMins(tp.date), db = snap.dailyBar, pdb = snap.prevDailyBar;
+  const dbToday = db && E.etDateOf(Date.parse(db.t)) === today;
+  if (tp.date === today && E.isTradingDay(today) && tp.mins >= 570 && tp.mins < close)
+    return {reg:{c:+lt.p, t:Math.floor(tms / 1000), pc: dbToday && pdb ? +pdb.c : db ? +db.c : null, o: dbToday ? +db.o : null, h: dbToday ? +db.h : null, l: dbToday ? +db.l : null, src:"alpaca"}, ext:null};
+  if (tp.date === today && (tp.mins < 570 || tp.mins >= close) && tp.mins >= 240 && tp.mins < 1200)
+    return {reg:null, ext:{p:+lt.p, t:tms, ph: tp.mins < 570 ? "pre" : "after"}};
+  return {reg:null, ext:null};
+};
+
+/* a pasted list of tickers (4.4): commas, spaces, semicolons or new lines; "NASDAQ:MU" and "$MU" become MU.
+   Returns {ok:[unique tickers in order], bad:[tokens that don't look like a ticker]} */
+E.parseTickers = function (text) {
+  const ok = [], bad = [];
+  String(text || "").split(/[\s,;]+/).forEach(tok => {
+    if (!tok) return;
+    const t = tok.toUpperCase().replace(/^[A-Z]+:/, "").replace(/^\$/, "");
+    if (/^[A-Z][A-Z0-9]{0,5}([.\-][A-Z0-9]{1,2})?$/.test(t)) { if (!ok.includes(t)) ok.push(t); }
+    else if (!bad.includes(tok)) bad.push(tok);
+  });
+  return {ok, bad};
 };
 
 if (typeof module !== "undefined" && module.exports) module.exports = E;
