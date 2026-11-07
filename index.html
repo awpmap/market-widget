@@ -152,8 +152,25 @@ body:not(.native) .tb-btn.pin{display:none}
 .news a:hover{color:var(--accent)}
 .news a small{display:block;color:var(--muted);font-size:10.5px}
 .wrow{cursor:pointer}
-.wdet{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;margin-top:6px;font-size:11.5px;color:var(--fg-2);cursor:default}
+.wdet{margin:8px 0 2px;padding:2px 10px 8px;font-size:11.5px;color:var(--fg-2);cursor:default;background:var(--surface-2);border-radius:8px}
 .wdet b{color:var(--fg);font-weight:600}
+/* an open watchlist row: tinted, with tabs on top and one action bar with Close at the bottom */
+.wrow[aria-expanded="true"]{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.wrow[aria-expanded="true"]:not(.st-hit):not(.st-near)::before{background:var(--accent)}
+.wtabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:0 -2px 7px;overflow-x:auto;scrollbar-width:none}
+.wtabs button{font:500 11px var(--font);padding:7px 8px 6px;border:0;background:none;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;white-space:nowrap}
+.wtabs button:hover{color:var(--fg-2)}
+.wtabs button.on{color:var(--fg);border-bottom-color:var(--accent)}
+.wpane{display:grid;grid-template-columns:1fr 1fr;gap:5px 14px;min-height:34px;align-content:start}
+.wpane > .range,.wpane > .news{grid-column:1/-1}
+.wpane > .news{margin-top:0}
+.wacts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:9px;padding-top:8px;border-top:1px solid var(--line)}
+.wacts .wclose{margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-weight:600;color:var(--fg-2)}
+.wacts .wclose svg{width:11px;height:11px}
+.wexp{display:inline-flex;align-items:center;color:var(--muted);padding:2px 2px 2px 4px}
+.wexp svg{width:12px;height:12px;transition:transform .15s}
+.wrow[aria-expanded="true"] .wexp svg{transform:rotate(180deg)}
+.wrow:hover .wexp{color:var(--fg-2)}
 .wmeta{flex-wrap:wrap;row-gap:2px}
 /* compact strip: watch tickers in the same order as the Watchlist; one shared grid so the columns line up */
 #strip{display:none}
@@ -387,7 +404,7 @@ input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);margin:0}
 .mk-list label{display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 0}
 textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
 .sh-f{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);justify-content:flex-end}
-@media (max-width:360px){ .kpi{padding:6px 7px} .kpi b{font-size:13px} .kpi span{font-size:10px} .idx{grid-template-columns:1fr 1fr} .hrow{grid-template-columns:minmax(56px,1fr) 58px 80px} .wtop{grid-template-columns:minmax(56px,1fr) auto 58px} .hrow > .spark,.wtop > .spark{display:none} .wdet{grid-template-columns:1fr} }
+@media (max-width:360px){ .kpi{padding:6px 7px} .kpi b{font-size:13px} .kpi span{font-size:10px} .idx{grid-template-columns:1fr 1fr} .hrow{grid-template-columns:minmax(56px,1fr) 58px 80px} .wtop{grid-template-columns:minmax(56px,1fr) auto 58px} .hrow > .spark,.wtop > .spark{display:none} .wpane{grid-template-columns:1fr} }
 @media (max-width:400px){ .mk-up,.mk-nq{display:none} }
 input::placeholder{text-transform:none;letter-spacing:normal}
 input:disabled{opacity:.45;cursor:not-allowed}
