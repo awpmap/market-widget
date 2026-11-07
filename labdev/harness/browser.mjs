@@ -433,8 +433,8 @@ console.log("Earnings, charts and alert repeat (4.5)");
   await ctx4.close();
 }
 
-/* ---------- beta only: Monitor layout, watchlist sections and sort, headline strip (made-up tickers and headlines) ---------- */
-console.log("Beta: Monitor layout, sections, headlines");
+/* ---------- 4.7: Monitor layout, watchlist sections and sort, headline strip (made-up tickers and headlines) ---------- */
+console.log("Monitor layout, sections, headlines (4.7)");
 {
   const ctx5 = await browser.newContext({viewport:{width:1400, height:900}, timezoneId:"America/Chicago"});
   const p5 = await ctx5.newPage(); await mock(p5);
@@ -465,7 +465,7 @@ console.log("Beta: Monitor layout, sections, headlines");
   if (SHOTS) await p5.screenshot({path:path.join(SHOTS, "9-monitor.png")});
   await p5.setViewportSize({width:420, height:900}); await adv(1000, 250);
   check(await p5.evaluate(() => !document.body.classList.contains("wide") && !document.getElementById("cols")), "a narrow window goes back to one column");
-  check(errs5.length === 0, "no page errors in the beta layout" + (errs5.length ? ": " + errs5.slice(0, 4).join(" | ") : ""));
+  check(errs5.length === 0, "no page errors in the Monitor layout" + (errs5.length ? ": " + errs5.slice(0, 4).join(" | ") : ""));
   await ctx5.close();
 }
 

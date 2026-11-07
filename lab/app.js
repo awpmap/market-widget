@@ -204,8 +204,8 @@ const SEC_NAMES = {portfolio:"Portfolio", markets:"Markets", watch:"Watchlist", 
 function layoutOrder(){ const L = (Array.isArray(settings.layout) ? settings.layout : []).filter(k => DEFAULT_LAYOUT.includes(k)); DEFAULT_LAYOUT.forEach(k => { if (!L.includes(k)) L.push(k); }); return L; }
 function applyLayout(){
   const main = $("main"), anchor = $("err"); if (!main || !anchor) return;
-  // beta: on a wide window (900 px and up) the sections flow into side-by-side columns (Monitor layout)
-  const wide = BETA && settings.wide !== false && !settings.compact && document.body.clientWidth >= 900;
+  // on a wide window (900 px and up) the sections flow into side-by-side columns (Monitor layout)
+  const wide = settings.wide !== false && !settings.compact && document.body.clientWidth >= 900;
   document.body.classList.toggle("wide", wide);
   const want = layoutOrder().filter(k => document.querySelector(`.sec[data-sec="${k}"]`)), sec = k => document.querySelector(`.sec[data-sec="${k}"]`);
   want.forEach(k => sec(k).classList.toggle("hide", !!(settings.hideSec||{})[k]));
@@ -799,7 +799,7 @@ async function tick(){
     loadMarketStatus().then(renderFrame);
     loadNavs(false);
     loadHist([...cfg.watch.map(w=>(w.sym||"").toUpperCase()), ...marketSyms(), ...mySyms(), "SPY", "SMH"].filter(Boolean));
-    loadIntraday(); loadVwap(); if (BETA) loadHeadlines();
+    loadIntraday(); loadVwap(); loadHeadlines();
     loadEarnings().then(()=>{ renderAll(); const up = erUpcoming().map(x => x.sym); if (settings.tdKey) loadHist(up); return loadErHist(up); }).then(()=>safe("markets", renderMarkets));
     loadMetrics(syms).then(()=>{ renderAll(); checkAlerts(); });
   } finally {
@@ -1560,7 +1560,7 @@ function renderWatch(){
   })(x.w)).join("");
   const undo = watchUndo && Date.now() - watchUndo.t < 12e3 ? `<div class="wundo">Removed <b>${esc(watchUndo.w.sym)}</b><button class="lnk" data-wundo="1">Undo</button></div>` : "";
   const keep = document.activeElement && document.activeElement.id === "wAddSym" ? $("wAddSym").value : null;
-  const sorter = BETA && cfg.watch.length > 2 ? `<div class="wsort"><div class="seg">${[["mine","My order"],["day","Biggest drop"],["alert","Closest to an alert"]].map(([k, n]) => `<button data-wsort="${k}" class="${wSort === k ? "on" : ""}">${n}</button>`).join("")}</div>${wSort !== "mine" ? `<span class="muted" title="This sort is for now only: MW goes back to your order when it restarts. Dragging is off while sorted.">for now</span>` : ""}</div>` : "";
+  const sorter = cfg.watch.length > 2 ? `<div class="wsort"><div class="seg">${[["mine","My order"],["day","Biggest drop"],["alert","Closest to an alert"]].map(([k, n]) => `<button data-wsort="${k}" class="${wSort === k ? "on" : ""}">${n}</button>`).join("")}</div>${wSort !== "mine" ? `<span class="muted" title="This sort is for now only: MW goes back to your order when it restarts. Dragging is off while sorted.">for now</span>` : ""}</div>` : "";
   document.body.classList.toggle("wsorted", wSort !== "mine");
   $("wl-body").innerHTML = sorter + `<form class="wadd" id="wAdd" autocomplete="off"><input id="wAddSym" placeholder="Add a ticker, e.g. NVDA" maxlength="10" spellcheck="false" aria-label="Add a ticker to your watchlist"><button class="btn" type="submit">Add</button></form>`
     + undo + (html || `<div class="empty" style="padding:14px 0 6px">Nothing on your watchlist yet. Type a ticker above.</div>`);
@@ -1573,12 +1573,12 @@ function renderWatch(){
     <span class="d ${I.hitL.length||I.red?"hit":I.st}">${I.hitL.length ? levelText(I, true) : I.next ? `${I.dist.toFixed(1)}% → ${fmtL(I.next)}` : I.red ? "red day" : "—"}</span></div>`).join("") || `<div class="muted" style="grid-column:1/-1;font-size:11.5px">No tickers on your watchlist yet.</div>`;
   flashPass($("strip"), "st");
 }
-/* beta: watchlist sections (Settings → Watchlist → Section) and a sort that lasts until MW restarts */
+/* watchlist sections (Settings → Watchlist → Section) and a sort that lasts until MW restarts */
 let wSort = "mine";
 function watchLayout(){
   const key = w => { const I = watchInfo(w); return wSort === "day" ? (I.q && I.q.dp != null ? I.q.dp : 1e9) : wSort === "alert" ? (I.hitL.length ? -1e9 + I.hitL.length : I.dist != null ? I.dist : 1e9) : 0; };
   const sorted = list => wSort === "mine" ? list : list.slice().sort((a, b) => key(a) - key(b));
-  if (!BETA || !cfg.watch.some(w => w.grp)) return sorted(cfg.watch).map(w => ({w}));
+  if (!cfg.watch.some(w => w.grp)) return sorted(cfg.watch).map(w => ({w}));
   const groups = []; cfg.watch.forEach(w => { const g = w.grp || ""; let G = groups.find(x => x.g === g); if (!G) groups.push(G = {g, list:[]}); G.list.push(w); });
   groups.sort((a, b) => (a.g === "") - (b.g === ""));   // the unnamed group goes last
   const out = [];
@@ -1690,7 +1690,7 @@ function renderAll(){
     document.title = (settings.compact && Object.keys(quotes).length && cfg.holdings.length) ? `${fmt$(P.total,0)} ${fmtPct(P.dayPct)} · MW Beta` : "MW Beta"; });
   safe("tray", updateTray);
   safe("chart", chartLive);
-  if (BETA) safe("headlines", renderHeads);
+  safe("headlines", renderHeads);
 }
 function renderStatus(){
   const ses = session(), ds = dataState(), d = etNow().date, L = tdBudget();
@@ -2081,7 +2081,7 @@ function showTab(tab){
         const on = w.on!==false, ck = k => w[k]!==false ? "checked" : "", ck2 = (k, v) => (w[k]===true || (w[k]!==false && w[v])) ? "checked" : "";
         return `<div class="rule" data-i="${i}">
           <div class="rule-h"><label class="sw"><input type="checkbox" data-k="on" ${on?"checked":""}><span></span></label>${esc(w.sym)}
-            <input data-note="1" value="${esc(w.note||"")}" placeholder="note" style="flex:1;min-width:0;font-size:11px;padding:3px 6px;font-weight:400">${BETA ? `<input data-g="1" value="${esc(w.grp||"")}" placeholder="section" maxlength="24" list="grpNames" title="Put tickers with the same section name together on the watchlist, e.g. Chips or Power" style="width:78px;font-size:11px;padding:3px 6px;font-weight:400">` : ""}
+            <input data-note="1" value="${esc(w.note||"")}" placeholder="note" style="flex:1;min-width:0;font-size:11px;padding:3px 6px;font-weight:400"><input data-g="1" value="${esc(w.grp||"")}" placeholder="section" maxlength="24" list="grpNames" title="Put tickers with the same section name together on the watchlist, e.g. Chips or Power" style="width:78px;font-size:11px;padding:3px 6px;font-weight:400">
             <button class="x" data-wmv="${i}:up" title="Move up the watchlist" ${i===0?"disabled":""}>↑</button><button class="x" data-wmv="${i}:down" title="Move down the watchlist" ${i===cfg.watch.length-1?"disabled":""}>↓</button><button class="x" data-wdel="${i}" title="Remove">✕</button></div>
           <div class="opts ${on?"":"dis"}">
             <label><input type="checkbox" data-k="redOn" ${ck("redOn")}> Red day: down at least</label><span><input type="number" step="0.5" min="0.5" data-n="dayDrop" value="${w.dayDrop??3}"> %</span>
@@ -2096,7 +2096,7 @@ function showTab(tab){
             <label title="Off unless you turn it on. Alerts when the price has dropped well under today's VWAP and then climbs back over it. Uses about 40 Twelve Data credits a day per ticker (first 8 tickers), from VWAP's share of the day's budget."><input type="checkbox" data-k="vwapOn" ${w.vwapOn===true?"checked":""}> VWAP reclaim after a flush</label><span class="muted" style="font-size:11px">${settings.tdKey ? "Alert + VWAP on the row" : "Needs a Twelve Data key"}</span>
             <label title="A quiet note when the price gets this close to your next price alert"><input type="checkbox" data-k="nearOn" ${ck("nearOn")}> Heads-up within</label><span><input type="number" step="0.5" min="0" data-n="near" value="${w.near??1.5}"> % of a price alert</span>
           </div></div>`; }).join("")}</div>
-      ${BETA ? `<datalist id="grpNames">${[...new Set(cfg.watch.map(w => w.grp).filter(Boolean))].map(g => `<option value="${esc(g)}">`).join("")}</datalist>` : ""}
+      <datalist id="grpNames">${[...new Set(cfg.watch.map(w => w.grp).filter(Boolean))].map(g => `<option value="${esc(g)}">`).join("")}</datalist>
       <div style="display:flex;gap:6px;margin-top:4px"><input id="aSym" placeholder="Add a ticker, e.g. NVDA" maxlength="10" style="flex:1;text-transform:uppercase"><button class="btn primary" id="aAdd">Add</button></div>
       <div class="field" style="margin-top:16px"><label for="aBulk">Paste a list of tickers</label><textarea id="aBulk" rows="2" placeholder="e.g. NVDA, AMD TSM or NASDAQ:MU" spellcheck="false" style="width:100%;resize:vertical"></textarea>
         <p id="aBulkRes">${BULK_HINT}</p>
@@ -2375,11 +2375,11 @@ $("palList").addEventListener("click", e => { const r = e.target.closest("[data-
 $("palList").addEventListener("mousemove", e => { const r = e.target.closest("[data-pi]"); if (r && +r.dataset.pi !== palSel) palMove(+r.dataset.pi - palSel); });
 $("pal").addEventListener("mousedown", e => { if (e.target.id === "pal") palClose(); });
 
-/* ---------- beta: headline strip. The newest headline about your tickers, with "N new" since you last opened the list.
+/* ---------- headline strip (4.7). The newest headline about your tickers, with "N new" since you last opened the list.
    Finnhub company news, one low-priority call per ticker every 15 minutes (up to 20 tickers). ---------- */
 let heads = store.get("heads", {at:0, items:[]}), headsOpen = false;
 async function loadHeadlines(){
-  if (!BETA || !settings.key || loadHeadlines.busy || Date.now() - heads.at < 15*60e3) return;
+  if (!settings.key || loadHeadlines.busy || Date.now() - heads.at < 15*60e3) return;
   loadHeadlines.busy = true;
   try{
     const to = etNow().date, from = addDays(to, -2), all = [];
@@ -2394,7 +2394,7 @@ async function loadHeadlines(){
 }
 function renderHeads(){
   const el = $("heads"); if (!el) return;
-  if (!BETA || !heads.items.length || settings.compact){ el.classList.add("hide"); return; }
+  if (!heads.items.length || settings.compact){ el.classList.add("hide"); return; }
   const seenAt = settings.headsSeen || 0, nNew = heads.items.filter(n => n.t > seenAt).length, top = heads.items[0];
   const ago = t => { const m = Math.max(0, Math.round((Date.now() - t) / 60e3)); return m < 60 ? m + "m" : m < 1440 ? Math.round(m / 60) + "h" : Math.round(m / 1440) + "d"; };
   const line = n => `<a href="${esc(n.url)}" target="_blank" rel="noopener"><b>${esc(n.sym)}</b> ${esc(n.h)}<small>${esc(n.src)} · ${ago(n.t)} ago</small></a>`;
@@ -2704,7 +2704,7 @@ renderVersion(); setTimeout(()=>checkUpdates(), 4000); setInterval(()=>checkUpda
 // (this catches refreshes that stopped altogether, not just ones that came back empty)
 setInterval(()=>{ safe("frame", renderFrame); safe("health", watchHealth); updateTray(); }, 30e3);
 setInterval(()=>{ try{ renderPill(); }catch(e){} }, 10e3);   // keeps the countdown to the minute
-if (BETA) addEventListener("resize", ()=>{ clearTimeout(applyLayout._r); applyLayout._r = setTimeout(()=> safe("layout", applyLayout), 150); });
+addEventListener("resize", ()=>{ clearTimeout(applyLayout._r); applyLayout._r = setTimeout(()=> safe("layout", applyLayout), 150); });
 addEventListener("resize", ()=>{ clearTimeout(renderPill._r); renderPill._r = setTimeout(()=>{ try{ renderPill(); }catch(e){} }, 120); });
 
 mwLog("info", "MW Beta " + APP_VERSION + " started" + (NATIVE ? " in the desktop app" : " in the browser"));
