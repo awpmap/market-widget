@@ -400,6 +400,18 @@ console.log("Earnings, charts and alert repeat (4.5)");
   const er = await p4.locator("#mk-body .erp").innerText().catch(() => "");
   check(/AAA/.test(er) && /Tue 11\/10 · after the close/.test(er) && /EPS est \$1\.23/.test(er) && /beat by 8\.3%/.test(er), "the earnings panel lists the report with its estimates and last surprise");
   check(/±\d/.test(await p4.locator('#mk-body .erw:has-text("AAA") .mv').innerText().catch(() => "")), "and the typical report-day move from price history");
+  // open rows: one at a time, tabs, a Close button and Esc
+  await p4.locator('#wl-body [data-row="w:BBB"]').click(); await adv(500, 250);
+  await p4.locator('#wl-body [data-row="w:CCC"] .wtop').click(); await adv(500, 250);
+  check(await p4.evaluate(() => [...openRows].filter(k => k.startsWith("w:")).join() === "w:CCC" && document.querySelectorAll("#wl-body .wdet").length === 1), "opening a row closes the one that was open");
+  await p4.locator('#wl-body [data-wtab="trend"]').click(); await adv(300, 100);
+  check(/50-day avg/.test(await p4.locator("#wl-body .wpane").innerText()) && await p4.evaluate(() => settings.wdTab === "trend"), "detail tabs switch, and the choice sticks");
+  if (SHOTS) await p4.screenshot({path:path.join(SHOTS, "10-row-open.png")});
+  await p4.locator('#wl-body [data-wclose="CCC"]').click(); await adv(300, 100);
+  check(await p4.evaluate(() => !openRows.has("w:CCC") && document.activeElement && document.activeElement.dataset.row === "w:CCC"), "Close shuts the details and keeps your place");
+  await p4.keyboard.press("Enter"); await adv(300, 100); await p4.keyboard.press("Escape"); await adv(300, 100);
+  check(await p4.evaluate(() => !openRows.has("w:CCC")), "Esc closes an open row");
+  await p4.evaluate(() => { settings.wdTab = "today"; });
   // chart window from a row's details
   await p4.locator('#wl-body [data-row="w:AAA"]').click(); await adv(1000, 250);
   await p4.locator('#wl-body [data-chart="AAA"]').click(); await adv(3000, 250);
