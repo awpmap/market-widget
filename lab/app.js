@@ -1526,27 +1526,32 @@ function renderWatch(){
     const flags = ageChip(sym, q, off) + extChip(sym)
       + (I.ended && !off ? `<span class="chip" title="The price alerts for ${esc(sym)} were set to end on ${esc(I.ended)}. Change or clear the date in Settings → Watchlist.">alerts ended</span>` : "")
       + (insane.length ? `<span class="chip flag" title="${esc(insane.map(fmtL).join(", "))} ${insane.length > 1 ? "are" : "is"} more than 3x away from today's price. A stock split, or a typo? Check Settings → Watchlist.">check alerts</span>` : "");
-    const right = `<span class="r">${flags}${vwd!=null?`<span class="num" title="Price vs today's VWAP (${fmt$(sv.vw)}), the average price paid today weighted by volume. Under it, sellers have the upper hand today; climbing back over it after a drop often means the selling has paused.">VWAP <b class="${cls(vwd)}">${fmtPct(vwd,1)}</b></span>`:""}${rel!=null?`<span class="num" title="Today's move minus ${esc(bench)}'s: separates a sector-wide dip from a stock-specific drop">vs ${esc(bench)} <b class="${cls(rel)}">${fmtPct(rel,1)}</b></span>`:""}${fromHi!=null?`<span class="num" title="How far the price is from its 52-week high (${fmt$(m.hi)})">52w high <b class="${fromHi>0?"down":""}">${fromHi>=0?"−":"+"}${Math.abs(fromHi).toFixed(1)}%</b></span>`:""}${off?`<span class="chip">alerts off</span>`:sn?`<span class="chip" title="Snoozed until ${timeStr(settings.snooze[sym])}">snoozed</span>`:""}<button class="rbtn" data-ref="${esc(sym)}" title="Refresh just ${esc(sym)}" aria-label="Refresh ${esc(sym)}">↻</button><button class="rbtn wrm" data-wrm="${esc(sym)}" title="Remove ${esc(sym)} from your watchlist" aria-label="Remove ${esc(sym)}">✕</button></span>`;
+    const right = `<span class="r">${flags}${vwd!=null?`<span class="num" title="Price vs today's VWAP (${fmt$(sv.vw)}), the average price paid today weighted by volume. Under it, sellers have the upper hand today; climbing back over it after a drop often means the selling has paused.">VWAP <b class="${cls(vwd)}">${fmtPct(vwd,1)}</b></span>`:""}${rel!=null?`<span class="num" title="Today's move minus ${esc(bench)}'s: separates a sector-wide dip from a stock-specific drop">vs ${esc(bench)} <b class="${cls(rel)}">${fmtPct(rel,1)}</b></span>`:""}${fromHi!=null?`<span class="num" title="How far the price is from its 52-week high (${fmt$(m.hi)})">52w high <b class="${fromHi>0?"down":""}">${fromHi>=0?"−":"+"}${Math.abs(fromHi).toFixed(1)}%</b></span>`:""}${off?`<span class="chip">alerts off</span>`:sn?`<span class="chip" title="Snoozed until ${timeStr(settings.snooze[sym])}">snoozed</span>`:""}<button class="rbtn" data-ref="${esc(sym)}" title="Refresh just ${esc(sym)}" aria-label="Refresh ${esc(sym)}">↻</button><button class="rbtn wrm" data-wrm="${esc(sym)}" title="Remove ${esc(sym)} from your watchlist" aria-label="Remove ${esc(sym)}">✕</button><span class="wexp" aria-hidden="true" title="${openRows.has("w:"+sym) ? "Hide details (Esc)" : "Show details"}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg></span></span>`;
     const open = openRows.has("w:"+sym);
     let det = "";
     if (open){
-      const h = hist[sym] || {};
+      // details in tabs (Today, Trend, Company, News) so an open row stays short, with one action bar and a Close
+      const h = hist[sym] || {}, ds = dailyStats(sym), sv2 = sessVwap(sym, 60), av = anchorVwap(sym), er = erInfo(sym), nc = newsCache[sym];
+      const T = {
+        today: [q&&q.h&&px ? `<span>Off today's high <b class="${px<q.h?"down":""}">${fmtPct((px/q.h-1)*100,1)}</b></span>` : "",
+          vol&&q ? `<span title="Today's move measured in this stock's normal daily moves">Today in σ <b class="${cls(q.dp)}">${(q.dp/vol>=0?"+":"−")+Math.abs(q.dp/vol).toFixed(1)}σ</b> <span class="muted">(±${vol.toFixed(1)}%)</span></span>` : "",
+          sv2&&px ? `<span title="Average price paid today, weighted by volume (from 5-minute bars, updated about every 10 min)">VWAP today <b>${fmt$(sv2.vw)}</b> <span class="muted">${fmtPct((px/sv2.vw-1)*100,1)}</span></span>` : "",
+          q ? rangeBar(q.l,q.h,q.c,"Day low","high") : ""],
+        trend: [h.sma50&&px ? `<span>50-day avg <b>${fmt$(h.sma50,0)}</b> <span class="muted">${fmtPct((px/h.sma50-1)*100,1)}</span></span>` : "",
+          h.sma200&&px ? `<span>200-day avg <b>${fmt$(h.sma200,0)}</b> <span class="muted">${fmtPct((px/h.sma200-1)*100,1)}</span></span>` : "",
+          av&&px ? `<span title="Average price paid by everyone since ${av.why === "gap" ? "the " + mdLabel(av.d) + " gap (usually earnings)" : "the " + mdLabel(av.d) + " high"}, weighted by volume. Price under it means most of those buyers are losing money, which often caps rallies.">VWAP since ${mdLabel(av.d)} <b>${fmt$(av.vw)}</b> <span class="muted">${fmtPct((px/av.vw-1)*100,1)}</span></span>` : "",
+          ds ? `<span title="Average true range over 14 days: how far this stock normally moves in a day, high to low.">Daily range (ATR) <b>${fmt$(ds.atr, ds.atr < 10 ? 2 : 0)}</b> <span class="muted">${ds.atrPct.toFixed(1)}%</span></span>` : "",
+          m.beta!=null ? `<span>Beta <b>${m.beta.toFixed(2)}</b></span>` : "",
+          m.hi&&m.lo&&px ? rangeBar(m.lo,m.hi,px,"52w low","high") : ""],
+        company: [er ? `<span title="${esc(erTip(sym))}">Earnings <b>${er.label.slice(3)}</b> <span class="muted">${er.days}d</span></span>` : "", fundHtml(sym)],
+        news: [newsHtml(sym)]
+      };
+      const NAMES = {today:"Today", trend:"Trend", company:"Company", news:"News" + (nc && nc.items && nc.items.length ? ` (${nc.items.length})` : "")};
+      const keys = Object.keys(T).filter(k => T[k].some(Boolean)), cur = keys.includes(settings.wdTab) ? settings.wdTab : keys[0];
       det = `<div class="wdet num">
-        ${q&&q.h?`<span>Off today's high <b class="${px<q.h?"down":""}">${fmtPct((px/q.h-1)*100,1)}</b></span>`:""}
-        ${vol&&q?`<span>Today in σ <b class="${cls(q.dp)}">${(q.dp/vol>=0?"+":"−")+Math.abs(q.dp/vol).toFixed(1)}σ</b> <span class="muted">(±${vol.toFixed(1)}%)</span></span>`:""}
-        ${(()=>{ const sv2 = sessVwap(sym, 60), av = anchorVwap(sym), ds = dailyStats(sym); let o = "";
-          if (sv2 && px) o += `<span title="Average price paid today, weighted by volume (from 5-minute bars, updated about every 10 min)">VWAP today <b>${fmt$(sv2.vw)}</b> <span class="muted">${fmtPct((px/sv2.vw-1)*100,1)}</span></span>`;
-          if (av && px) o += `<span title="Average price paid by everyone since ${av.why === "gap" ? "the " + mdLabel(av.d) + " gap (usually earnings)" : "the " + mdLabel(av.d) + " high"}, weighted by volume. Price under it means most of those buyers are losing money, which often caps rallies.">VWAP since ${mdLabel(av.d)} <b>${fmt$(av.vw)}</b> <span class="muted">${fmtPct((px/av.vw-1)*100,1)}</span></span>`;
-          if (ds) o += `<span title="Average true range over 14 days: how far this stock normally moves in a day, high to low.">Daily range (ATR) <b>${fmt$(ds.atr, ds.atr < 10 ? 2 : 0)}</b> <span class="muted">${ds.atrPct.toFixed(1)}%</span></span>`;
-          return o; })()}
-        ${h.sma50&&px?`<span>50-day avg <b>${fmt$(h.sma50,0)}</b> <span class="muted">${fmtPct((px/h.sma50-1)*100,1)}</span></span>`:""}
-        ${h.sma200&&px?`<span>200-day avg <b>${fmt$(h.sma200,0)}</b> <span class="muted">${fmtPct((px/h.sma200-1)*100,1)}</span></span>`:""}
-        ${m.beta!=null?`<span>Beta <b>${m.beta.toFixed(2)}</b></span>`:""}${erInfo(sym)?`<span title="${esc(erTip(sym))}">Earnings <b>${erInfo(sym).label.slice(3)}</b> <span class="muted">${erInfo(sym).days}d</span></span>`:""}
-        ${fundHtml(sym)}
-        ${q?rangeBar(q.l,q.h,q.c,"Day low","high"):""}${m.hi&&m.lo&&px?rangeBar(m.lo,m.hi,px,"52w low","high"):""}
-        ${newsHtml(sym)}
-        <span style="grid-column:1/-1;display:flex;gap:6px;justify-content:flex-start;flex-wrap:wrap"><button class="rbtn" data-chart="${esc(sym)}" title="Candles with averages, your price alerts and past report days (G)">Chart</button><button class="rbtn" data-wmove="${esc(sym)}:top" title="Put ${esc(sym)} first on your watchlist">⤒ Move to top</button><button class="rbtn" data-wmove="${esc(sym)}:up" title="Move up one">↑</button><button class="rbtn" data-wmove="${esc(sym)}:down" title="Move down one">↓</button></span>
-        ${off?"":`<span style="grid-column:1/-1;display:flex;gap:6px;justify-content:flex-end"><button class="rbtn" data-snzsym="${esc(sym)}" data-how="30">Snooze 30m</button><button class="rbtn" data-snzsym="${esc(sym)}" data-how="day">Mute today</button></span>`}
+        <div class="wtabs" role="tablist">${keys.map(k => `<button role="tab" data-wtab="${k}" aria-selected="${k === cur}" class="${k === cur ? "on" : ""}">${NAMES[k]}</button>`).join("")}</div>
+        <div class="wpane">${cur ? T[cur].join("") : `<span class="muted">No details yet.</span>`}</div>
+        <div class="wacts"><button class="rbtn" data-chart="${esc(sym)}" title="Candles with averages, your price alerts and past report days (G)">Chart</button><button class="rbtn" data-wmove="${esc(sym)}:top" title="Put ${esc(sym)} first on your watchlist">⤒ Top</button><button class="rbtn" data-wmove="${esc(sym)}:up" title="Move up one" aria-label="Move up">↑</button><button class="rbtn" data-wmove="${esc(sym)}:down" title="Move down one" aria-label="Move down">↓</button>${off?"":`<button class="rbtn" data-snzsym="${esc(sym)}" data-how="30">Snooze 30m</button><button class="rbtn" data-snzsym="${esc(sym)}" data-how="day">Mute today</button>`}<button class="rbtn wclose" data-wclose="${esc(sym)}" title="Close the details (Esc)">Close <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button></div>
       </div>`;
     }
     const armed = armedRules(w, I), pulse = firedAt[sym] && Date.now() - firedAt[sym] < 4000;
@@ -1602,6 +1607,11 @@ function watchAddMany(syms){
   syms.forEach(sym => cfg.watch.push(Object.assign({sym}, JSON.parse(JSON.stringify(WATCH_DEFAULTS)))));
   saveCfg("watchlist"); mwLog("info", "watchlist: added " + syms.join(", ")); renderAll();
   refreshMany(syms, "Prices for the new tickers"); if (settings.tdKey) loadHist(syms);
+}
+/* close an open row's details and put the focus back on the row, so the list doesn't jump */
+function closeRow(k){
+  if (!k) return; openRows.delete(k); k[0] === "w" ? renderWatch() : renderPortfolio();
+  const el = document.querySelector(`[data-row="${CSS.escape(k)}"]`); if (el){ el.focus({preventScroll:true}); el.scrollIntoView({block:"nearest"}); }
 }
 function watchRemove(sym){
   const i = cfg.watch.findIndex(w => (w.sym||"").toUpperCase() === sym); if (i < 0) return;
@@ -1822,6 +1832,8 @@ document.addEventListener("pointerdown", e => {
 
 document.addEventListener("click", e=>{
   if (Date.now() < (window.__noClickUntil || 0)){ e.stopPropagation(); return; }
+  const wt = e.target.closest("[data-wtab]"); if (wt){ e.stopPropagation(); settings.wdTab = wt.dataset.wtab; saveSettings(); renderWatch(); const f = document.querySelector(`[data-wtab="${wt.dataset.wtab}"]`); if (f) f.focus({preventScroll:true}); return; }
+  const wc = e.target.closest("[data-wclose]"); if (wc){ e.stopPropagation(); closeRow("w:" + wc.dataset.wclose); return; }
   const wm = e.target.closest("[data-wmove]"); if (wm){ e.stopPropagation(); const [sym, where] = wm.dataset.wmove.split(":"); moveWatch(sym.toUpperCase(), where); return; }
   if (e.target.closest("[data-grip]")){ e.stopPropagation(); return; }
   const sz = e.target.closest("[data-snzsym]"); if (sz){ e.stopPropagation(); snooze(sz.dataset.snzsym, sz.dataset.how); return; }
@@ -1852,8 +1864,10 @@ document.addEventListener("click", e=>{
   }
   if (t.dataset.grp != null){ settings.grpCollapsed[t.dataset.grp] = !settings.grpCollapsed[t.dataset.grp]; saveSettings(); t.dataset.grp.startsWith("wg:") ? renderWatch() : renderPortfolio(); return; }
   if (t.dataset.row){ if (e.target.closest(".detail,.wdet")) return; const k = t.dataset.row;
-    if (openRows.has(k)) openRows.delete(k); else { openRows.add(k); loadNews(k.split(":")[1]); }
-    k.startsWith("w:") ? renderWatch() : renderPortfolio(); return; }
+    if (openRows.has(k)) openRows.delete(k); else { [...openRows].filter(x => x[0] === k[0]).forEach(x => openRows.delete(x)); openRows.add(k); loadNews(k.split(":")[1]); }
+    k.startsWith("w:") ? renderWatch() : renderPortfolio();
+    if (openRows.has(k)){ const el = document.querySelector(`[data-row="${CSS.escape(k)}"]`); if (el){ el.focus({preventScroll:true}); el.scrollIntoView({block:"nearest", behavior:"smooth"}); } }
+    return; }
   if (t.dataset.sort){ settings.sort = t.dataset.sort; saveSettings(); renderPortfolio(); return; }
   if (t.dataset.per){ settings.period = t.dataset.per; saveSettings(); renderMarkets(); return; }
   if (t.dataset.open){ openSheet(t.dataset.open); return; }
@@ -1876,6 +1890,7 @@ document.addEventListener("keydown", e=>{
     else if (!$("statusPop").classList.contains("hide")) $("statusPop").classList.add("hide");
     else if (sheetOpen) closeSheet();
     else if ($("banner").classList.contains("show")) dismissBanner();
+    else if ([...openRows].some(x => x[0] === "w" || x[0] === "h")) closeRow([...openRows].find(x => x[0] === "w") || [...openRows][0]);
     else if (NATIVE) nat.invoke("shell_hide").catch(()=>{});
     return;
   }
