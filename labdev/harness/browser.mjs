@@ -291,14 +291,14 @@ console.log("Fast prices and quality of life (4.4)");
   const p3 = await ctx3.newPage(); await mock(p3);
   const errs3 = []; p3.on("pageerror", e => errs3.push(e.message));
   p3.on("console", m => { if (m.type() === "error" && !/Failed to load resource|sentry/i.test(m.text())) errs3.push("console: " + m.text()); });
-  let t3 = Date.parse("2026-11-05T15:30:00Z"), alpDeny = false; const alpPx = {}, alpCalls = [];
+  let t3 = Date.parse("2026-11-05T15:30:00Z"), alpDeny = false, alpTradeAt = null; const alpPx = {}, alpCalls = [];
   await p3.route(/https:\/\/data\.alpaca\.markets\/.*/, route => {
     const r = route.request(), u = new URL(r.url()), h = r.headers();
     alpCalls.push({t:t3, id:h["apca-api-key-id"], sec:h["apca-api-secret-key"], feed:u.searchParams.get("feed")});
     if (alpDeny) return route.fulfill({status:403, json:{message:"forbidden"}});
     const day = new Date(t3).toISOString().slice(0, 10), out = {};
     (u.searchParams.get("symbols") || "").split(",").forEach(s => { const c = alpPx[s] ?? +(priceOf(s) * 1.002).toFixed(2), pc = pcOf(s);
-      out[s] = {latestTrade:{t:new Date(t3 - 1500).toISOString(), p:c, s:100}, dailyBar:{t:day + "T04:00:00Z", o:pc, h:Math.max(pc, c), l:Math.min(pc, c), c, v:1e5}, prevDailyBar:{t:"2026-11-04T04:00:00Z", o:pc, h:pc, l:pc, c:pc, v:1e5}}; });
+      out[s] = {latestTrade:{t:new Date(alpTradeAt || t3 - 1500).toISOString(), p:c, s:100}, dailyBar:{t:day + "T04:00:00Z", o:pc, h:Math.max(pc, c), l:Math.min(pc, c), c, v:1e5}, prevDailyBar:{t:"2026-11-04T04:00:00Z", o:pc, h:pc, l:pc, c:pc, v:1e5}}; });
     return route.fulfill({json:out});
   });
   await p3.addInitScript(() => {
@@ -361,13 +361,33 @@ console.log("Fast prices and quality of life (4.4)");
   await p3.locator("#mkt").click(); await adv(500, 100);
   check(/Fast prices\s*Alpaca IEX/.test(await p3.locator("#statusPop").innerText()), "the status pop-up shows fast prices working");
   await p3.locator("#mkt").click();
-  // after hours: the latest trade shows beside the close, every 15 seconds
+  // after hours: the latest trade is the price shown, every 5 seconds while on screen (4.8)
   t3 = Date.parse("2026-11-05T21:40:00Z"); simNow = t3; await p3.clock.fastForward(Date.parse("2026-11-05T21:40:00Z") - (await p3.evaluate(() => Date.now())));
   alpPx.AAA = +(priceOf("AAA") * 1.03).toFixed(2); const n1 = alpCalls.length; await adv(46000);
-  check(alpCalls.length - n1 >= 2 && alpCalls.length - n1 <= 4, `after hours, about one call every 15 seconds (${alpCalls.length - n1} in 46 s)`);
+  check(alpCalls.length - n1 >= 7 && alpCalls.length - n1 <= 11, `after hours, about one call every 5 seconds (${alpCalls.length - n1} in 46 s)`);
   check(/AH .*\+/.test(await p3.locator('#wl-body [data-row="w:AAA"] .chip.ext').innerText().catch(() => "")), "an after-hours price shows on the row as AH");
+  const rowPx = async () => p3.locator('#wl-body [data-row="w:AAA"] [data-fx="AAA"]').first().innerText().catch(() => "");
+  check((await rowPx()).includes(alpPx.AAA.toFixed(2)), `the row's price is the after-hours trade (${await rowPx()})`);
+  check((await p3.locator('#mk-body [data-tile="AAA"] em, #pf-body [data-fx="AAA"]').allInnerTexts()).some(t => t.includes(alpPx.AAA.toFixed(2))), "the portfolio row shows the after-hours price too");
   if (SHOTS) await p3.screenshot({path:path.join(SHOTS, "6-after-hours.png"), fullPage:true});
   check(/After hours/.test(await p3.locator("#pf-body .hero small.ah").innerText().catch(() => "")), "the portfolio total shows its after-hours move");
+  // the weekend: Friday's last after-hours trade stays the price; Monday's pre-market takes over at 4 AM
+  const friAH = Date.parse("2026-11-07T00:59:00Z");   // Friday 7:59 PM New York
+  alpTradeAt = friAH; alpPx.AAA = +(priceOf("AAA") * 1.007).toFixed(2);
+  await p3.evaluate(() => { Object.keys(quotes).forEach(s => { quotes[s].t = Math.floor(Date.parse("2026-11-06T21:00:00Z") / 1000); }); extq = {}; });
+  const nW = alpCalls.length;
+  t3 = Date.parse("2026-11-08T19:10:00Z"); simNow = t3; await p3.clock.fastForward(t3 - (await p3.evaluate(() => Date.now())));
+  await adv(75000, 2500);
+  check(alpCalls.length - nW >= 1 && alpCalls.length - nW <= 2, `on Sunday, one check (not every 5 seconds) brings Friday's last trade (${alpCalls.length - nW} in 75 s)`);
+  check((await rowPx()).includes(alpPx.AAA.toFixed(2)) && /AH/.test(await p3.locator('#wl-body [data-row="w:AAA"] .chip.ext').innerText().catch(() => "")), `on Sunday the row shows Friday's after-hours price, marked AH (${await rowPx()})`);
+  check(/Fri/.test(await p3.locator('#wl-body [data-row="w:AAA"] .chip.ext').getAttribute("title").catch(() => "")), "its tooltip says it's Friday's trade");
+  await p3.reload(); await adv(8000, 500);
+  check((await rowPx()).includes(alpPx.AAA.toFixed(2)), "and still after MW restarts");
+  t3 = Date.parse("2026-11-09T09:00:30Z"); simNow = t3; await p3.clock.fastForward(t3 - (await p3.evaluate(() => Date.now())));
+  alpTradeAt = Date.parse("2026-11-09T09:00:20Z"); alpPx.AAA = +(priceOf("AAA") * 1.012).toFixed(2); const nP = alpCalls.length; await adv(20000);
+  check(alpCalls.length - nP >= 3 && /Pre/.test(await p3.locator('#wl-body [data-row="w:AAA"] .chip.ext').innerText().catch(() => "")) && (await rowPx()).includes(alpPx.AAA.toFixed(2)), `at 4 AM Monday the pre-market price takes over, every 5 seconds (${await rowPx()}, ${alpCalls.length - nP} calls in 20 s)`);
+  if (SHOTS) await p3.screenshot({path:path.join(SHOTS, "6b-pre-market.png"), fullPage:true});
+  alpTradeAt = null;
   // rejected keys: pause, say so, no errors
   alpDeny = true; await p3.evaluate(() => { alpSt.pauseUntil = 0; }); await adv(20000);
   check(await p3.evaluate(() => /didn't accept/.test(alpSt.err) && alpSt.pauseUntil > Date.now() + 5*60e3), "rejected Alpaca keys pause fast prices and say why");

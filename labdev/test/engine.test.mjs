@@ -416,8 +416,29 @@ test("fromSnapshot: regular, pre-market and after-hours trades", () => {
   const aft = E.fromSnapshot(snap(new Date(at("2026-11-05", "17:30")).toISOString(), 102), at("2026-11-05", "17:31"));
   assert.equal(aft.ext.ph, "after");
   const old = E.fromSnapshot(snap(new Date(at("2026-11-04", "17:30")).toISOString(), 102), at("2026-11-05", "08:00"));
-  assert.equal(old.reg, null); assert.equal(old.ext, null, "yesterday's after-hours trade is not today's pre-market");
+  assert.equal(old.reg, null); assert.equal(old.ext.ph, "after", "yesterday's after-hours trade stays an after-hours trade, not today's pre-market");
+  const sun = E.fromSnapshot(snap(new Date(at("2026-11-06", "19:59")).toISOString(), 104.5), at("2026-11-08", "14:10"));
+  assert.equal(sun.ext.ph, "after"); assert.equal(sun.ext.p, 104.5, "on Sunday, Friday's last after-hours trade is still the latest");
+  const oldReg = E.fromSnapshot(snap(new Date(at("2026-11-06", "15:59")).toISOString(), 104), at("2026-11-08", "14:10"));
+  assert.deepEqual(oldReg, {reg:null, ext:null}, "an old regular-hours trade adds nothing to Finnhub's close");
   assert.deepEqual(E.fromSnapshot({}, now), {reg:null, ext:null});
+});
+
+test("extLive: the latest known price over nights, weekends and the next pre-market", () => {
+  const fri = {c:100, t:Math.floor(at("2026-11-06", "16:00") / 1000)};
+  const ah = {p:101.5, t:at("2026-11-06", "19:59"), ph:"after"};
+  assert.equal(E.extLive(ah, fri, "closed"), true, "Sunday: Friday's after-hours trade is the price");
+  assert.equal(E.extLive(ah, fri, "ext"), true, "Monday before the first pre-market trade, it still is");
+  assert.equal(E.extLive(ah, fri, "open"), false, "never during the regular session");
+  const fetchStamped = {c:100, t:Math.floor(at("2026-11-07", "12:00") / 1000)};
+  assert.equal(E.extLive(ah, fetchStamped, "closed"), true, "a close stamped with Saturday's fetch time still counts as Friday's");
+  const mon = {c:103, t:Math.floor(at("2026-11-09", "16:00") / 1000)};
+  assert.equal(E.extLive(ah, mon, "ext"), false, "after Monday's close, Friday's after hours is old");
+  const pre = {p:102, t:at("2026-11-09", "04:01"), ph:"pre"};
+  assert.equal(E.extLive(pre, fri, "ext"), true, "Monday's pre-market trade is newer than Friday's close");
+  assert.equal(E.extLive(pre, mon, "ext"), false, "but not after Monday's own close");
+  assert.equal(E.quoteDay(at("2026-11-09", "08:00")), "2026-11-06", "a quote stamped before the open belongs to the last session");
+  assert.equal(E.extLive(null, fri, "closed"), false); assert.equal(E.extLive(ah, null, "closed"), false);
 });
 
 test("parseTickers: separators, exchange prefixes, junk", () => {
