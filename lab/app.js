@@ -333,8 +333,9 @@ let lastUpdate = store.get("lastUpdate", 0);
 
 /* ---------- fast prices (4.4): Alpaca's free IEX feed, every ticker in one call ----------
    Optional. With an Alpaca key (a free paper-trading account is enough; it can't touch real money) MW asks for all
-   its tickers in one call every 5 seconds while the market is open, and every 15 seconds before and after it for
-   pre-market and after-hours prices. The keys stay in this browser and are sent only to Alpaca. Finnhub keeps
+   its tickers in one call every 5 seconds while the market is open, and also in pre-market and after hours while MW
+   is on screen (4.8; 15 seconds before). While the market is closed it checks every 10 minutes, so the last
+   after-hours trade stays the price shown overnight and over the weekend. The keys stay in this browser and are sent only to Alpaca. Finnhub keeps
    running as the full-market source for the previous close, open, high and low. IEX is one exchange, so its
    pre-market and after-hours prices are a guide, not the whole market. */
 const ALP = "https://data.alpaca.markets/v2/stocks/snapshots";
@@ -359,8 +360,9 @@ window.addEventListener("pointercancel", ()=>{ ptrDown = false; }, true);
 async function fastTick(){
   const ses = session().s;
   if (!alpOn() || fastBusy || Date.now() < alpSt.pauseUntil) return;
-  if (ses !== "open" && ses !== "ext") return;
-  if (ses === "ext" && document.hidden) return;   // pre/after-hours prices only matter while you're looking
+  if (ses !== "open" && document.hidden) return;   // pre/after-hours prices only matter while you're looking
+  // closed (night, weekend, holiday): one call every 10 minutes keeps the last after-hours trade known
+  if (ses !== "open" && ses !== "ext" && alpSt.at && Date.now() - alpSt.at < 10*60e3 && !alpSt.err) return;
   fastBusy = true; const t0 = Date.now();
   try{
     const syms = allSyms().filter(s => /^[A-Z][A-Z.]{0,6}$/.test(s)), out = {};
@@ -389,18 +391,20 @@ async function fastTick(){
 }
 function fastSchedule(spent){
   clearTimeout(fastTimer);
-  const s = session().s, ms = !alpOn() ? 30e3 : s === "open" ? 5e3 : s === "ext" ? 15e3 : 60e3;
+  const s = session().s, ms = !alpOn() ? 30e3 : s === "open" || s === "ext" ? 5e3 : 60e3;
   // the next call is timed from the start of this one, so a slow answer doesn't stretch the 5 seconds
   fastTimer = setTimeout(async ()=>{ const t0 = Date.now(); try{ await fastTick(); }catch(e){} fastSchedule(Date.now() - t0); }, Math.max(250, ms - (spent || 0)));
 }
 /* the latest pre-market or after-hours trade for a ticker, against the regular close it follows */
 function extFor(sym){
-  const e = extq[sym], q = quotes[sym]; if (!e || !q || !(q.c > 0) || !alpOn()) return null;
-  const t = etNow(); if (etDateOf(e.t) !== t.date) return null;
-  if (e.ph === "pre" && t.mins >= 570 && isTradingDay(t.date)) return null;
-  if (e.ph === "after" && !(q.at && etDateOf(q.at) === t.date)) return null;
+  const e = extq[sym], q = quotes[sym]; if (!alpOn() || !E.extLive(e, q, session().s)) return null;
   return {p:e.p, pct:(e.p / q.c - 1) * 100, ph:e.ph, t:e.t, base:q.c};
 }
+/* the latest known price (4.8): the regular price in market hours; before and after them, the latest pre-market or
+   after-hours trade once there is one, kept through the night and the weekend. Changes on the day, alerts and the
+   portfolio's value stay on the regular session. */
+const lastPx = sym => { const x = extFor(sym), q = quotes[sym]; return x ? x.p : q && q.c > 0 ? q.c : null; };
+const extTag = x => x ? `<i class="xt" title="${x.ph === "pre" ? "Pre-market" : "After-hours"} trade at ${esc(dateTime(x.t) + " " + tzAbbr(x.t))} on IEX: the latest known price">${x.ph === "pre" ? "Pre" : "AH"}</i>` : "";
 
 const xaOn = ()=> !cfg.hiddenMk.includes("__xa");
 function marketSyms(){ return [...cfg.myMk, ...[...MARKETS.indices, ...MARKETS.sectors, ...MARKETS.other].map(m=>m.sym).filter(s=>!cfg.hiddenMk.includes(s)), ...(xaOn()?XASSET.map(x=>x.sym):[])]; }
@@ -1037,10 +1041,10 @@ const shownPx = {};
 function flashPass(root, scope){
   if (!root) return;
   root.querySelectorAll("[data-fx]").forEach(el => {
-    const s = el.dataset.fx, q = quotes[s]; if (!q || !(q.c > 0)) return;
+    const s = el.dataset.fx, v = lastPx(s); if (!(v > 0)) return;   // the latest known price, after hours included
     const k = scope + "|" + s + "|" + (el.dataset.fxk || ""), p = shownPx[k];
-    if (p != null && p !== q.c) el.classList.add(q.c > p ? "fx-up" : "fx-dn");
-    shownPx[k] = q.c;
+    if (p != null && p !== v) el.classList.add(v > p ? "fx-up" : "fx-dn");
+    shownPx[k] = v;
   });
 }
 /* the row that has the keyboard focus keeps it through a redraw */
@@ -1054,7 +1058,7 @@ function ageInfo(q){
   const fr = freshOf(q); return fr.ok ? null : {txt:"stale", why:fr.why};
 }
 const ageChip = (sym, q, off) => { const a = off ? null : ageInfo(q); return a ? `<span class="chip stale" title="${esc(a.why)}. Alerts for ${esc(sym)} wait for a fresh price.">${a.txt}</span>` : ""; };
-const extChip = sym => { const x = extFor(sym); return x ? `<span class="chip ext ${cls(x.pct)}" title="${x.ph === "pre" ? "Pre-market" : "After-hours"} trade at ${esc(timeTz(x.t))} on IEX (Alpaca's free feed), against ${x.ph === "pre" ? "the last close" : "today's close"} of ${fmt$(x.base)}. One exchange and thin trading, so treat it as a guide.">${x.ph === "pre" ? "Pre" : "AH"} ${fmt$(x.p)} ${fmtPct(x.pct,1)}</span>` : ""; };
+const extChip = sym => { const x = extFor(sym); return x ? `<span class="chip ext ${cls(x.pct)}" title="${x.ph === "pre" ? "Pre-market" : "After-hours"} trade of ${fmt$(x.p)} at ${esc(dateTime(x.t) + " " + tzAbbr(x.t))} on IEX (Alpaca's free feed), against the close of ${fmt$(x.base)}. It's the price shown until the next trade. One exchange and thin trading, so treat it as a guide.">${x.ph === "pre" ? "Pre" : "AH"} ${fmtPct(x.pct,1)}</span>` : ""; };
 /* fundamentals from the daily Finnhub metrics call (no extra calls) */
 function fundHtml(sym){
   const f = (metrics[sym] || {}).f; if (!f) return "";
@@ -1359,7 +1363,7 @@ function renderPortfolio(){
   // pre-market or after-hours move of your stocks (Alpaca IEX, a guide only)
   let ahUsd = 0, ahBase = 0, ahPh = "";
   P.rows.forEach(r => { const x = extFor(r.sym); if (x && r.val != null){ ahUsd += (x.p - x.base) * r.sh; ahBase += x.base * r.sh; ahPh = x.ph; } });
-  const ahLine = ahBase ? `<small class="ah" title="Your stocks and ETFs at their latest ${ahPh === "pre" ? "pre-market" : "after-hours"} trades on IEX (Alpaca's free feed), against ${ahPh === "pre" ? "the last close" : "today's close"}. Funds and cash left out. Thin trading, so a guide only.">${ahPh === "pre" ? "Pre-market" : "After hours"} <b class="${cls(ahUsd)}">${fmtS$(ahUsd)} ${fmtPct(ahUsd / ahBase * 100)}</b></small>` : "";
+  const ahLine = ahBase ? `<small class="ah" title="Your stocks and ETFs at their latest ${ahPh === "pre" ? "pre-market" : "after-hours"} trades on IEX (Alpaca's free feed), against the last close. The value above stays at the close. Funds and cash left out. Thin trading, so a guide only.">${ahPh === "pre" ? "Pre-market" : "After hours"} <b class="${cls(ahUsd)}">${fmtS$(ahUsd)} ${fmtPct(ahUsd / ahBase * 100)}</b></small>` : "";
   const cashTotal = cashes.reduce((a,f)=>a+(+f.value||0),0);
 
   body.innerHTML = `
@@ -1401,7 +1405,7 @@ function holdRow(r, total){
   return `<div class="hrow" role="button" tabindex="0" data-row="h:${esc(r.sym)}:${esc(r.h.acct||"")}">
     <div class="s"><span class="s1"><span class="tk">${esc(r.sym)}</span>${erChip(r.sym)}</span><small>${r.sh} sh${wt!=null?" · "+wt.toFixed(1)+"%":""}</small></div>
     ${sparkSvg(r.sym)}
-    <div class="v num">${r.val!=null ? fmt$(r.val,0) : `<span class="muted" title="No price for ${esc(r.sym)} yet. It's left out of the total until the next refresh brings one.">no price</span>`}<small data-fx="${esc(r.sym)}" data-fxk="${esc(r.h.acct||"")}">${q?fmt$(q.c):"—"}</small>${heldChip(r.sym)}${ageChip(r.sym, q)}${extChip(r.sym)}</div>
+    <div class="v num">${r.val!=null ? fmt$(r.val,0) : `<span class="muted" title="No price for ${esc(r.sym)} yet. It's left out of the total until the next refresh brings one.">no price</span>`}<small data-fx="${esc(r.sym)}" data-fxk="${esc(r.h.acct||"")}">${q?extTag(extFor(r.sym))+fmt$(lastPx(r.sym)):"—"}</small>${heldChip(r.sym)}${ageChip(r.sym, q)}${extChip(r.sym)}</div>
     <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}${(()=>{ const bq = quotes[settings.bench]; return q && q.dp != null && bq && bq.dp != null && r.sym !== settings.bench ? `<small class="vsb" title="Today's move minus ${esc(settings.bench)}'s: is it the stock, or just the sector?">vs ${esc(settings.bench)} ${fmtPct(q.dp - bq.dp,1)}</small>` : ""; })()}</div>${det}</div>`;
 }
 
@@ -1470,7 +1474,7 @@ function renderMarkets(){
     ${rg ? `<div class="regime num" title="${esc(rg.label + ": " + (rg.why.join(", ") || "no strong signal either way") + "\n\n" + RG_TIP)}"><span class="muted" style="font-size:10.5px">${esc((w => w ? w[0].toUpperCase() + w.slice(1) : "No strong signal")(rg.why.join(", ")))}</span>${rg.chips.map(([n,v,minor,inv])=>`<span class="xa ${minor?"mk-up":""}" title="${esc(XA_TIPS[n]||"")}">${esc(n)} <b class="${cls(inv ? -v : v)}">${fmtPct(v,1)}</b></span>`).join("")}</div>` : ""}
     ${macroHtml()}
     <div class="seg perseg" id="perSeg">${PERIODS.map(p=>`<button data-per="${p.k}" class="${per===p.k?"on":""}" title="Show the change over ${p.label === "1D" ? "today" : p.label === "YTD" ? "this year so far" : "the last " + p.label}">${p.label}</button>`).join("")}</div>
-    <div class="idx num">${[...idx, ...oth, ...my].map(m=>{ const q = quotes[m.sym], p = pctFor(m.sym, per); return `<button class="c ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" data-fx="${m.sym}" title="${esc(m.name === m.sym ? m.sym : m.name + " (" + m.sym + ")")}\n${esc(multi(m.sym))}\nClick to refresh just this one."><span>${esc(m.name)}${erChip(m.sym)}</span><b class="${cls(p)}">${fmtPct(p, dec)}</b><em>${q?fmt$(q.c):"—"}</em>${(()=>{ const x = extFor(m.sym); return x ? `<i class="${cls(x.pct)}" title="${x.ph === "pre" ? "Pre-market" : "After hours"} ${fmt$(x.p)} on IEX">${x.ph === "pre" ? "Pre" : "AH"} ${fmtPct(x.pct,1)}</i>` : ""; })()}</button>`; }).join("")}</div>
+    <div class="idx num">${[...idx, ...oth, ...my].map(m=>{ const q = quotes[m.sym], p = pctFor(m.sym, per); return `<button class="c ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" data-fx="${m.sym}" title="${esc(m.name === m.sym ? m.sym : m.name + " (" + m.sym + ")")}\n${esc(multi(m.sym))}\nClick to refresh just this one."><span>${esc(m.name)}${erChip(m.sym)}</span><b class="${cls(p)}">${fmtPct(p, dec)}</b><em>${q?fmt$(lastPx(m.sym)):"—"}</em>${(()=>{ const x = extFor(m.sym); return x ? `<i class="${cls(x.pct)}" title="${x.ph === "pre" ? "Pre-market" : "After hours"} ${fmt$(x.p)} on IEX">${x.ph === "pre" ? "Pre" : "AH"} ${fmtPct(x.pct,1)}</i>` : ""; })()}</button>`; }).join("")}</div>
     <div class="toolbar"><button class="sec-t" data-act="sectors" style="flex:1;font-size:11px;text-align:left;display:flex;align-items:center;gap:4px" title="Show or hide the sector tiles"><svg class="chev" style="width:11px;height:11px;${settings.secHide?"transform:rotate(-90deg)":""}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>Sectors</button>
       <div class="seg" id="ordSeg"><button data-ord="fixed" class="${settings.heatOrder!=="rank"?"on":""}" title="Tiles stay in the same place">Fixed</button><button data-ord="rank" class="${settings.heatOrder==="rank"?"on":""}" title="Best to worst">Ranked</button></div><button class="rbtn secref" data-act="secref" title="Refresh every sector tile now" aria-label="Refresh sectors" ${refreshMany.busy?"disabled":""}>${refreshMany.busy?"…":"↻"}</button><button class="rbtn" data-open="markets" title="Add your own tickers to the market tiles, or hide any tile (Settings → Markets)">Edit</button></div>
     ${settings.secHide ? "" : `<div class="heat">${tiles(sec)}</div>`}
@@ -1559,7 +1563,7 @@ function renderWatch(){
     return `<div class="wrow ${off?"muted-row":I.st?"st-"+I.st:""}${pulse?" pulse":""}" data-row="w:${esc(sym)}" role="button" tabindex="0" aria-expanded="${open}"><div class="wtop">
       <div class="s"><span class="s1"><span class="grip" data-grip="1" title="Drag to reorder your watchlist">⠿</span><span class="tk">${esc(sym)}</span>${bellHtml}${erChip(sym)}</span><small${w.note ? ` title="${esc(w.note)}"` : ""}>${esc(w.note||"")}</small></div>
       ${sparkSvg(sym, lv)}
-      <div class="v num" style="text-align:right" title="${esc(srcLine(q))}"><span data-fx="${esc(sym)}">${px?fmt$(px):"—"}</span>${heldChip(sym)?`<br>${heldChip(sym)}`:""}</div>
+      <div class="v num" style="text-align:right" title="${esc(srcLine(q, extFor(sym)))}">${extTag(extFor(sym))}<span data-fx="${esc(sym)}">${px?fmt$(lastPx(sym)):"—"}</span>${heldChip(sym)?`<br>${heldChip(sym)}`:""}</div>
       <div class="dp num ${cls(q&&q.dp)}">${q?fmtPct(q.dp):"—"}</div></div>
       <div class="wmeta">${parts.join("")}${right}</div>${det}</div>`;
   })(x.w)).join("");
@@ -1574,7 +1578,7 @@ function renderWatch(){
   $("wl-sum").innerHTML = settings.allOff ? `<span class="muted">alerts off</span>` : pausedNow() ? `<span style="color:var(--warn);font-weight:600">paused</span>` : (hits?`<span class="down" style="font-weight:600">${hits} alerting</span>`:"") + (nears?`<span style="color:var(--warn);font-weight:600">${nears} near</span>`:"") + (!hits&&!nears?`<span class="muted">${cfg.watch.length} watching</span>`:"");
   // compact strip: same order as the Watchlist (your drag order), so rows don't jump around between refreshes
   const rows = cfg.watch.map(watchInfo);
-  $("strip").innerHTML = rows.map(I => !I.px ? `<div class="srow num"><span class="s"><span class="s1"><span class="tk">${esc(I.sym)}</span>${erChip(I.sym)}</span></span><span class="muted">—</span><span></span><span class="d">waiting</span></div>` : `<div class="srow num"><span class="s"><span class="s1"><span class="tk">${esc(I.sym)}</span>${erChip(I.sym)}</span></span><span data-fx="${esc(I.sym)}">${fmt$(I.px)}</span><span class="${cls(I.q.dp)}">${fmtPct(I.q.dp,1)}</span>
+  $("strip").innerHTML = rows.map(I => !I.px ? `<div class="srow num"><span class="s"><span class="s1"><span class="tk">${esc(I.sym)}</span>${erChip(I.sym)}</span></span><span class="muted">—</span><span></span><span class="d">waiting</span></div>` : `<div class="srow num"><span class="s"><span class="s1"><span class="tk">${esc(I.sym)}</span>${erChip(I.sym)}</span></span><span data-fx="${esc(I.sym)}">${fmt$(lastPx(I.sym) || I.px)}</span><span class="${cls(I.q.dp)}">${fmtPct(I.q.dp,1)}</span>
     <span class="d ${I.hitL.length||I.red?"hit":I.st}">${I.hitL.length ? levelText(I, true) : I.next ? `${I.dist.toFixed(1)}% → ${fmtL(I.next)}` : I.red ? "red day" : "—"}</span></div>`).join("") || `<div class="muted" style="grid-column:1/-1;font-size:11.5px">No tickers on your watchlist yet.</div>`;
   flashPass($("strip"), "st");
 }
@@ -1634,8 +1638,9 @@ function renderLog(){
   $("log-body").innerHTML = f.log.length ? f.log.slice(0,40).map(l=>`<div ${l.quiet?'class="muted" title="Logged quietly: this ticker alerted in the last 15 min"':""}><time>${timeStr(l.t)}</time><span>${esc(l.msg)}${l.nd ? ` <em class="chip stale" title="This alert showed here, but the phone alert didn't go through (ntfy didn't answer). Check the topic in Settings → General.">phone: not sent</em>` : ""}</span></div>`).join("") : `<div class="muted">No alerts yet today.</div>`;
 }
 /* where a price came from, for tooltips (R19) */
-function srcLine(q){
+function srcLine(q, x){
   if (!q || !q.c) return "No price yet";
+  if (x) return `${x.ph === "pre" ? "Pre-market" : "After-hours"} trade on IEX (Alpaca's free feed) at ${dateTime(x.t)} ${tzAbbr(x.t)}, the latest known price. Close ${fmt$(q.c)} (${q.src === "twelvedata" ? "Twelve Data" : q.src === "alpaca" ? "Alpaca IEX" : "Finnhub"}, last trade ${q.t ? dateTime(q.t * 1000) : "unknown"}); the day's change is the regular session's.`;
   const src = q.src === "twelvedata" ? "Twelve Data (backup)" : q.src === "alpaca" ? "Alpaca IEX (fast prices)" : "Finnhub";
   return `${src} quote · last trade ${q.t ? dateTime(q.t * 1000) : "unknown"} · fetched ${q.at ? dateTime(q.at) : "—"}. Price return only (no dividends).`;
 }
@@ -1671,7 +1676,7 @@ function renderPill(ses = session(), ds = dataState()){
   const mc = marketClock(), ageMin = lastUpdate ? Math.round((Date.now()-lastUpdate)/60000) : 0;
   $("mkt").className = "pill " + (ses.s==="open"?"open":ses.s==="ext"?"ext":"") + (ds.k!=="ok" ? " " + ds.k : "") + (mc.ph==="open" && mc.until - Date.now() <= 15*60e3 ? " closing" : "");
   $("mkt").lastElementChild.textContent = ds.k==="stale" && ses.s==="open" && ageMin >= 2 ? `${ageMin}m old` : ds.k==="bad" ? "No data" : clockText(mc, Date.now(), $("titlebar").clientWidth < (document.body.classList.contains("native") ? 440 : 340));
-  $("mkt").title = (ds.why ? ds.why + ". " : "") + (mc.ph === "unknown" ? "MW Beta's market calendar has run out." : clockSentence(mc)) + (ses.s==="open" ? (alpOn() && !alpSt.err ? ` Prices update every 5 seconds from Alpaca's IEX feed; Finnhub refreshes the full quote about ${everyStr(refreshMs()||60e3)}.` : ` Prices refresh about ${everyStr(refreshMs()||60e3)} from Finnhub's free feed.`) : alpOn() ? (ses.s==="ext" ? " Showing the last close, with pre-market or after-hours prices from Alpaca's IEX feed beside it." : " Showing the last close.") : " Showing the last close. Add a free Alpaca key in Settings → General for pre-market and after-hours prices.") + " Click for details.";
+  $("mkt").title = (ds.why ? ds.why + ". " : "") + (mc.ph === "unknown" ? "MW Beta's market calendar has run out." : clockSentence(mc)) + (ses.s==="open" ? (alpOn() && !alpSt.err ? ` Prices update every 5 seconds from Alpaca's IEX feed; Finnhub refreshes the full quote about ${everyStr(refreshMs()||60e3)}.` : ` Prices refresh about ${everyStr(refreshMs()||60e3)} from Finnhub's free feed.`) : alpOn() ? (ses.s==="ext" ? " Prices are the latest pre-market or after-hours trades from Alpaca's IEX feed, every 5 seconds while MW is on screen; the day's change stays on the regular session." : " Prices are the last trades, after hours included (marked AH); pre-market prices start at 4 AM ET.") : " Showing the last close. Add a free Alpaca key in Settings → General for pre-market and after-hours prices.") + " Click for details.";
 }
 function renderFrame(){
   const ses = session(), ds = dataState();
@@ -1706,7 +1711,7 @@ function renderStatus(){
   const ses = session(), ds = dataState(), d = etNow().date, L = tdBudget();
   const now = Date.now(), perMin = RL.times.filter(t => now - t < 60000).length, ms = refreshMs();
   const kv = (k, v) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`;
-  $("statusPop").innerHTML = `<h4>${ds.k==="ok" ? (ses.s === "open" ? "✓ Data is live" : "✓ Up to date · showing the last close") : ds.k==="stale" ? "⚠ " + esc(ds.why) : "✕ " + esc(ds.why)}</h4>
+  $("statusPop").innerHTML = `<h4>${ds.k==="ok" ? (ses.s === "open" ? "✓ Data is live" : alpOn() && !alpSt.err ? "✓ Up to date · showing the last trades" : "✓ Up to date · showing the last close") : ds.k==="stale" ? "⚠ " + esc(ds.why) : "✕ " + esc(ds.why)}</h4>
     ${(()=>{ const mc = marketClock(), today = etNow().date; if (mc.ph === "unknown") return kv("Market", "Calendar expired " + E.CAL_VALID_TO);
       const td = isTradingDay(today) ? today : mc.nextOpenDay, o = etMs(td, 570), c = etMs(td, closeMins(td));
       return kv("Market", esc(mc.ph === "open" ? "Open" : mc.label) + (mstat && mstat.date===d ? " · confirmed by Finnhub's market status" : ""))
@@ -1723,7 +1728,7 @@ function renderStatus(){
     ${health.xdiff ? kv("Cross-check", `${esc(health.xdiff.sym)} ${fmt$(health.xdiff.fh)} vs Twelve Data ${fmt$(health.xdiff.td)} (${fmtPct(health.xdiff.d,1)}) ${health.xdiff.ok ? "✓" : "⚠"} at ${timeStr(health.xdiff.at)}`) : ""}
     ${kv("Refresh", ms ? everyStr(ms) + (ses.s==="open" && minRefreshSec() > (+settings.refresh||60) ? " (stretched to stay under the free limit)" : "") : "manual")}
     ${kv("Finnhub calls, last minute", `${perMin} of 60` + (E.breakerOpen(fhBreaker, now) ? ` · paused until ${timeStr(fhBreaker.openUntil)} after repeated failures` : ""))}
-    ${kv("Fast prices", !settings.alpKey || !settings.alpSec ? "off · add a free Alpaca key in Settings → General" : settings.fast === false ? "off in Settings" : alpSt.err ? `⚠ ${esc(alpSt.err)}${alpSt.pauseUntil > now ? " · trying again at " + timeStr(alpSt.pauseUntil) : ""}` : alpSt.at ? `Alpaca IEX · ${alpSt.got || 0} tickers at ${timeStr(alpSt.at)} (${(alpSt.ms/1000).toFixed(1)} s)` + (ses.s === "open" ? " · every 5 s" : ses.s === "ext" ? " · every 15 s while MW is on screen" : " · resting until pre-market") : ses.s === "open" || ses.s === "ext" ? "starting…" : "resting until pre-market")}
+    ${kv("Fast prices", !settings.alpKey || !settings.alpSec ? "off · add a free Alpaca key in Settings → General" : settings.fast === false ? "off in Settings" : alpSt.err ? `⚠ ${esc(alpSt.err)}${alpSt.pauseUntil > now ? " · trying again at " + timeStr(alpSt.pauseUntil) : ""}` : alpSt.at ? `Alpaca IEX · ${alpSt.got || 0} tickers at ${timeStr(alpSt.at)} (${(alpSt.ms/1000).toFixed(1)} s)` + (ses.s === "open" ? " · every 5 s" : ses.s === "ext" ? " · every 5 s while MW is on screen" : " · every 10 min until pre-market") : "starting…")}
     ${settings.tdKey ? kv("Twelve Data today", budgetHtml(L, ses)) : kv("Twelve Data", "no key")}
     ${(()=>{ const M = E.nextMacro(now, 3); return M.expired ? kv("Coming up", "Fed and inflation dates ended " + E.MACRO_VALID_TO) : M.list.length ? kv("Coming up", M.list.map(x => `${esc(x.name)} ${esc(macroWhen(x.t))}`).join("<br>")) : ""; })()}
     ${settings.hcUrl ? kv("Healthchecks", health.hc ? (health.hc.err ? "ping failed: " + esc(health.hc.err) : `pinged ${timeStr(health.hc.at)}${health.hc.fail ? " (reported a problem)" : ""}`) : "pings while the market is open") : ""}
@@ -1917,7 +1922,7 @@ document.addEventListener("keydown", e=>{
 $("bCompact").onclick = ()=>{ settings.compact = !settings.compact; saveSettings(); renderAll(); toast(settings.compact ? "Compact view" : "Full view"); };
 $("bRefresh").onclick = ()=>{ schedule(true); const s = session().s;
   if (alpOn()){ alpSt.pauseUntil = 0; fastTick(); }
-  if (s !== "open") toast(alpOn() ? (s === "ext" ? "Showing the last close · pre-market and after-hours prices from Alpaca IEX" : "Showing the last close · pre-market prices start at 4 AM ET") : "Showing the last close · add a free Alpaca key in Settings for after-hours prices"); };
+  if (s !== "open") toast(alpOn() ? (s === "ext" ? "Showing the latest pre-market and after-hours trades from Alpaca IEX" : "Showing the last trades, after hours included · pre-market starts at 4 AM ET") : "Showing the last close · add a free Alpaca key in Settings for after-hours prices"); };
 $("bAlerts").onclick = ()=>{ markSeen(); settings.collapsed.log = false; settings.compact = false; saveSettings(); renderAll(); $("log-sec").scrollIntoView({behavior:"smooth", block:"start"}); };
 $("bSettings").onclick = ()=>{ closeMenu(); openSheet(settings.sheetTab || "general"); };
 $("bBrief").onclick = ()=>{ closeMenu(); copyBrief(false); };
@@ -2355,7 +2360,7 @@ function palRender(){
   const syms = [...new Set([...mySyms(), ...marketSyms()])];
   const score = s => !Q ? (inW(s) ? 2 : 0) : s === Q ? 100 : s.startsWith(Q) ? 50 - s.length : (names[s]||"").toUpperCase().includes(Q) ? 10 : 0;
   const items = syms.map(s => ({s, sc:score(s)})).filter(x => x.sc > 0).sort((a, b) => b.sc - a.sc).slice(0, Q ? 8 : 5).map(({s}) => { const qq = quotes[s];
-    return {n:s, sub:[names[s] && names[s] !== s ? names[s] : "", inW(s) ? "Watchlist" : inH(s) ? "Holding" : "Market tile"].filter(Boolean).join(" · "), px:qq && qq.c ? fmt$(qq.c) + " " + fmtPct(qq.dp, 1) : "", c:qq ? cls(qq.dp) : "", run:()=>palGo(s)}; });
+    return {n:s, sub:[names[s] && names[s] !== s ? names[s] : "", inW(s) ? "Watchlist" : inH(s) ? "Holding" : "Market tile"].filter(Boolean).join(" · "), px:qq && qq.c ? (extFor(s) ? (extFor(s).ph === "pre" ? "Pre " : "AH ") : "") + fmt$(lastPx(s)) + " " + fmtPct(qq.dp, 1) : "", c:qq ? cls(qq.dp) : "", run:()=>palGo(s)}; });
   if (Q && items.length && items[0].n === Q) items.splice(1, 0, {n:"Chart " + Q, sub:"Candles, averages and your alerts", k:"G", run:()=>openChart(Q)});
   if (Q && !syms.includes(Q) && E.parseTickers(Q).ok[0] === Q) items.push({n:`Add ${Q} to the watchlist`, sub:"New ticker with the default dip rules", run:()=>{ if (watchAdd(Q)) setTimeout(()=>palGo(Q), 80); }});
   const ql = q.toLowerCase(); items.push(...palCmds().filter(c => !ql || c.n.toLowerCase().includes(ql)).slice(0, Q ? 6 : 14));
@@ -2449,7 +2454,7 @@ function closeChart(){ $("chart").classList.add("hide"); if (chObj){ chObj.remov
 function setChartRange(r){ settings.chRange = r; saveSettings(); drawChart(); }
 function chartHeadPx(){
   const q = quotes[chSym], names = {}; [...MARKETS.indices, ...MARKETS.sectors, ...MARKETS.other, ...XASSET].forEach(m => names[m.sym] = m.name);
-  $("chPx").innerHTML = q && q.c ? `${fmt$(q.c)} <b class="${cls(q.dp)}">${fmtPct(q.dp)}</b>${names[chSym] ? ` <span class="muted">${esc(names[chSym])}</span>` : ""}` : "";
+  $("chPx").innerHTML = q && q.c ? `${extTag(extFor(chSym))}${fmt$(lastPx(chSym))} <b class="${cls(q.dp)}">${fmtPct(q.dp)}</b>${names[chSym] ? ` <span class="muted">${esc(names[chSym])}</span>` : ""}` : "";
 }
 function chartHead(){
   chartHeadPx();

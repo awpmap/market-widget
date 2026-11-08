@@ -6,7 +6,7 @@
 (function (root) {
 "use strict";
 const E = {};
-E.VERSION = "4.7.0";
+E.VERSION = "4.8.0";
 
 /* ====================================================================================
    1. Calendar (NYSE). Source: NYSE Group release of 2025-12-23, "2026, 2027 and 2028 Holiday
@@ -698,9 +698,28 @@ E.fromSnapshot = function (snap, now) {
   const dbToday = db && E.etDateOf(Date.parse(db.t)) === today;
   if (tp.date === today && E.isTradingDay(today) && tp.mins >= 570 && tp.mins < close)
     return {reg:{c:+lt.p, t:Math.floor(tms / 1000), pc: dbToday && pdb ? +pdb.c : db ? +db.c : null, o: dbToday ? +db.o : null, h: dbToday ? +db.h : null, l: dbToday ? +db.l : null, src:"alpaca"}, ext:null};
-  if (tp.date === today && (tp.mins < 570 || tp.mins >= close) && tp.mins >= 240 && tp.mins < 1200)
+  // a pre-market or after-hours trade, today's or (over a night, weekend or holiday) the last one there was
+  if (tp.date <= today && (tp.mins < 570 || tp.mins >= close) && tp.mins >= 240 && tp.mins < 1200)
     return {reg:null, ext:{p:+lt.p, t:tms, ph: tp.mins < 570 ? "pre" : "after"}};
   return {reg:null, ext:null};
+};
+/* the regular session a quote belongs to: the date of its last trade, or the trading day before when that trade
+   is stamped before the open or on a closed day (some feeds stamp the close with the time it was fetched) */
+E.quoteDay = function (tms) {
+  if (!(tms > 0)) return null;
+  const p = E.etParts(tms); let d = p.date;
+  if (!E.isTradingDay(d) || p.mins < 570) { d = E.addDays(d, -1); for (let i = 0; i < 10 && !E.isTradingDay(d); i++) d = E.addDays(d, -1); }
+  return d;
+};
+/* 4.8: is this pre-market or after-hours trade newer than the regular close in q, so it is the latest known price?
+   An after-hours trade counts on the day of that close, a pre-market trade on a later day. It stays the latest
+   price over the night, the weekend or a holiday, until the next session's trades replace it. Never during the
+   regular session, when the regular price is the latest. */
+E.extLive = function (e, q, sessionS) {
+  if (!e || !(e.p > 0) || !q || !(q.c > 0) || sessionS === "open") return false;
+  const qd = E.quoteDay(q.t ? q.t * 1000 : q.at), ed = E.etDateOf(e.t);
+  if (!qd) return false;
+  return e.ph === "after" ? ed === qd : e.ph === "pre" ? ed > qd : false;
 };
 
 /* price alert repeat and expiry (4.5). Per ticker: w.lvRepeat = "day" (default: each alert once a day), "once" (fires

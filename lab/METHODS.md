@@ -7,12 +7,15 @@ MW Beta is the beta version of Market Widget: turn it on in MW under Settings â†
 | What | Source | Notes |
 |---|---|---|
 | Live prices | Finnhub `/quote` (free key) | Price, day change, high, low, previous close, last trade time. |
+| Fast and extended-hours prices (optional) | Alpaca `/v2/stocks/snapshots`, free IEX feed (needs a free paper-account key in Settings â†’ General) | Every ticker in one call: every 5 seconds in market hours, and in pre-market (from 4 AM ET) and after hours (to 8 PM ET) while MW is on screen; every 10 minutes when the market is closed. |
 | Backup prices | Twelve Data `/quote` (free key) | Only for holdings and watchlist tickers, only when Finnhub has failed. Rows show "backup" in their tooltip. |
 | Daily history | Twelve Data `/time_series`, up to about 5 years | Loaded once a day before the open; failed loads retry after 5, 15 and 45 minutes. Kept in the browser (IndexedDB), never uploaded. |
 | Earnings dates | Finnhub calendar | |
 | Fund holdings (look-through) | Pasted by you from the fund issuer's site | Twelve Data's fund composition is a paid feature, so MW Beta doesn't fetch it. |
 
 Every price row has a tooltip naming its source and how old the last trade is.
+
+**The price shown is the latest known trade.** In market hours that is the regular price. Before and after them, with an Alpaca key, it is the latest pre-market or after-hours trade, marked "Pre" or "AH". Friday's last after-hours trade stays the price over the weekend, and the first pre-market trade replaces it. IEX is one exchange, so these prices are a close guide with thin trading. The day's % change, alerts and the portfolio's value stay on the regular session; the "Pre"/"AH" chip and the portfolio's after-hours line show the move against the close.
 
 ## When a price may raise an alert
 
