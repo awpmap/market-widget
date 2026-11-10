@@ -11,6 +11,8 @@ MW Beta is the beta version of Market Widget: turn it on in MW under Settings �
 | Backup prices | Twelve Data `/quote` (free key) | Only for holdings and watchlist tickers, only when Finnhub has failed. Rows show "backup" in their tooltip. |
 | Daily history | Twelve Data `/time_series`, up to about 5 years | Loaded once a day before the open; failed loads retry after 5, 15 and 45 minutes. Kept in the browser (IndexedDB), never uploaded. |
 | Earnings dates | Finnhub calendar | |
+| Mutual fund prices | Twelve Data `/quote` (free key); Finnhub is asked once a day in case it has the fund | One price a day (the NAV). The free feed posts it overnight, so the latest price is often one session behind. See "Mutual funds" below. |
+| Headlines | Finnhub `/company-news` for your tickers (up to 24) and `/news?category=general` | Every 15 minutes, low priority. Kept on this PC. See "News" below. |
 | Fund holdings (look-through) | Pasted by you from the fund issuer's site | Twelve Data's fund composition is a paid feature, so MW Beta doesn't fetch it. |
 
 Every price row has a tooltip naming its source and how old the last trade is.
@@ -72,7 +74,22 @@ By default a phone alert says only "MW Beta has a new alert. Open MW Beta for de
 
 ## Twelve Data budget
 
-The free plan allows 800 credits a day. MW Beta gives each feature its own share so one can't starve the others: history 300, VWAP 220, backup prices 120, intraday 60, fund NAVs 40, cross-checks 40, other 20. A call is refused once its share is used or the day is within 10 of 800. The status panel shows today's use and an end-of-day projection (history counted once, the rest scaled by how much of the session has passed). Credits are counted per app: if MW and MW Beta both run with the same key, they share the same 800.
+The free plan allows 800 credits a day. MW Beta gives each feature its own share so one can't starve the others: history 280, VWAP 160, backup prices 120, fund prices 80, intraday 60, chart window 40, cross-checks 40, other 20. A call is refused once its share is used or the day is within 10 of 800. The status panel shows today's use and an end-of-day projection (history counted once, the rest scaled by how much of the session has passed). Credits are counted per app: if MW and MW Beta both run with the same key, they share the same 800.
+
+## Mutual funds
+
+A mutual fund has one price a day, the NAV, set after the 4 PM ET close. Twelve Data's free plan posts it overnight, so during the day and through the evening the newest official price is the session before. MW Beta handles that in four ways:
+
+- **Which day.** Every fund row and the group header say which day the price is from ("priced Mon 1/5", or "as of 1/2" while a newer one is due). The official change is shown in a solid box only when it belongs to the session the rest of the screen is about; an older day's change is shown faded.
+- **In the total.** A fund's official change is added to the portfolio's day change when its price is for that same session (`E.lastSessionDate`). Before 9:30 AM ET the screen shows the last session, so last night's fund prices count there.
+- **Catching up.** Once a new price is due (`E.navDueDate`), MW Beta asks again every 45 to 60 minutes until it has it, and rests for 6 hours once it is up to date (`E.navWait`). When two sources answer, the newest date wins (`E.pickNav`); a second source more than 15% away from the first is ignored as a different security.
+- **Estimate between prices.** Each fund's daily changes over the last 120 sessions are regressed on each index ETF MW Beta tracks (the market tiles plus IWF, IWD, EFV, EFG, MDY, AGG and VXUS). The ETF with the highest R² is the fund's stand-in (`E.proxyFit`). The estimate is beta × the ETF's move since its close on the day of the fund's last official price (`E.navEstimate`). It is shown only when R² is at least 0.60, always in a dashed box marked "est.", and it is **never added to the total**. It disappears when the official price arrives. Example: fund ABCDX has beta 0.90 to its ETF with R² 0.88; the ETF is up 2.0% since the fund's last price, so the estimate is +1.8%. Turn it off in Settings → Holdings.
+
+A five-letter ticker ending in X in the Holdings table is treated as a mutual fund and priced the same way.
+
+## News
+
+One list for every headline: Finnhub company news for your holdings and watchlist (the last 3 days, up to 8 per ticker) plus general market news (the newest 20). The same story reported under several of your tickers is one line listing them (`E.newsMerge`, matched on the headline's words); the list holds up to 80 headlines from the last 4 days, newest first. A headline is "new" until you open it, for 24 hours. Read marks are kept on this PC. The ticker tags on a headline show that ticker's change for the day.
 
 ## Portfolio risk
 

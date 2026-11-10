@@ -443,7 +443,6 @@ span.fx-dn,small.fx-dn{animation:fxDn 1.1s ease-out;border-radius:3px}
 .v .chip{display:inline-block;margin-top:2px}
 .idx .c i{display:block;font:normal 600 10px var(--font);margin-top:1px;white-space:nowrap}
 .hero .chg small.ah{color:var(--fg-2)}
-.dp small.vsb{display:block;font:400 9.5px var(--font);color:var(--muted);margin-top:1px;white-space:nowrap}
 /* next Fed or inflation release, above the chip-earnings note */
 .macro{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--fg-2);background:var(--surface-2);border-radius:var(--r-sm);padding:5px 9px;margin:8px 0 0}
 .macro svg{width:13px;height:13px;flex:none;color:var(--muted)}
@@ -471,18 +470,76 @@ body.wsorted #wl-body .grip{visibility:hidden}
 .wgrp{display:flex;align-items:center;gap:5px;font:600 10.5px var(--font);text-transform:uppercase;letter-spacing:.6px;color:var(--muted);padding:8px 0 3px;cursor:pointer}
 .wgrp .chev{width:10px;height:10px}
 .wgrp span{font-weight:400;margin-left:2px}
-#heads{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:6px 9px;margin:0 0 10px;font-size:11.5px}
-#heads.hide{display:none}
-#heads .hd-top{display:flex;align-items:baseline;gap:8px;min-width:0}
-#heads a{color:var(--fg-2);text-decoration:none;min-width:0;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-#heads a:hover{color:var(--fg)}
-#heads a b{color:var(--fg);font-weight:600;margin-right:3px}
-#heads a small{color:var(--muted);margin-left:6px}
-#heads .hd-new,#heads .hd-all{flex:none;font:600 10px var(--font);border-radius:10px;padding:2px 8px;border:0;cursor:pointer}
-#heads .hd-new{background:var(--accent);color:var(--accent-fg)}
-#heads .hd-all{background:var(--surface-2);color:var(--fg-2)}
-#heads .hd-list{margin-top:4px;border-top:1px solid var(--line);padding-top:2px}
-#heads .hd-list a{padding:4px 0}
+/* ============ 5.0: News section ============ */
+.sec-sum.nw-s{flex:1;min-width:0;justify-content:flex-end;font-variant-numeric:normal}
+.nw-new{flex:none;font:600 10px var(--font);border-radius:10px;padding:2px 7px;background:var(--accent);color:var(--accent-fg)}
+.nw-latest{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg-2)}
+.nw-latest b{color:var(--fg);font-weight:600}
+.nw-bar{display:flex;align-items:center;gap:4px;margin:0 0 6px}
+.nw-bar .seg{min-width:0;overflow-x:auto;scrollbar-width:none} .nw-bar .seg::-webkit-scrollbar{display:none}
+.nw-bar .rbtn{flex:none;white-space:nowrap}
+.nw-bar .seg button{position:relative;white-space:nowrap}
+.nw-bar .seg button i{font-style:normal;font-weight:700;font-size:9.5px;margin-left:4px;padding:0 4px;border-radius:7px;background:var(--accent);color:var(--accent-fg)}
+.rbtn[disabled]{opacity:.4;cursor:default} .rbtn[disabled]:hover{background:none}
+.nw-chips{display:flex;gap:5px;overflow-x:auto;padding:1px 0 7px;scrollbar-width:none}
+.nw-chips::-webkit-scrollbar{display:none}
+.nw-chips button{flex:none;position:relative;font:600 11px var(--font);color:var(--fg-2);background:var(--surface-2);border:1px solid transparent;border-radius:12px;padding:2px 8px}
+.nw-chips button:hover{color:var(--fg);border-color:var(--line-2)}
+.nw-chips button.on{background:var(--accent);color:var(--accent-fg)}
+.nw-chips button span{font-weight:400;opacity:.7;margin-left:4px}
+.nw-chips button i{position:absolute;top:-1px;right:-1px;width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--surface)}
+.nw-chips button.on i{display:none}
+.nw-list{margin:0 -12px}
+.nw-day{font:600 10px var(--font);text-transform:uppercase;letter-spacing:.6px;color:var(--muted);padding:8px 12px 3px}
+.nw{position:relative;padding:7px 12px 7px 14px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);cursor:pointer}
+.nw-list > .nw:first-child,.nw-day + .nw{border-top:0}
+.nw:hover{background:color-mix(in srgb,var(--surface-2) 70%,transparent)}
+.nw.open{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.nw::before{content:"";position:absolute;left:5px;top:13px;width:5px;height:5px;border-radius:50%;background:transparent}
+.nw.new::before{background:var(--accent)}
+.nw-top{display:flex;align-items:flex-start;gap:8px}
+.nw-h{flex:1;min-width:0;font-size:12.5px;line-height:1.35;color:var(--fg-2);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;user-select:text}
+.nw.new .nw-h{color:var(--fg);font-weight:600}
+.nw.open .nw-h{-webkit-line-clamp:unset;color:var(--fg)}
+.nw-go{flex:none;display:grid;place-items:center;width:24px;height:24px;margin:-2px -4px 0 0;border-radius:6px;color:var(--muted)}
+.nw-go svg{width:13px;height:13px}
+.nw-go:hover{background:var(--surface-2);color:var(--accent)}
+.nw-m{display:flex;align-items:center;gap:5px;margin-top:4px;font-size:10.5px;color:var(--muted);min-width:0}
+.nw-tk{flex:none;font:600 10px var(--font);color:var(--fg-2);background:var(--surface-2);border-radius:5px;padding:1px 5px;white-space:nowrap}
+button.nw-tk:hover{color:var(--fg);box-shadow:inset 0 0 0 1px var(--line-2)}
+.nw-tk i{font-style:normal;font-weight:600;margin-left:4px;font-variant-numeric:tabular-nums}
+.nw-tk.mk{font-weight:500;color:var(--muted)}
+.nw-src{margin-left:auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nw-x{margin-top:7px;cursor:default}
+.nw-x p{margin:0 0 8px;font-size:12px;line-height:1.5;color:var(--fg-2);user-select:text;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:9;overflow:hidden}
+.nw-acts{display:flex;align-items:center;flex-wrap:wrap;gap:4px}
+.nw-acts .btn{padding:4px 10px;font-size:11.5px;text-decoration:none;margin-right:2px}
+.nw-acts .btn svg{width:12px;height:12px}
+.nw-acts .nw-cl{margin-left:auto;color:var(--fg-2)}
+.nw-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:6px;margin-top:2px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);font-size:11px}
+.nw-foot .rbtn:only-child{margin:0 auto}
+body.compact #nw-sec .sec-h{padding-top:8px;padding-bottom:8px}
+/* headlines inside an open holding or watchlist row */
+.news a span{display:block}
+.news a.new span{font-weight:600}
+.news a:not(.new) span{color:var(--fg-2)}
+.news .rbtn{margin:4px 0 0 -6px}
+/* ============ 5.0: dollars per holding, mutual funds ============ */
+.dp small.du{display:block;font:500 10px var(--font);font-variant-numeric:tabular-nums;margin-top:1px;white-space:nowrap;opacity:.85}
+.dp.est,.cbox.est{background:transparent;box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 40%,transparent);border-radius:6px}
+.dp.est{box-shadow:none;border:1px dashed color-mix(in srgb,currentColor 45%,transparent);padding:2px 5px}
+.cbox.est{box-shadow:none;border:1px dashed color-mix(in srgb,currentColor 45%,transparent);padding:1px 5px;font-weight:600}
+.dp.old,.cbox.old{background:transparent;opacity:.6}
+.dp.old{font-weight:500}
+.cbox i{font-style:normal;font-weight:500;margin-right:6px;opacity:.9}
+.grp-h .r .cbox{white-space:nowrap}
+.fundtag{font-weight:500;color:var(--muted)}
+.hrow > .navd{width:64px;height:auto;font-size:10px;line-height:1.25;color:var(--muted);text-align:right;white-space:nowrap}
+.frow .v small{font-variant-numeric:tabular-nums}
+.movers{font-size:11px;line-height:1.5;color:var(--fg-2);margin:-4px 0 10px}
+.movers span{white-space:nowrap}
+.movers b{font-weight:600;color:var(--fg)} .movers b.up{color:var(--up)} .movers b.down{color:var(--down)}
+.hrow[aria-expanded="true"]{background:color-mix(in srgb,var(--accent) 5%,transparent)}
 /* chart window (4.5) */
 #chart{position:fixed;inset:0;z-index:55;background:rgba(5,8,14,.45);display:flex;justify-content:center;align-items:center;padding:12px}
 #chart.hide{display:none}
@@ -546,7 +603,7 @@ body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !importa
 .chip.flag{color:var(--down);border:1px solid color-mix(in srgb,var(--down) 50%,transparent);background:transparent}
 .riskx{background:var(--surface-2);border-radius:var(--r-sm);padding:8px 9px;margin:-4px 0 10px;font-size:11.5px;color:var(--fg-2)}
 .riskx .rk{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}
-.riskx b{color:var(--fg);font-weight:600}
+.riskx b{color:var(--fg);font-weight:600;white-space:nowrap}
 .riskx h5{margin:0 0 5px;font:600 10.5px var(--font);letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
 .rcbar{display:flex;height:7px;border-radius:4px;overflow:hidden;margin:7px 0 4px;background:var(--line)}
 .rcbar i{display:block;height:100%}
@@ -624,7 +681,6 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
 <main id="main">
   <div id="update" class="callout"></div>
   <div id="paused"></div>
-  <div id="heads" class="hide" aria-live="polite"></div>
   <div id="since" title="Click to clear"></div>
   <div id="banner" role="alert"></div>
   <div id="blind" class="callout" role="alert"></div>
@@ -640,6 +696,15 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
     Prices from Finnhub aren't updating. The key may have a typo, or it was reset on finnhub.io.<span id="keyBadBk"></span>
     <div style="margin-top:8px"><button class="btn primary" data-open="general">Open settings</button></div>
   </div>
+
+  <section class="sec" id="nw-sec" data-sec="news">
+    <button class="sec-h" data-toggle="news">
+      <svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>
+      <span class="sec-t">News</span>
+      <span class="sec-sum nw-s" id="nw-sum"></span>
+    </button>
+    <div class="sec-b" id="nw-body"></div>
+  </section>
 
   <section class="sec" id="pf-sec" data-sec="portfolio">
     <button class="sec-h" data-toggle="portfolio">

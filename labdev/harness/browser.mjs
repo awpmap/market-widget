@@ -61,7 +61,7 @@ async function mock(page) {
     if (p === "stock/metric") return route.fulfill({json: {metric: {"52WeekHigh": pcOf(sym) * 1.08, "52WeekLow": pcOf(sym) * 0.7, beta: 1.2}}});
     if (p === "stock/market-status") return route.fulfill({json: {isOpen: true, holiday: null}});
     if (p === "calendar/earnings") return route.fulfill({json: {earningsCalendar: []}});
-    if (p === "company-news") return route.fulfill({json: []});
+    if (p === "company-news" || p === "news") return route.fulfill({json: []});
     return route.fulfill({json: {}});
   });
   await page.route(/https:\/\/api\.twelvedata\.com\/.*/, route => {
@@ -465,7 +465,7 @@ console.log("Earnings, charts and alert repeat (4.5)");
   await ctx4.close();
 }
 
-/* ---------- 4.7: Monitor layout, watchlist sections and sort, headline strip (made-up tickers and headlines) ---------- */
+/* ---------- 4.7: Monitor layout, watchlist sections and sort, headlines (made-up tickers and headlines) ---------- */
 console.log("Monitor layout, sections, headlines (4.7)");
 {
   const ctx5 = await browser.newContext({viewport:{width:1400, height:900}, timezoneId:"America/Chicago"});
@@ -490,15 +490,126 @@ console.log("Monitor layout, sections, headlines (4.7)");
   check(JSON.stringify(await p5.locator("#wl-body .wrow .tk").allInnerTexts()) === JSON.stringify(["AAA","CCC","BBB","DDD"].length ? await p5.evaluate(() => { const by = s => quotes[s].dp; const a = ["AAA","CCC"].sort((x, y) => by(x) - by(y)), b = ["BBB","DDD"].sort((x, y) => by(x) - by(y)); return [...a, ...b]; }) : []), "Biggest drop sorts within each section");
   check(await p5.evaluate(() => cfg.watch.map(w => w.sym).join() === "AAA,BBB,CCC,DDD"), "the sort doesn't change your saved order");
   await p5.locator('#wl-body [data-wsort="mine"]').click();
-  for (let i = 0; i < 24 && !(await p5.evaluate(() => heads.items.length)); i++) await adv(5000, 1000);   // headlines are low-priority calls
-  check(/new/.test(await p5.locator("#heads .hd-new").innerText().catch(() => "")) && /test headline one/.test(await p5.locator("#heads").innerText()), "the headline strip shows the newest headline with an N new count");
-  await p5.locator("#heads [data-hd]").click(); await adv(300, 100);
-  check(await p5.locator("#heads .hd-list a").count() >= 3 && await p5.locator("#heads .hd-new").count() === 0, "opening the list shows more and clears the count");
+  for (let i = 0; i < 24 && !(await p5.evaluate(() => newsItems().length)); i++) await adv(5000, 1000);   // headlines are low-priority calls
+  check(/8 new/.test(await p5.locator("#nw-sum .nw-new").innerText().catch(() => "")) && /test headline one/.test(await p5.locator("#nw-body").innerText()), "the News section shows the newest headlines with an N new count");
+  check(await p5.locator("#nw-body .nw").count() === 3 && /Show all 8 headlines/.test(await p5.locator("#nw-body .nw-foot").innerText()), "three headlines to start, with a button for the rest");
   if (SHOTS) await p5.screenshot({path:path.join(SHOTS, "9-monitor.png")});
   await p5.setViewportSize({width:420, height:900}); await adv(1000, 250);
   check(await p5.evaluate(() => !document.body.classList.contains("wide") && !document.getElementById("cols")), "a narrow window goes back to one column");
   check(errs5.length === 0, "no page errors in the Monitor layout" + (errs5.length ? ": " + errs5.slice(0, 4).join(" | ") : ""));
   await ctx5.close();
+}
+
+/* ---------- 5.0: dollars per holding, mutual funds, the News section (made-up tickers, funds and headlines) ---------- */
+console.log("Dollars, mutual funds, News (5.0)");
+{
+  const ctx6 = await browser.newContext({viewport:{width:440, height:900}, timezoneId:"America/Chicago"});
+  const p6 = await ctx6.newPage(); await mock(p6);
+  const errs6 = []; p6.on("pageerror", e => errs6.push(e.message)); p6.on("console", m => { if (m.type() === "error" && !/Failed to load resource|sentry/i.test(m.text())) errs6.push(m.text()); });
+  let t6 = Date.parse("2026-11-09T17:05:00Z");   // 12:05 New York time, a Monday
+  // two made-up funds: FNDAX moves 0.9x with SPY, FNDBX 1.1x with QQQ. Their prices post a day late, like the free feed.
+  const FUNDS = {FNDAX:{like:"SPY", b:0.9, px:20}, FNDBX:{like:"QQQ", b:1.1, px:10}};
+  let navDay = "2026-11-06"; const navAsk = {};
+  const fundBars = (sym, today) => { const F = FUNDS[sym], pb = dailyBars(F.like, today); let seed = hash(sym), c = F.px; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5;
+    return pb.map((b, i) => { const row = {datetime:b.datetime, open:c.toFixed(4), high:c.toFixed(4), low:c.toFixed(4), close:c.toFixed(4)}; const nx = pb[i + 1]; if (nx) c = c / (1 + F.b * (+b.close / +nx.close - 1) + rnd() * 0.002); return row; }); };
+  await p6.route(/https:\/\/api\.twelvedata\.com\/.*/, route => {
+    const u = new URL(route.request().url()), sym = u.searchParams.get("symbol"), F = FUNDS[sym];
+    if (!F) return route.fallback();
+    if (u.pathname === "/time_series") return route.fulfill({json: {values: fundBars(sym, E.etDateOf(simNow))}});
+    navAsk[sym] = (navAsk[sym] || 0) + 1;
+    const fri = fundBars(sym, "2026-11-09"), late = navDay === "2026-11-09", c = late ? +(F.px * 1.015).toFixed(4) : F.px, pc = late ? F.px : +fri[1].close;
+    return route.fulfill({json: {symbol:sym, close:String(c), previous_close:String(pc), datetime:navDay}});
+  });
+  await p6.route(/https:\/\/finnhub\.io\/api\/v1\/(company-news|news|quote).*/, route => { const u = new URL(route.request().url()), sym = u.searchParams.get("symbol"), now = Math.floor(t6 / 1000);
+    if (u.pathname.endsWith("/quote")) return FUNDS[sym] ? (quoteCalls[sym] = (quoteCalls[sym] || 0) + 1, route.fulfill({json:{c:0, d:null, dp:null, h:0, l:0, o:0, pc:0, t:0}})) : route.fallback();
+    if (u.pathname.endsWith("/news")) return route.fulfill({json:[{id:900, headline:"Market test headline", summary:"Market summary text.", source:"Testwire", url:"https://example.com/m/1", datetime:now - 300}]});
+    return route.fulfill({json:[{id:hash(sym) % 1000, headline:`${sym} test headline one`, summary:`${sym} summary text.`, source:"Testwire", url:`https://example.com/${sym}/1`, datetime:now - 600 - hash(sym) % 600},
+      {id:777, headline:"A story about both tickers", summary:"", source:"Testwire", url:"https://example.com/both", datetime:now - 3600},
+      {id:hash(sym) % 1000 + 1000, headline:`${sym} older headline`, summary:"", source:"Testwire", url:`https://example.com/${sym}/2`, datetime:now - 30 * 3600}]}); });
+  await p6.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
+    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", tdKey:"test", refresh:60}));
+    localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"AAA", shares:10, acct:"Taxable"}, {sym:"BBB", shares:4, acct:"Taxable"}, {sym:"CCC", shares:2, acct:"Roth"}, {sym:"FNDBX", shares:50, avg:9, acct:"Roth"}],
+      fixed:[{name:"Test fund", sym:"FNDAX", shares:100}, {name:"Cash", value:500}], watch:[{sym:"AAA"}, {sym:"DDD"}]}));
+  });
+  await p6.clock.install({time:t6});
+  const adv = async (ms, step = 1000) => { for (let t = 0; t < ms; t += step) { t6 += step; simNow = t6; await p6.clock.runFor(step); await p6.waitForTimeout(25); } };
+  simNow = t6; Object.keys(px).forEach(k => delete px[k]);
+  px.AAA = +(pcOf("AAA") * 1.03).toFixed(2); px.BBB = +(pcOf("BBB") * 0.98).toFixed(2); px.CCC = +(pcOf("CCC") * 1.01).toFixed(2); px.SPY = +(pcOf("SPY") * 1.02).toFixed(2); px.QQQ = +(pcOf("QQQ") * 1.03).toFixed(2);
+  await p6.goto(BASE); await adv(30000); await adv(9 * 60e3, 5000);   // price history loads at 8 a minute
+  // dollars
+  const aUsd = (px.AAA - pcOf("AAA")) * 10;
+  const rowUsd = await p6.locator('[data-row="h:AAA:Taxable"] .dp .du').innerText();
+  check(rowUsd === "+$" + (Math.abs(aUsd) < 100 ? aUsd.toFixed(2) : Math.round(aUsd).toLocaleString("en-US")), "a holding shows the day's change in dollars under its percent (" + rowUsd + ")");
+  check(/^−\$/.test(await p6.locator('[data-row="h:BBB:Taxable"] .dp .du').innerText()), "a falling holding shows its dollars in the red");
+  check(/\$/.test(await p6.locator('.grp-h[data-grp="Taxable"] .cbox i').innerText()), "account headers show the day in dollars too");
+  check(/biggest gain AAA/.test(await p6.locator("#pf-body .movers").innerText()) && /biggest loss BBB/.test(await p6.locator("#pf-body .movers").innerText()), "one line names the day's biggest dollar gain and loss");
+  await p6.locator('#sortSeg [data-sort="usd"]').click(); await adv(300, 100);
+  check(JSON.stringify(await p6.locator('.grp-h[data-grp="Taxable"] + .grp-rows .hrow .tk').allInnerTexts()) === JSON.stringify(["AAA", "BBB"]), "Today $ sorts by dollars");
+  await p6.locator('#sortSeg [data-sort="value"]').click();
+  // mutual funds between official prices
+  const fit = await p6.evaluate(() => fundFit);
+  check(fit.FNDAX && fit.FNDAX.sym === "SPY" && Math.abs(fit.FNDAX.beta - 0.9) < 0.08 && fit.FNDBX && fit.FNDBX.sym === "QQQ", "each fund is matched to the ETF it moves with (" + JSON.stringify(fit.FNDAX) + ")");
+  const fA = '[data-row="f:FNDAX:"]', fB = '[data-row="f:FNDBX:Roth"]';
+  check(await p6.locator(fA + " .dp.est").count() === 1 && /^\+1\.[6-9]\d%/.test(await p6.locator(fA + " .dp").innerText()), "a fund without today's price shows an estimate in a dashed box (" + (await p6.locator(fA + " .dp").innerText()).replace(/\s+/g, " ") + ")");
+  check(/est\. since\s*Fri 11\/6/.test(await p6.locator(fA + " .navd").innerText()), "the row says the estimate runs from Friday's price");
+  check(/as of 11\/6/.test(await p6.locator('.grp-h[data-grp="__funds"]').innerText()) && await p6.locator('.grp-h[data-grp="__funds"] .cbox.est').count() === 1, "the Mutual funds header says which day the prices are from");
+  check(await p6.evaluate(() => { const P = portfolioCalc(), stocks = P.rows.filter(r => !r.fund).reduce((a, r) => a + r.dayUsd, 0); return P.est && P.est.n === 2 && Math.abs(P.dayUsd - stocks) < 0.005; }) && /Funds est\./.test(await p6.locator("#pf-body .hero .chg").innerText()), "estimates are shown apart and never added to the day's total");
+  check(await p6.locator(fB).count() === 1 && /\$500/.test(await p6.locator(fB + " .v").innerText()) && (quoteCalls.FNDBX || 0) <= 2, "a fund typed into Holdings is priced as a fund, not asked for a live quote every refresh (" + (quoteCalls.FNDBX || 0) + " asks)");
+  await p6.locator(fA).click(); await adv(500, 100);
+  const fdet = await p6.locator(fA + " .detail").innerText();
+  check(/Price \(NAV\)\s*\$20\.00/.test(fdet) && /Priced\s*Fri 11\/6/.test(fdet) && /Moves most like\s*SPY/.test(fdet) && /Est\. since then/.test(fdet), "a fund's details give its price, the day it is from, the estimate and the ETF it follows");
+  const asks = navAsk.FNDAX; await p6.locator(fA + " [data-navref]").click(); await adv(3000, 500);
+  check(navAsk.FNDAX === asks + 1, "Check price asks for the fund's price right away");
+  await p6.locator(fA).click();
+  await p6.evaluate(() => { settings.fundEst = false; saveSettings(); renderAll(); });
+  check(await p6.locator("#pf-body .dp.est").count() === 0 && await p6.locator(fA + " .dp.old").count() === 1, "with estimates off, the last official change shows faded with its day");
+  await p6.evaluate(() => { settings.fundEst = true; saveSettings(); renderAll(); });
+  if (SHOTS) await p6.screenshot({path:path.join(SHOTS, "10-funds-estimate.png"), fullPage:true});
+  // news
+  for (let i = 0; i < 12 && (await p6.evaluate(() => newsItems().length)) < 8; i++) await adv(5000, 1000);
+  const nws = await p6.evaluate(() => newsItems().map(n => ({h:n.h, syms:n.syms})));
+  check(nws.filter(n => n.h === "A story about both tickers").length === 1 && nws.find(n => n.h === "A story about both tickers").syms.length >= 2, "the same story on several tickers is one headline");
+  check(JSON.stringify(await p6.locator("#nw-body [data-nwtab]").evaluateAll(els => els.map(e => e.dataset.nwtab))) === JSON.stringify(["all", "mine", "watch", "market"]), "News has tabs for All, Holdings, Watchlist and Market");
+  check(await p6.locator("#nw-body .nw").count() === 3 && /Market test headline/.test(await p6.locator("#nw-body .nw").first().innerText()), "the newest three headlines show first, market news included");
+  await p6.locator('#nw-body [data-nw="more"]').click(); await adv(300, 100);
+  const allN = await p6.locator("#nw-body .nw").count();
+  check(allN === nws.length && await p6.locator("#nw-body .nw-day").count() >= 2, "Show all lists every headline under day headings (" + allN + ")");
+  const newBefore = await p6.locator("#nw-body .nw.new").count();
+  const row = p6.locator("#nw-body .nw", {hasText:"AAA test headline one"});
+  await row.locator(".nw-h").click(); await adv(300, 100);
+  check(/AAA summary text\./.test(await p6.locator("#nw-body .nw.open .nw-x").innerText()) && await p6.locator('#nw-body .nw.open .nw-x a[href="https://example.com/AAA/1"]').count() === 1, "clicking a headline opens its summary with a link to the article");
+  check(await p6.locator("#nw-body .nw.new").count() === newBefore - 1 && newBefore > 0, "an opened headline is no longer new");
+  check(await p6.locator('#nw-body .nw.open .nw-go[target="_blank"][rel="noopener"]').count() === 1, "the article link opens in the browser");
+  await p6.keyboard.press("Escape"); await adv(300, 100);
+  check(await p6.locator("#nw-body .nw.open").count() === 0, "Esc closes the summary");
+  await p6.locator('#nw-body .nw-chips [data-nwsym="AAA"]').click(); await adv(300, 100);
+  check(await p6.locator("#nw-body .nw").evaluateAll(els => els.length >= 2 && els.every(e => [...e.querySelectorAll(".nw-tk")].some(t => t.textContent.startsWith("AAA")))), "a ticker chip filters the list to that ticker");
+  await p6.locator('#nw-body .nw-foot [data-nwsym]').click(); await adv(300, 100);
+  await p6.locator('#nw-body [data-nwtab="market"]').click(); await adv(300, 100);
+  check(await p6.locator("#nw-body .nw").count() === 1 && /Market/.test(await p6.locator("#nw-body .nw .nw-tk").innerText()), "the Market tab shows only general market news");
+  await p6.locator('#nw-body [data-nwtab="all"]').click(); await adv(300, 100);
+  await p6.locator('#nw-body [data-nw="read"]').click(); await adv(300, 100);
+  check(await p6.locator("#nw-body .nw.new").count() === 0 && await p6.locator("#nw-sum .nw-new").count() === 0 && await p6.locator('#nw-body [data-nw="read"]').isDisabled(), "✓ Read marks everything read");
+  await p6.locator('[data-toggle="news"]').click(); await adv(300, 100);
+  check(/Market test headline/.test(await p6.locator("#nw-sum .nw-latest").innerText()), "collapsed, the News header shows the newest headline");
+  await p6.locator("#wl-sec .sec-h").focus(); await p6.keyboard.press("n"); await adv(500, 100);
+  check(await p6.evaluate(() => !document.getElementById("nw-sec").classList.contains("collapsed") && !!document.activeElement.closest("#nw-sec .nw")), "N opens News and puts the keyboard on the first headline");
+  await p6.locator('[data-row="h:AAA:Taxable"]').click(); await adv(2000, 250);
+  check(await p6.locator('[data-row="h:AAA:Taxable"] .news a').count() >= 2 && await p6.locator('[data-row="h:AAA:Taxable"] .news [data-nwjump="AAA"]').count() === 1, "an open holding lists its own headlines with a link to all of them");
+  await p6.locator('[data-row="h:AAA:Taxable"]').click();
+  if (SHOTS) await p6.screenshot({path:path.join(SHOTS, "11-news.png"), fullPage:true});
+  // the next morning: Monday's prices have been posted
+  navDay = "2026-11-09"; await p6.clock.fastForward(20 * 3600e3); t6 += 20 * 3600e3; simNow = t6;   // 8:05 New York time, Tuesday
+  for (let i = 0; i < 40 && (await p6.evaluate(() => (navs.FNDAX || {}).date)) !== "2026-11-09"; i++) await adv(60000, 5000);
+  await adv(5000, 1000);
+  check(await p6.locator(fA + " .dp.est").count() === 0 && await p6.locator(fA + " .dp.old").count() === 0 && /\+1\.50%\s*\+\$30\.00/.test(await p6.locator(fA + " .dp").innerText()), "once the official price is posted it replaces the estimate (" + (await p6.locator(fA + " .dp").innerText()).replace(/\s+/g, " ") + ")");
+  check(/priced Mon 11\/9/.test(await p6.locator('.grp-h[data-grp="__funds"]').innerText()), "the header says the funds are priced for Monday");
+  check(await p6.evaluate(() => { const P = portfolioCalc(), stocks = P.rows.filter(r => !r.fund).reduce((a, r) => a + r.dayUsd, 0); return !P.est && Math.abs(P.dayUsd - (stocks + 30 + 50 * 10 * 0.015)) < 0.01; }), "official fund changes count in the day's total");
+  check(/Gain/.test(await p6.evaluate(() => { openRows.add("f:FNDBX:Roth"); renderPortfolio(); return document.querySelector('[data-row="f:FNDBX:Roth"] .detail').innerText; })), "a fund in Holdings shows its gain against your cost");
+  if (SHOTS) await p6.screenshot({path:path.join(SHOTS, "12-funds-official.png"), fullPage:true});
+  check(errs6.length === 0, "no page errors in the 5.0 checks" + (errs6.length ? ": " + [...new Set(errs6)].slice(0, 4).join(" | ") : ""));
+  await ctx6.close();
 }
 
 await browser.close(); server.close();

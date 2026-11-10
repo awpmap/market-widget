@@ -6,7 +6,7 @@
 (function (root) {
 "use strict";
 const E = {};
-E.VERSION = "4.8.0";
+E.VERSION = "5.0.0";
 
 /* ====================================================================================
    1. Calendar (NYSE). Source: NYSE Group release of 2025-12-23, "2026, 2027 and 2028 Holiday
@@ -554,7 +554,7 @@ E.scorecard = function (records) {
    so one feature can't starve the others. Credits are charged when a call succeeds or is answered.
    ==================================================================================== */
 E.TD_DAILY = 800;
-E.TD_CAPS = {hist:280, vwap:200, backup:120, nav:40, intraday:60, chart:40, xcheck:40, other:20};
+E.TD_CAPS = {hist:280, vwap:160, backup:120, nav:80, intraday:60, chart:40, xcheck:40, other:20};
 E.budgetFresh = (ledger, day) => (ledger && ledger.date === day) ? ledger : {date:day, n:0, by:{}};
 E.budgetAllow = function (ledger, cat, cost, caps) {
   caps = caps || E.TD_CAPS; cost = cost || 1;
@@ -768,6 +768,105 @@ E.parseTickers = function (text) {
   });
   return {ok, bad};
 };
+
+/* ====================================================================================
+   17. Mutual funds (5.0). A fund has one price a day (its NAV), struck at the close and posted that evening or,
+   on some feeds, the next morning. MW asks every source it has and keeps the newest answer; between official
+   prices it can show an ESTIMATE from the ETF the fund has tracked most closely, always labelled as one.
+   ==================================================================================== */
+/* US mutual fund tickers are five letters ending in X (money-market funds end in XX) */
+E.isFundSym = s => /^[A-Z]{4}X$/.test(String(s || ""));
+/* the session a "today" change belongs to: today once the open has passed, otherwise the last trading day */
+E.lastSessionDate = function (now) {
+  const t = E.etParts(now);
+  return E.isTradingDay(t.date) && t.mins >= 570 ? t.date : E.prevTradingDay(t.date);
+};
+/* the newest date a fund price can exist for: today once the close has passed, otherwise the last trading day */
+E.navDueDate = function (now) {
+  const t = E.etParts(now);
+  return E.isTradingDay(t.date) && t.mins >= E.closeMins(t.date) ? t.date : E.prevTradingDay(t.date);
+};
+/* choose between sources. cands: [{src, nav, prev, date:"YYYY-MM-DD"}] in order of preference; the newest date wins,
+   an equal date keeps the earlier (preferred) source. old = the price MW already holds, used for the day before
+   when the winner doesn't say. Returns null when nothing usable came back. */
+E.pickNav = function (cands, old) {
+  const ok = (cands || []).filter(c => c && c.nav > 0 && /^\d{4}-\d\d-\d\d$/.test(c.date || ""));
+  if (!ok.length) return null;
+  let best = ok[0]; ok.forEach(c => { if (c.date > best.date) best = c; });
+  let prev = best.prev > 0 ? best.prev : null, prevDate = null;
+  if (!prev) {   // the day before, from another source's (older) answer or from what MW had
+    const older = ok.filter(c => c.date < best.date).concat(old && old.nav > 0 && old.date < best.date ? [old] : []).sort((a, b) => b.date.localeCompare(a.date))[0];
+    if (older) { prev = older.nav; prevDate = older.date; }
+  }
+  const same = ok.filter(c => c !== best && c.date === best.date), off = same.find(c => Math.abs(c.nav / best.nav - 1) > 0.02);
+  return {nav:best.nav, prev, prevDate, date:best.date, src:best.src, tried:ok.map(c => c.src + " " + c.date), disagree: off ? `${off.src} says ${off.nav} for ${off.date}` : ""};
+};
+/* how long to wait before asking again (ms). due = E.navDueDate(now). Behind in the evening (4:30 pm to midnight
+   New York) or the next morning: ask often; otherwise rarely. fast = a source with no daily limit is available. */
+E.navWait = function (date, now, fast) {
+  const due = E.navDueDate(now), t = E.etParts(now);
+  if (date && date >= due) return 6 * 3600e3;                         // up to date: nothing new can exist yet
+  const evening = E.isTradingDay(t.date) && t.mins >= E.closeMins(t.date) + 30;
+  if (evening) return (fast ? 10 : 45) * 60e3;                          // today's price is being posted about now
+  return (fast ? 20 : 60) * 60e3;                                       // still behind the morning after: keep trying
+};
+/* which ETF has this fund moved with? Single-factor least squares on daily returns over the last `days` sessions
+   both have. fundBars and pool[sym]: bars newest first ([date,o,h,l,c,v]) or [{d,c}]. Returns the best fit
+   {sym, beta, r2, n} or null when there isn't enough shared history. */
+E.proxyFit = function (fundBars, pool, opts) {
+  opts = Object.assign({days:120, min:40}, opts || {});
+  let best = null;
+  Object.keys(pool || {}).forEach(sym => {
+    const A = E.alignCloses({f:fundBars, p:pool[sym]}, ["f", "p"], opts.days + 1);
+    if (A.dates.length < opts.min + 1) return;
+    const rf = [], rp = [];
+    for (let i = 1; i < A.dates.length; i++) { rf.push(A.closes[0][i] / A.closes[0][i-1] - 1); rp.push(A.closes[1][i] / A.closes[1][i-1] - 1); }
+    const mf = E.mean(rf), mp = E.mean(rp); let cov = 0, vf = 0, vp = 0;
+    for (let i = 0; i < rf.length; i++) { cov += (rf[i] - mf) * (rp[i] - mp); vf += (rf[i] - mf) ** 2; vp += (rp[i] - mp) ** 2; }
+    if (!(vf > 0) || !(vp > 0)) return;
+    const beta = cov / vp, r2 = cov * cov / (vf * vp);
+    if (beta > 0 && (!best || r2 > best.r2)) best = {sym, beta:+beta.toFixed(3), r2:+r2.toFixed(3), n:rf.length};
+  });
+  return best;
+};
+/* the fund's estimated move since its last official price: beta x the ETF's move since that same day's close.
+   proxyBars newest first; proxyNow = the ETF's latest regular price. Returns {pct, nav, from} or null. */
+E.navEstimate = function (nav, navDate, fit, proxyBars, proxyNow, prev) {
+  if (!(nav > 0) || !fit || !(proxyNow > 0)) return null;
+  let c = null;
+  // the ETF's close on the day of the fund's price: yesterday's close from its live quote when that is the day, else its daily bars
+  if (prev && prev.d === navDate && prev.c > 0) c = prev.c;
+  else if (proxyBars) { const bar = proxyBars.find(b => (Array.isArray(b) ? b[0] : b.d) <= navDate);
+    if (bar && (Array.isArray(bar) ? bar[0] : bar.d) === navDate) c = Array.isArray(bar) ? bar[4] : bar.c; }
+  if (!(c > 0)) return null;   // no ETF close for that exact day: don't guess
+  const pct = fit.beta * (proxyNow / c - 1) * 100;
+  if (!isFinite(pct) || Math.abs(pct) > 25) return null;
+  return {pct, nav: nav * (1 + pct / 100), from: c};
+};
+
+/* ====================================================================================
+   18. News (5.0). One list from many per-ticker answers: the same story reported for several of your tickers
+   becomes one line that lists them; newest first; old lines dropped.
+   items: [{id, sym, h, sum, src, url, t (ms), cat}]. Returns [{id, syms:[...], h, sum, src, url, t, cat}].
+   ==================================================================================== */
+E.newsKey = h => String(h || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().slice(0, 90);
+E.newsMerge = function (items, now, opts) {
+  opts = Object.assign({max:80, maxAgeMs:4 * 864e5}, opts || {});
+  const by = new Map();
+  (items || []).forEach(n => {
+    if (!n || !n.h || !/^https?:\/\//.test(n.url || "") || !(n.t > 0) || (now && now - n.t > opts.maxAgeMs)) return;
+    const k = E.newsKey(n.h); if (!k) return;
+    const cur = by.get(k);
+    if (!cur) { by.set(k, {id:String(n.id || k), syms:n.sym ? [n.sym] : [], h:String(n.h).trim().slice(0, 240), sum:String(n.sum || "").trim().slice(0, 600), src:String(n.src || "").slice(0, 40), url:n.url, t:n.t, cat:n.cat || (n.sym ? "company" : "market")}); return; }
+    if (n.sym && !cur.syms.includes(n.sym)) cur.syms.push(n.sym);
+    if (n.sym) cur.cat = "company";
+    if (!cur.sum && n.sum) cur.sum = String(n.sum).trim().slice(0, 600);
+    if (n.t < cur.t) cur.t = n.t;   // the first time the story appeared
+  });
+  return [...by.values()].sort((a, b) => b.t - a.t).slice(0, opts.max);
+};
+/* "12m", "3h", "2d" */
+E.agoShort = function (t, now) { const m = Math.max(0, Math.round((now - t) / 60e3)); return m < 1 ? "now" : m < 60 ? m + "m" : m < 1440 ? Math.round(m / 60) + "h" : Math.round(m / 1440) + "d"; };
 
 if (typeof module !== "undefined" && module.exports) module.exports = E;
 else root.MWE = E;

@@ -489,3 +489,83 @@ test("earnings-day moves: the biggest gap after each quarter", () => {
   assert.equal(m[1].d, "2026-10-22", "a clear gap counts before the window closes");
   assert.ok(Math.abs(m[1].move + 4.8) < 0.1);
 });
+
+/* ---------------- mutual funds (5.0) ---------------- */
+test("fund tickers are five letters ending in X", () => {
+  ["ABCDX", "WXYZX", "ABCXX"].forEach(s => assert.equal(E.isFundSym(s), true, s));
+  ["ABC", "ABCD", "ABCDE", "abcdx", "ABCDXX", "AB.DX", "", null].forEach(s => assert.equal(E.isFundSym(s), false, String(s)));
+});
+test("the session on screen and the newest fund price that can exist", () => {
+  // Monday 2026-11-09: before the open the screen is about Friday; after it, about Monday
+  assert.equal(E.lastSessionDate(at("2026-11-09", "08:00")), "2026-11-06");
+  assert.equal(E.lastSessionDate(at("2026-11-09", "09:30")), "2026-11-09");
+  assert.equal(E.lastSessionDate(at("2026-11-08", "12:00")), "2026-11-06", "Sunday");
+  // a fund price for Monday can't exist until Monday's close
+  assert.equal(E.navDueDate(at("2026-11-09", "15:59")), "2026-11-06");
+  assert.equal(E.navDueDate(at("2026-11-09", "16:00")), "2026-11-09");
+  assert.equal(E.navDueDate(at("2026-11-10", "07:00")), "2026-11-09");
+  assert.equal(E.navDueDate(at("2026-11-27", "13:00")), "2026-11-27", "1 PM early close the day after Thanksgiving");
+});
+test("pickNav: the newest date wins, a tie keeps the preferred source", () => {
+  const td = {src:"Twelve Data", nav:12.3, prev:12.1, date:"2026-11-06"}, fh = {src:"Finnhub", nav:12.5, prev:null, date:"2026-11-09"};
+  const p = E.pickNav([td, fh], null);
+  assert.equal(p.src, "Finnhub"); assert.equal(p.nav, 12.5); assert.equal(p.prev, 12.3, "the day before comes from the older answer"); assert.equal(p.prevDate, "2026-11-06");
+  const tie = E.pickNav([td, Object.assign({}, fh, {date:"2026-11-06", nav:12.31})], null);
+  assert.equal(tie.src, "Twelve Data"); assert.equal(tie.prev, 12.1); assert.equal(tie.disagree, "");
+  assert.match(E.pickNav([td, {src:"Finnhub", nav:13.5, date:"2026-11-06"}], null).disagree, /Finnhub says 13.5/);
+  assert.equal(E.pickNav([{src:"x", nav:0, date:"2026-11-06"}, {src:"y", nav:5, date:"soon"}], null), null);
+  assert.equal(E.pickNav([fh], {nav:12.3, date:"2026-11-06"}).prev, 12.3, "falls back to the price already held");
+});
+test("navWait: often while a price is due, rarely once it is in", () => {
+  const eve = at("2026-11-09", "18:00"), morn = at("2026-11-10", "08:00"), mid = at("2026-11-09", "12:00");
+  assert.equal(E.navWait("2026-11-09", eve), 6 * 3600e3, "up to date");
+  assert.equal(E.navWait("2026-11-06", mid), 6 * 3600e3, "Monday's price can't exist at noon");
+  assert.equal(E.navWait("2026-11-06", eve), 45 * 60e3); assert.equal(E.navWait("2026-11-06", eve, true), 10 * 60e3);
+  assert.equal(E.navWait("2026-11-06", morn), 60 * 60e3); assert.equal(E.navWait(null, morn, true), 20 * 60e3);
+});
+/* made-up daily closes: a market series, a fund that moves 0.9x with it plus a little noise, and an unrelated series */
+function fundWorld() {
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5;
+  const mk = [], fund = [], other = []; let d = "2026-11-06", a = 150, b = 20, c = 80;
+  for (let i = 0; i < 150; i++) { const r = rnd() * 0.03, r2 = rnd() * 0.03;
+    mk.push([d, a, a, a, a, 1]); fund.push({d, c:b}); other.push([d, c, c, c, c, 1]);
+    a /= 1 + r; b /= 1 + 0.9 * r + rnd() * 0.002; c /= 1 + r2; d = E.prevTradingDay(d); }
+  return {mk, fund, other};
+}
+test("proxyFit finds the ETF a fund moves with, and how much", () => {
+  const W = fundWorld(), f = E.proxyFit(W.fund, {AAA:W.other, BBB:W.mk});
+  assert.equal(f.sym, "BBB"); assert.ok(Math.abs(f.beta - 0.9) < 0.05, "beta " + f.beta); assert.ok(f.r2 > 0.9, "r2 " + f.r2); assert.equal(f.n, 120);
+  const loose = E.proxyFit(W.fund, {AAA:W.other}); assert.ok(!loose || loose.r2 < 0.3, "an unrelated series fits badly or not at all");
+  assert.equal(E.proxyFit(W.fund.slice(0, 20), {BBB:W.mk}), null, "too little shared history");
+  assert.equal(E.proxyFit(W.fund, {}), null);
+});
+test("navEstimate: beta x the ETF's move since the day of the fund's price, or nothing", () => {
+  const W = fundWorld(), fit = {sym:"BBB", beta:0.9, r2:0.95};
+  const e = E.navEstimate(20, "2026-11-06", fit, W.mk, 153);   // the ETF closed at 150 that day: +2%
+  assert.ok(Math.abs(e.pct - 1.8) < 1e-9); assert.ok(Math.abs(e.nav - 20.36) < 1e-9); assert.equal(e.from, 150);
+  assert.equal(E.navEstimate(20, "2026-11-07", fit, W.mk, 153), null, "no ETF close for that exact day");
+  assert.ok(Math.abs(E.navEstimate(20, "2026-11-09", fit, W.mk, 153, {d:"2026-11-09", c:151.5}).pct - 0.9 * (153 / 151.5 - 1) * 100) < 1e-9, "yesterday's close from the live quote");
+  assert.equal(E.navEstimate(20, "2026-11-09", fit, null, 153, {d:"2026-11-06", c:150}), null, "a close from another day is not used");
+  assert.equal(E.navEstimate(20, "2026-11-06", fit, W.mk, 300), null, "an absurd move is not shown");
+  assert.equal(E.navEstimate(0, "2026-11-06", fit, W.mk, 153), null);
+});
+
+/* ---------------- news (5.0) ---------------- */
+test("newsMerge: one line per story, newest first, old and broken lines dropped", () => {
+  const now = at("2026-11-09", "12:00"), m = 60e3;
+  const L = E.newsMerge([
+    {id:1, sym:"AAA", h:"Chip makers rally on new orders", sum:"", src:"Wire", url:"https://example.com/1", t:now - 30 * m},
+    {id:2, sym:"BBB", h:"Chip makers rally on new orders!", sum:"More detail.", src:"Wire", url:"https://example.com/1b", t:now - 40 * m},
+    {id:3, sym:"", h:"Rates steady before the auction", src:"Desk", url:"https://example.com/3", t:now - 5 * m, cat:"market"},
+    {id:4, sym:"AAA", h:"An old story", url:"https://example.com/4", t:now - 6 * 864e5},
+    {id:5, sym:"AAA", h:"A link that isn't one", url:"javascript:alert(1)", t:now - m},
+    {id:6, sym:"AAA", h:"", url:"https://example.com/6", t:now - m}], now);
+  assert.deepEqual(L.map(n => n.id), ["3", "1"]);
+  assert.deepEqual(L[1].syms, ["AAA", "BBB"]); assert.equal(L[1].sum, "More detail."); assert.equal(L[1].t, now - 40 * m, "the first time it appeared");
+  assert.deepEqual(L[0].syms, []); assert.equal(L[0].cat, "market");
+  assert.equal(E.newsMerge(Array.from({length:120}, (_, i) => ({id:i + 1, sym:"AAA", h:"Story number " + i, url:"https://example.com/" + i, t:now - i * m})), now).length, 80);
+  assert.deepEqual(E.newsMerge(null, now), []);
+});
+test("agoShort", () => {
+  const t = 1e12; assert.equal(E.agoShort(t, t + 20e3), "now"); assert.equal(E.agoShort(t, t + 12 * 60e3), "12m"); assert.equal(E.agoShort(t, t + 3 * 3600e3), "3h"); assert.equal(E.agoShort(t, t + 49 * 3600e3), "2d");
+});
