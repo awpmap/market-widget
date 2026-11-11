@@ -155,6 +155,7 @@ body:not(.native) .tb-btn.pin{display:none}
 .wrow{cursor:pointer}
 .wdet{margin:8px 0 2px;padding:2px 10px 8px;font-size:11.5px;color:var(--fg-2);cursor:default;background:var(--surface-2);border-radius:8px}
 .wdet b{color:var(--fg);font-weight:600}
+.wdet b.up{color:var(--up)} .wdet b.down{color:var(--down)}
 /* an open watchlist row: tinted, with tabs on top and one action bar with Close at the bottom */
 .wrow[aria-expanded="true"]{background:color-mix(in srgb,var(--accent) 5%,transparent)}
 .wrow[aria-expanded="true"]:not(.st-hit):not(.st-near)::before{background:var(--accent)}
@@ -162,26 +163,38 @@ body:not(.native) .tb-btn.pin{display:none}
 .wtabs button{font:500 11px var(--font);padding:7px 8px 6px;border:0;background:none;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;white-space:nowrap}
 .wtabs button:hover{color:var(--fg-2)}
 .wtabs button.on{color:var(--fg);border-bottom-color:var(--accent)}
-.wpane{display:grid;grid-template-columns:1fr 1fr;gap:5px 14px;min-height:34px;align-content:start}
-.wpane > .range,.wpane > .news{grid-column:1/-1}
+.wpane{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;min-height:34px;align-content:start}
+.wpane > .range,.wpane > .news,.wpane > .wide,.wpane > .pers{grid-column:1/-1}
+.wpane > .wide.muted{font-size:11px;line-height:1.4}
+/* 6.0: one fact = its name in small type over its value, so a number never breaks across two lines */
+.fact{display:flex;flex-direction:column;gap:1px;min-width:0}
+.fact > i{font-style:normal;font-size:10.5px;line-height:1.3;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fact > span{font-size:12.5px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fact em{font-style:normal;font-size:11px;color:var(--muted);margin-left:2px}
+.pers{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:5px}
+.pers > span{display:flex;flex-direction:column;gap:1px;min-width:0;padding:4px 7px 5px;border-radius:6px;background:color-mix(in srgb,var(--fg) 5%,transparent)}
+.pers i{font-style:normal;font-size:10px;line-height:1.3;color:var(--muted)}
+.pers b{font-size:12px;line-height:1.3;white-space:nowrap}
 .wpane > .news{margin-top:0}
 .wacts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:9px;padding-top:8px;border-top:1px solid var(--line)}
 .wacts .wclose{margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-weight:600;color:var(--fg-2)}
 .wacts .wclose svg{width:11px;height:11px}
-.wexp{display:inline-flex;align-items:center;color:var(--muted);padding:2px 2px 2px 4px}
+.wexp{display:inline-flex;align-items:center;color:var(--muted);padding:2px 0;margin-left:-3px}
 .wexp svg{width:12px;height:12px;transition:transform .15s}
 .wrow[aria-expanded="true"] .wexp svg{transform:rotate(180deg)}
 .wrow:hover .wexp{color:var(--fg-2)}
-.wmeta{flex-wrap:wrap;row-gap:2px}
 /* compact strip: watch tickers in the same order as the Watchlist; one shared grid so the columns line up */
 #strip{display:none}
-body.compact #strip{display:grid;grid-template-columns:minmax(44px,1fr) auto auto auto;column-gap:8px;padding:0 12px 8px}
+body.compact #strip{display:grid;grid-template-columns:minmax(44px,1fr) auto auto auto auto;column-gap:8px;padding:0 12px 8px}
 .srow{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:center;font-size:12px;padding:4px 0;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
 .srow:first-child{border-top:0}
 .srow .s{font-weight:600}
-.srow>span:not(.s){text-align:right}
+.srow>span:not(.s){text-align:right;white-space:nowrap}
 .srow .d{font-size:11px;color:var(--fg-2);min-width:58px}
 .srow .d.hit{color:var(--down);font-weight:700} .srow .d.near{color:var(--warn);font-weight:700}
+/* nothing is cut here. A window too narrow sheds detail in steps (stripFit): the chip's date, the alert price, the chip */
+#strip.tight .er .dt{display:none} #strip.tighter .d .lv{display:none} #strip.tighter .srow .d{min-width:0} #strip.tightest .er{display:none}
+#strip.wrapok .srow > .d{white-space:normal}
 /* banner by kind + actions */
 #banner.k-near{background:#f5b43c;color:#1b1300}
 #banner.k-test{background:var(--accent);color:var(--accent-fg)}
@@ -244,9 +257,13 @@ body.native #titlebar{gap:4px}
 
 /* ============ layout ============ */
 main{flex:1;overflow:auto;padding:10px 10px 14px;scroll-behavior:smooth}
-.sec{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);margin-bottom:10px;overflow:hidden}
-.sec-h{display:flex;align-items:center;gap:8px;width:100%;padding:10px 12px;text-align:left}
-.sec-h:hover{background:color-mix(in srgb,var(--surface-2) 60%,transparent)}
+/* overflow:clip (not hidden) keeps the rounded corners and still lets a section's header stick to the top while you
+   scroll through it (6.0) */
+.sec{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);margin-bottom:10px;overflow:clip}
+.sec-h{display:flex;align-items:center;gap:8px;width:100%;padding:10px 12px;text-align:left;position:sticky;top:-10px;z-index:6;background:var(--surface)}   /* -10px: main's own top padding, so a stuck header sits flush under the top bar */
+.sec-h:hover{background:color-mix(in srgb,var(--surface-2) 60%,var(--surface))}
+.sec.stuck > .sec-h{box-shadow:0 1px 0 var(--line),0 8px 14px -8px rgba(0,0,0,.5)}
+body.compact .sec-h{position:static}
 .chev{width:14px;height:14px;color:var(--muted);transition:transform .18s;flex:none}
 .sec.collapsed .chev{transform:rotate(-90deg)}
 .sec-t{font:600 12px var(--font-d);text-transform:uppercase;letter-spacing:.7px;color:var(--fg-2)}
@@ -254,13 +271,22 @@ main{flex:1;overflow:auto;padding:10px 10px 14px;scroll-behavior:smooth}
 .sec-b{padding:0 12px 12px}
 .sec.collapsed .sec-b{display:none}
 body:not(.compact) #pf-sec:not(.collapsed) #pf-sum{visibility:hidden}
+body:not(.compact) #pf-sec.stuck:not(.collapsed) #pf-sum{visibility:visible}
 body.compact .sec-b{display:none}
 body.compact .sec .chev{transform:rotate(-90deg)}
 body.compact #log-sec, body.compact footer{display:none}
 
 /* ============ portfolio ============ */
 .hero{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin:2px 0 10px}
-.hero .val{font:600 28px/1.05 var(--font-d);letter-spacing:-.5px}
+.hero .val{font:600 28px/1.05 var(--font-d);letter-spacing:-.5px;display:flex;align-items:center;gap:4px;white-space:nowrap}
+.hero .hl{flex:none;min-width:0}
+/* the portfolio's own day line, between the total and its change */
+.pfline{flex:1 1 40px;min-width:0;max-width:260px;height:34px;align-self:center;display:block;cursor:crosshair}
+/* hide amounts: the eye next to the total */
+.eye{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:6px;color:var(--muted);opacity:.7}
+.eye svg{width:15px;height:15px}
+.eye:hover,.eye:focus-visible{background:var(--surface-2);color:var(--fg);opacity:1}
+.eye.on{color:var(--accent);opacity:1}
 .hero .chg{font:600 15px var(--font-d);text-align:right}
 .hero .chg small{display:block;font:400 11px var(--font);color:var(--muted);margin-top:2px}
 .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
@@ -277,26 +303,50 @@ body.compact #log-sec, body.compact footer{display:none}
 .seg button.on{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .grp{margin-top:6px}
 .grp-h{display:flex;align-items:center;gap:6px;width:100%;padding:7px 2px;font-size:11.5px;color:var(--fg-2);border-top:1px solid var(--line)}
+.hgrid .grp-h{margin-top:6px}
 .grp-h b{color:var(--fg);font-weight:600;white-space:nowrap}
-.grp-h .r{margin-left:auto;display:flex;flex-direction:row-reverse;gap:10px;align-items:baseline}
-.grp-h .r > span:first-child{min-width:86px;text-align:right;color:var(--fg)}
+.grp-h .r{margin-left:auto;display:flex;flex-direction:row-reverse;gap:10px;align-items:baseline;flex:none}
+.grp-h .r > span:first-child{text-align:right;color:var(--fg);font-weight:600}
 .grp.collapsed .grp-rows{display:none}
 .grp.collapsed .chev{transform:rotate(-90deg)}
-/* portfolio rows: name · sparkline · today's % · value. Fixed column widths so every value lines up on the right */
-.hrow{display:grid;grid-template-columns:minmax(64px,1fr) 64px 64px 86px;gap:8px;align-items:center;padding:7px 2px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);width:100%;text-align:left;border-radius:6px}
+/* portfolio rows (6.0): name · sparkline · one share (its price over its change) · your position (its value over its
+   change). Every account's rows sit in ONE grid, so the two right-hand columns line up down the whole list. */
+.hgrid{display:grid;grid-template-columns:minmax(56px,1fr) 48px auto auto;column-gap:8px}
+.hgrid > .grp,.hgrid .grp-rows{display:contents}
+.hgrid .grp.collapsed .grp-rows{display:none}
+.hgrid .grp-h,.hgrid > .hhead{grid-column:1/-1}
+.hhead{display:grid;grid-template-columns:subgrid;padding:4px 2px 0;font:600 9.5px var(--font);letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+.hhead span{text-align:right;white-space:nowrap}
+.hhead .h3{grid-column:3} .hhead .h4{grid-column:4}
+.hrow{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:center;padding:7px 2px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);text-align:left;border-radius:6px;cursor:pointer;scroll-margin-top:46px}
 .hrow:hover{background:var(--surface-2)}
-.hrow .s{font-weight:600}
+.hrow > .s{grid-column:1;font-weight:600}
+.hrow > .spark{grid-column:2}
+.hrow > .ps{grid-column:3}
+.hrow > .v{grid-column:4}
+.hrow > .wdet{grid-column:1/-1}
 .hrow .s small{display:block;font-weight:400;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hrow .v{text-align:right;order:4}
-.hrow > .dp{order:3}
-.hrow > .detail{order:5}
-.hrow .v small{display:block;font-size:10.5px;color:var(--muted)}
+.hrow .ps{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:0}
+.hrow .ps .px{font-size:12.5px;line-height:1.3;color:var(--fg);white-space:nowrap}
+.hrow .v{text-align:right;white-space:nowrap}
+.hrow .v b{display:block;font:600 13px/1.3 var(--font)}
+.hrow .v small{display:block;font:600 11px/1.3 var(--font);margin-top:5px;color:var(--muted)}
+.hrow .v small.up{color:var(--up)} .hrow .v small.down{color:var(--down)}
+.hrow .v small.est{font-weight:500;font-style:italic}
+.hrow .v small.old{font-weight:500;opacity:.6}
 .spark{width:64px;height:26px;display:block}
-.dp{justify-self:end;font-weight:600;font-size:12px;padding:3px 6px;border-radius:6px;min-width:58px;text-align:right}
-.dp.up{background:color-mix(in srgb,var(--up) 15%,transparent)}
-.dp.down{background:color-mix(in srgb,var(--down) 15%,transparent)}
-.detail{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;padding:8px 4px 4px;font-size:11.5px;color:var(--fg-2);cursor:default}
-.detail b{color:var(--fg);font-weight:600}
+.hrow .spark{width:48px}
+/* the day's change, shown the same way everywhere (6.0): dollars for ONE share, then percent */
+.dchg{display:inline-flex;align-items:baseline;justify-content:flex-end;gap:6px;font:600 11.5px/1.3 var(--font);font-variant-numeric:tabular-nums;padding:2px 6px;border-radius:6px;white-space:nowrap}
+.dchg b{font-weight:600}
+.dchg i{font-style:normal}
+.dchg.up{color:var(--up);background:color-mix(in srgb,var(--up) 15%,transparent)}
+.dchg.down{color:var(--down);background:color-mix(in srgb,var(--down) 15%,transparent)}
+.dchg.est{background:transparent;border:1px dashed color-mix(in srgb,currentColor 45%,transparent);padding:1px 5px}
+.dchg.old{background:transparent;opacity:.6;font-weight:500}
+.dchg.none{color:var(--muted);font-weight:400}
+.dchg.flat{color:var(--fg-2);background:var(--surface-2)}
+.dchg.sm{font-size:10.5px;padding:1px 5px;gap:5px}
 .range{grid-column:1/-1;margin-top:2px}
 .range .bar{position:relative;height:4px;border-radius:3px;background:var(--line-2);margin:6px 0 3px}
 .range .bar i{position:absolute;top:-4px;width:3px;height:12px;border-radius:2px;background:var(--fg)}
@@ -311,7 +361,7 @@ body.compact #log-sec, body.compact footer{display:none}
 .idx .c b{display:block;font:600 13.5px var(--font-d)}
 .idx .c em{font-style:normal;font-size:11px;color:var(--fg-2)}
 .heat{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:5px}
-.tile{border-radius:8px;padding:8px 8px 7px;min-height:56px;display:flex;flex-direction:column;justify-content:space-between;color:var(--fg);position:relative;overflow:hidden}
+.tile{border-radius:8px;padding:8px 8px 7px;min-height:66px;display:flex;flex-direction:column;justify-content:space-between;color:var(--fg);position:relative;overflow:hidden}
 .tile{border:0;text-align:left;font:inherit;cursor:pointer;outline:none}
 .tile.focus,.idx .c.focus{box-shadow:inset 0 0 0 2px var(--fg)}
 .idx .c{border:0;text-align:left;font:inherit;color:inherit;cursor:pointer}
@@ -322,26 +372,65 @@ body.compact #log-sec, body.compact footer{display:none}
 .tile .n{font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile .p{font:700 15px var(--font-d)}
 .tile .t{font-size:9.5px;opacity:.7;font-weight:600}
-.tile .b{display:flex;align-items:baseline;justify-content:space-between;gap:4px}
+.tile .b{display:block}
+/* 6.0: dollars for one share under the percent (tiles and index cells), and a details bar for the tile you clicked */
+.tile .d{display:flex;align-items:baseline;justify-content:space-between;gap:4px;font:600 10.5px/1.35 var(--font);white-space:nowrap}
+.tile .d .u{opacity:.92}
+.idx .c u{display:block;text-decoration:none;font:600 11px/1.35 var(--font);white-space:nowrap}
+.mkf{background:var(--surface-2);border-radius:var(--r-sm);padding:7px 6px 7px 10px;margin:0 0 8px;font-size:11.5px;color:var(--fg-2);box-shadow:inset 0 0 0 1px var(--line-2)}
+.mkf-1{display:flex;align-items:center;gap:8px;min-width:0}
+.mkf-1 .tk{font:600 13px var(--font-d);color:var(--fg);white-space:nowrap}
+.mkf-1 .nm{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.mkf-1 .px{font:600 13px var(--font);color:var(--fg);white-space:nowrap}
+.mkf-1 .x{flex:none;width:22px;height:22px;font-size:12px}
+.heat + .mkf{margin-top:6px}
+.mkf-2{display:flex;align-items:center;flex-wrap:wrap;gap:3px 10px;margin-top:5px;padding-right:4px}
+.mkf-2 > span{white-space:nowrap}
+.mkf-2 b{font-weight:600}
+.mkf-2 .sp{flex:1}
+.mkf-2 .rbtn{margin:-2px 0}
 .breadth{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--fg-2);margin:8px 0 0}
 .breadth .bar{flex:1;height:6px;border-radius:4px;background:var(--down);overflow:hidden}
 .breadth .bar i{display:block;height:100%;background:var(--up)}
 .note{font-size:10.5px;color:var(--muted);margin-top:6px}
 
 /* ============ watchlist ============ */
-.wrow{padding:9px 10px 9px 12px;margin:0 -12px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);position:relative}
-.wrow:first-child{border-top:0}
+/* 6.0: every row sits in ONE grid (ticker · sparkline · price · the day's change), so the numbers line up down the
+   list. The second line says where the price stands against your alerts, with the sector and 52-week reads on the right. */
+.wlist{display:grid;grid-template-columns:minmax(72px,1fr) 52px auto auto;column-gap:8px;margin:0 -12px}
+.wlist > .wgrp{grid-column:1/-1;padding-left:12px;padding-right:12px}
+.wrow{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:center;row-gap:5px;padding:9px 12px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);position:relative;scroll-margin-top:46px}
+.wlist > .wrow:first-child{border-top:0}
+.wrow[aria-expanded="false"]:hover{background:color-mix(in srgb,var(--surface-2) 55%,transparent)}
 .wrow::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:transparent}
 .wrow.st-hit::before{background:var(--down)} .wrow.st-near::before{background:var(--warn)}
 .wrow.muted-row{opacity:.55}
-.wtop{display:grid;grid-template-columns:minmax(64px,1fr) 64px minmax(70px,auto) 62px;gap:8px;align-items:center}
-.wtop .s{font-weight:600}
-.wtop .s small{display:block;font-weight:400;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wmeta{display:flex;align-items:center;gap:10px;margin-top:4px;font-size:11.5px;color:var(--fg-2)}
+.wrow > .s{grid-column:1;font-weight:600}
+.wrow > .spark{grid-column:2;width:52px}
+.wrow > .v{grid-column:3;text-align:right;white-space:nowrap;font-size:13px}
+.wrow > .c{grid-column:4;display:flex;justify-content:flex-end}
+.wrow > .wmeta,.wrow > .wnote,.wrow > .wdet{grid-column:1/-1}
+.wrow > .wdet{margin-top:3px}
+.wmeta{display:flex;flex-wrap:wrap;align-items:center;gap:3px 8px;font-size:11px;color:var(--fg-2);min-width:0}
 .wmeta b{color:var(--fg);font-weight:600}
+/* the status wraps between its parts before it is ever cut; the dots between parts never start or end a line */
+.wmeta .wl{flex:1 1 auto;min-width:0;overflow:hidden}
+.wmeta .wl .in{display:flex;flex-wrap:wrap;margin-left:-10px}
+.wmeta .wl .p{white-space:nowrap;padding-left:10px;position:relative}
+.wmeta .wl .p::before{content:"·";position:absolute;left:3.5px;color:var(--muted)}
 .wmeta .st{font-weight:600}
 .wmeta .st.hit{color:var(--down)} .wmeta .st.near{color:var(--warn)}
-.wmeta .r{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--muted)}
+.wmeta .wsig{color:var(--muted)}
+.wmeta .r{flex:none;margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--muted);white-space:nowrap}
+/* your note: a short one follows the status in a wide window; a long one, or any note in a narrow window, takes
+   lines of its own. It wraps and is never cut. */
+.wmeta .wl .wn-in{display:none;color:var(--muted)}
+.wrow > .wnote{font-size:11px;line-height:1.35;color:var(--muted);overflow-wrap:anywhere;margin-top:-2px}
+@media (min-width:560px){ .wrow:not(.nl) .wmeta .wl .wn-in{display:block} .wrow:not(.nl) > .wnote{display:none} }
+@media (max-width:520px){ .wmeta .wsig{display:none} }
+/* the drag handle sits in the row's left margin, so tickers line up with the other sections */
+.wrow{grid-template-rows:auto}   /* names the row's first line, so the handle below can sit level with it */
+.wrow > .grip{position:absolute;grid-row:1/2;left:0;top:0;bottom:0;width:12px;height:22px;margin:auto 0;padding-left:2px;font-size:12px}   /* in the row's left padding, level with the price line whatever its height; the dots sit clear of the 3px status bar on the row's left edge */
 .chip{font-size:10.5px;background:var(--surface-2);border-radius:10px;padding:2px 8px;color:var(--fg-2);white-space:nowrap}
 .steps{margin:0 0 12px;padding-left:18px;font-size:12.5px;line-height:1.55}
 .steps li{margin-bottom:6px}
@@ -405,22 +494,30 @@ input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);margin:0}
 .mk-list label{display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 0}
 textarea.code{width:100%;height:160px;font:11.5px var(--mono)}
 .sh-f{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);justify-content:flex-end}
-@media (max-width:360px){ .kpi{padding:6px 7px} .kpi b{font-size:13px} .kpi span{font-size:10px} .idx{grid-template-columns:1fr 1fr} .hrow{grid-template-columns:minmax(56px,1fr) 58px 80px} .wtop{grid-template-columns:minmax(56px,1fr) auto 58px} .hrow > .spark,.wtop > .spark{display:none} .wpane{grid-template-columns:1fr} }
+/* a narrow window (360 px and under) drops the sparkline column so the number columns keep their room */
+@media (max-width:360px){ .kpi{padding:6px 7px} .kpi b{font-size:13px} .kpi span{font-size:10px} .idx{grid-template-columns:1fr 1fr}
+  .wlist{grid-template-columns:minmax(56px,1fr) auto auto} .wrow > .spark{display:none} .wrow > .v{grid-column:2} .wrow > .c{grid-column:3}
+  .wpane{grid-template-columns:1fr;gap:5px} .fact{flex-direction:row;align-items:baseline;justify-content:space-between;gap:10px} .fact > i{font-size:11px} }
 @media (max-width:400px){ .mk-up,.mk-nq{display:none} }
+/* under 385px a holding's sparkline gives its room to the name, and a watchlist row leaves "vs the benchmark" to its details */
+@media (max-width:384px){ .hgrid{grid-template-columns:minmax(56px,1fr) auto auto} .hrow > .spark{display:none} .hrow > .ps{grid-column:2} .hrow > .v{grid-column:3} .hhead .h3{grid-column:2} .hhead .h4{grid-column:3} .hgrid .hrow.cash > .s{grid-column:1/3} .wmeta .r .vsb{display:none} }
 input::placeholder{text-transform:none;letter-spacing:normal}
 input:disabled{opacity:.45;cursor:not-allowed}
 .pill:focus{outline:none} .pill:focus-visible{outline:2px solid var(--accent)}
 body.native #titlebar .logo *{pointer-events:none}
 .er{display:inline-block;white-space:nowrap}
-.hrow .s,.wtop .s,.srow .s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.hrow .s,.wrow .s,.srow .s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 /* ticker + earnings chip: the ticker never gets cut off; when space is tight the chip shortens instead */
 .s1{display:flex;align-items:center;min-width:0;max-width:100%}
+.hrow .s1,.wrow .s1{flex-wrap:wrap;gap:2px 5px}
+.hrow .s1 .er,.wrow .s1 .er,.wrow .s1 .bell{margin-left:0}
 .s1 .tk,.s1 .grip{flex:none}
 .s1 .er{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .risk span{white-space:nowrap}
 .breadth .bar{min-width:40px}
 .grp-h .muted{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-@media (max-width:300px){ .mk-nq,.mk-sum-idx{display:none} .srow .er,.hrow .er,.wtop .er{display:none} .risk{grid-template-columns:1fr} #mk-sum span:first-child{display:none} }
+.grp-h .muted.nofit{display:none}   /* no room for the whole label: it steps aside (grpFit) */
+@media (max-width:300px){ .mk-nq,.mk-sum-idx{display:none} .srow .er,.hrow .er,.wrow .er{display:none} .risk{grid-template-columns:1fr} #mk-sum span:first-child{display:none} }
 /* ============ 4.4: live prices ============ */
 /* a changed price flashes once: text gets a soft wash, tiles and index cells a ring */
 @keyframes fxUp{ from{background:color-mix(in srgb,var(--up) 34%,transparent)} to{background:transparent} }
@@ -440,7 +537,8 @@ span.fx-dn,small.fx-dn{animation:fxDn 1.1s ease-out;border-radius:3px}
 /* pre-market and after-hours prices (Alpaca IEX) */
 .chip.ext{background:transparent;border:1px dashed color-mix(in srgb,currentColor 45%,transparent);margin-left:4px}
 .chip.ext.up{color:var(--up)} .chip.ext.down{color:var(--down)}
-.v .chip{display:inline-block;margin-top:2px}
+.wmeta .r .chip.ext{border:0;padding:0;margin:0;border-radius:0;font-size:11px;font-weight:600}
+.ps .chip{margin:0}
 .idx .c i{display:block;font:normal 600 10px var(--font);margin-top:1px;white-space:nowrap}
 .hero .chg small.ah{color:var(--fg-2)}
 /* next Fed or inflation release, above the chip-earnings note */
@@ -457,8 +555,12 @@ span.fx-dn,small.fx-dn{animation:fxDn 1.1s ease-out;border-radius:3px}
 .erw .s small{display:block;font-size:9.5px;color:var(--muted)}
 .erw .when{color:var(--fg-2);font-size:11.5px;min-width:0}
 .erw .mv{font-weight:600;font-size:12px;color:var(--fg)}
-.erw .sub{grid-column:2/-1;font-size:10.5px;color:var(--muted)}
+.erw .sub{grid-column:2/-1;font-size:10.5px;color:var(--muted);overflow:hidden}
 .erw .sub b{font-weight:600}
+/* the pieces wrap whole, and the dot between two pieces never ends or starts a line: a dot that would start one falls off the left edge */
+.erw .sub .in{display:flex;flex-wrap:wrap;margin-left:-10px}
+.erw .sub .in > span{white-space:nowrap;padding-left:10px;position:relative}
+.erw .sub .in > span::before{content:"·";position:absolute;left:3.5px}
 /* Monitor layout, watchlist sections and sort, headline strip (4.7) */
 body.wide main{padding:12px 14px 16px}
 body.wide #cols{display:grid;grid-template-columns:repeat(var(--n,2),minmax(0,1fr));gap:12px;align-items:start}
@@ -477,8 +579,10 @@ body.wsorted #wl-body .grip{visibility:hidden}
 .nw-latest b{color:var(--fg);font-weight:600}
 .nw-bar{display:flex;align-items:center;gap:4px;margin:0 0 6px}
 .nw-bar .seg{min-width:0;overflow-x:auto;scrollbar-width:none} .nw-bar .seg::-webkit-scrollbar{display:none}
-.nw-bar .rbtn{flex:none;white-space:nowrap}
-.nw-bar .seg button{position:relative;white-space:nowrap}
+.nw-bar .rbtn{flex:none;white-space:nowrap} .nw-bar [data-nw="read"]{margin-left:auto}
+.nw-bar .seg button{position:relative;white-space:nowrap;padding:3px 7px}
+.nw-bar.tight [data-nw="read"] span{display:none}
+.nw-bar.tighter .seg button{padding:3px 5px} .nw-bar.tighter .seg button i{margin-left:3px}
 .nw-bar .seg button i{font-style:normal;font-weight:700;font-size:9.5px;margin-left:4px;padding:0 4px;border-radius:7px;background:var(--accent);color:var(--accent-fg)}
 .rbtn[disabled]{opacity:.4;cursor:default} .rbtn[disabled]:hover{background:none}
 .nw-chips{display:flex;gap:5px;overflow-x:auto;padding:1px 0 7px;scrollbar-width:none}
@@ -510,6 +614,7 @@ button.nw-tk:hover{color:var(--fg);box-shadow:inset 0 0 0 1px var(--line-2)}
 .nw-tk i{font-style:normal;font-weight:600;margin-left:4px;font-variant-numeric:tabular-nums}
 .nw-tk.mk{font-weight:500;color:var(--muted)}
 .nw-src{margin-left:auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nw-m time{flex:none;white-space:nowrap}
 .nw-x{margin-top:7px;cursor:default}
 .nw-x p{margin:0 0 8px;font-size:12px;line-height:1.5;color:var(--fg-2);user-select:text;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:9;overflow:hidden}
 .nw-acts{display:flex;align-items:center;flex-wrap:wrap;gap:4px}
@@ -524,22 +629,51 @@ body.compact #nw-sec .sec-h{padding-top:8px;padding-bottom:8px}
 .news a.new span{font-weight:600}
 .news a:not(.new) span{color:var(--fg-2)}
 .news .rbtn{margin:4px 0 0 -6px}
-/* ============ 5.0: dollars per holding, mutual funds ============ */
-.dp small.du{display:block;font:500 10px var(--font);font-variant-numeric:tabular-nums;margin-top:1px;white-space:nowrap;opacity:.85}
-.dp.est,.cbox.est{background:transparent;box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 40%,transparent);border-radius:6px}
-.dp.est{box-shadow:none;border:1px dashed color-mix(in srgb,currentColor 45%,transparent);padding:2px 5px}
-.cbox.est{box-shadow:none;border:1px dashed color-mix(in srgb,currentColor 45%,transparent);padding:1px 5px;font-weight:600}
-.dp.old,.cbox.old{background:transparent;opacity:.6}
-.dp.old{font-weight:500}
+/* ============ 5.0: mutual funds ============ */
+/* an estimate is dashed and an older day's change is faded, in the account header as in the rows */
+.cbox.est,.cbox.est.up,.cbox.est.down{background:transparent;border:1px dashed color-mix(in srgb,currentColor 45%,transparent);border-radius:6px;padding:1px 5px;font-weight:600}
+.cbox.old,.cbox.old.up,.cbox.old.down{background:transparent;opacity:.6}
 .cbox i{font-style:normal;font-weight:500;margin-right:6px;opacity:.9}
 .grp-h .r .cbox{white-space:nowrap}
 .fundtag{font-weight:500;color:var(--muted)}
-.hrow > .navd{width:64px;height:auto;font-size:10px;line-height:1.25;color:var(--muted);text-align:right;white-space:nowrap}
-.frow .v small{font-variant-numeric:tabular-nums}
-.movers{font-size:11px;line-height:1.5;color:var(--fg-2);margin:-4px 0 10px}
-.movers span{white-space:nowrap}
-.movers b{font-weight:600;color:var(--fg)} .movers b.up{color:var(--up)} .movers b.down{color:var(--down)}
+.hrow > .navd{width:auto;height:auto;justify-self:end;font-size:9.5px;line-height:1.25;color:var(--muted);text-align:right;white-space:nowrap}
 .hrow[aria-expanded="true"]{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.hrow > .wdet{margin-top:8px}
+.hrow.cash{cursor:default} .hrow.cash:hover{background:none}
+.hrow.cash > .s{grid-column:1/4}
+/* a row reached from the day's-dollars bar lights up for a moment, so the eye lands on it */
+.hrow.hl{animation:rowHl 1.4s ease-out}
+@keyframes rowHl{0%,35%{background:color-mix(in srgb,var(--accent) 22%,transparent)}100%{background:transparent}}
+.wdet > .wpane:first-child{padding-top:8px}
+/* ============ 6.0: where the day's dollars came from, the risk block's header, what's new ============ */
+.flow{margin:-2px 0 10px}
+.flow-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:10.5px;color:var(--muted);margin-bottom:4px}
+.flow-h span:first-child{font-weight:600;letter-spacing:.6px;text-transform:uppercase;white-space:nowrap}
+.flow-h span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.flow-h b{font-weight:600}
+.flow-bar{display:flex;gap:1px;height:10px;border-radius:5px;overflow:hidden;background:var(--surface-2)}
+.flow-bar button{height:100%;min-width:3px;padding:0;border:0;border-radius:0;cursor:pointer}
+.flow-bar .g{background:var(--up)} .flow-bar .l{background:var(--down)}
+.flow-bar button:nth-child(even){opacity:.72}
+.flow-bar button:hover,.flow-bar button:focus-visible{opacity:1;filter:brightness(1.2);outline:none}
+.flow-l{display:flex;flex-wrap:wrap;gap:1px 10px;font-size:11px;line-height:1.5;color:var(--fg-2);margin-top:4px}
+.flow-l button{font:inherit;color:inherit;white-space:nowrap;border-radius:4px}
+.flow-l button:hover{color:var(--fg);background:var(--surface-2)}
+.flow-l b{font-weight:600;color:var(--fg)} .flow-l b.up{color:var(--up)} .flow-l b.down{color:var(--down)}
+.riskx .rk-h{display:flex;align-items:center;gap:5px;width:100%;text-align:left;margin:0 0 5px;font:600 10.5px var(--font);letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+.riskx .rk-h .chev{width:11px;height:11px}
+.riskx .rk-h:hover{color:var(--fg-2)}
+.riskx .rk-h span{margin-left:auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:400;font-size:11px;letter-spacing:0;text-transform:none;color:var(--fg-2)}
+.riskx.shut .rk-h{margin:0}
+.riskx.shut .rk-h .chev{transform:rotate(-90deg)}
+#whatsnew{display:none;position:relative;padding-right:30px}
+#whatsnew.show{display:block}
+#whatsnew ul{margin:2px 0 8px;padding-left:18px}
+#whatsnew li{margin:4px 0;line-height:1.45} #whatsnew li b{display:inline;margin:0}
+#whatsnew .lnk{color:var(--accent);font-weight:600;font-size:inherit;padding:0}
+#whatsnew .lnk:hover{text-decoration:underline}
+#whatsnew .x{position:absolute;top:4px;right:6px;width:22px;height:22px;border-radius:5px;color:var(--muted);font-size:15px;line-height:1}
+#whatsnew .x:hover{background:var(--surface-2);color:var(--fg)}
 /* chart window (4.5) */
 #chart{position:fixed;inset:0;z-index:55;background:rgba(5,8,14,.45);display:flex;justify-content:center;align-items:center;padding:12px}
 #chart.hide{display:none}
@@ -550,6 +684,10 @@ body.compact #nw-sec .sec-h{padding-top:8px;padding-bottom:8px}
 .ch-h #chPx b{font-weight:600}
 .ch-h .x{margin-left:auto}
 #chRange{align-self:flex-start}
+/* the readout under the range buttons: the candle under the pointer (or the latest one), its change in $ and % */
+.ch-hov{display:flex;flex-wrap:wrap;gap:0 14px;min-height:16px;font-size:11px;line-height:16px;color:var(--fg-2)}
+.ch-hov .g{display:inline-flex;gap:9px;white-space:nowrap}
+.ch-hov b{font-weight:600;color:var(--fg)} .ch-hov b.up{color:var(--up)} .ch-hov b.down{color:var(--down)}
 #chBox{height:min(56vh,420px);min-height:220px;position:relative}
 .ch-leg{display:flex;flex-wrap:wrap;gap:6px}
 .ch-leg button{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);background:transparent;border:1px solid var(--line);border-radius:10px;padding:2px 8px;cursor:pointer}
@@ -566,8 +704,8 @@ body.compact #nw-sec .sec-h{padding-top:8px;padding-bottom:8px}
 #palList .pi{display:flex;align-items:baseline;gap:8px;padding:7px 10px;border-radius:7px;cursor:pointer;font-size:12.5px;min-width:0}
 #palList .pi b{font-weight:600;color:var(--fg);white-space:nowrap}
 #palList .pi span{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
-#palList .pi em{font-style:normal;font-size:11px;white-space:nowrap;margin-left:auto;color:var(--fg-2)}
-#palList .pi em.up{color:var(--up)} #palList .pi em.down{color:var(--down)}
+#palList .pi em{font-style:normal;font-size:11px;white-space:nowrap;margin-left:auto;color:var(--fg)}
+#palList .pi em i{font-style:normal;margin-left:7px;color:var(--fg-2)} #palList .pi em i.up{color:var(--up)} #palList .pi em i.down{color:var(--down)}
 #palList .pi em + kbd{margin-left:6px}
 #palList .pi kbd{margin-left:auto;font:10.5px var(--mono);color:var(--muted);background:var(--surface-2);border-radius:4px;padding:1px 5px}
 #palList .pi.on{background:var(--surface-2)}
@@ -604,7 +742,6 @@ body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !importa
 .riskx{background:var(--surface-2);border-radius:var(--r-sm);padding:8px 9px;margin:-4px 0 10px;font-size:11.5px;color:var(--fg-2)}
 .riskx .rk{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}
 .riskx b{color:var(--fg);font-weight:600;white-space:nowrap}
-.riskx h5{margin:0 0 5px;font:600 10.5px var(--font);letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
 .rcbar{display:flex;height:7px;border-radius:4px;overflow:hidden;margin:7px 0 4px;background:var(--line)}
 .rcbar i{display:block;height:100%}
 .rclg{display:flex;flex-wrap:wrap;gap:3px 10px;font-size:10.5px;color:var(--muted)}
@@ -634,8 +771,7 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
 .wadd input{flex:1;min-width:0;text-transform:uppercase;font-size:12px;padding:5px 9px}
 .wadd input::placeholder{text-transform:none}
 .wadd .btn{padding:5px 12px;font-size:12px}
-.wmeta .r .wrm{color:var(--muted);font-weight:500;padding:2px 5px}
-.wmeta .r .wrm:hover{color:var(--down);background:color-mix(in srgb,var(--down) 12%,transparent)}
+.wacts .wrm:hover{color:var(--down);border-color:color-mix(in srgb,var(--down) 45%,transparent);background:color-mix(in srgb,var(--down) 12%,transparent)}
 .wundo{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--fg-2);background:var(--surface-2);border-radius:var(--r-sm);padding:6px 10px;margin:0 0 8px}
 .wundo .lnk{margin-left:auto;font-weight:600}
 /* markets: one grid for indexes, other markets and your own tickers */
@@ -667,6 +803,7 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
 <div id="statusPop" class="pop hide" role="dialog" aria-label="Data status"></div>
 <div id="menu" class="menu hide" role="menu">
   <button role="menuitem" id="bCompact"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5h10M3 8h10M3 11h10"/></svg><span id="mCompactLbl">Compact view</span><kbd>C</kbd></button>
+  <button role="menuitem" id="bHide" data-tip="Masks every figure that says how much you own: the total, position values and their dollar changes, share counts, cost and cash. Prices, per-share changes and percents stay."><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg><span id="mHideLbl">Hide amounts</span><kbd>H</kbd></button>
   <button role="menuitem" data-open="alerts" data-tip="Your tickers and their alert rules"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8z"/></svg><span>Watchlist</span><kbd>/</kbd></button>
   <button role="menuitem" data-open="holdings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="4" width="11" height="9" rx="1.5"/><path d="M5.5 4V2.8h5V4"/></svg><span>Holdings</span></button>
   <button role="menuitem" id="bPause"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4v8M10 4v8"/></svg><span id="mPauseLbl">Pause alerts</span><kbd>P</kbd></button>
@@ -680,6 +817,7 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
 
 <main id="main">
   <div id="update" class="callout"></div>
+  <div id="whatsnew" class="callout"></div>
   <div id="paused"></div>
   <div id="since" title="Click to clear"></div>
   <div id="banner" role="alert"></div>
@@ -767,6 +905,7 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
 <div id="chart" class="hide" role="dialog" aria-label="Chart"><div class="chwin">
   <div class="ch-h"><b id="chSym"></b><span id="chPx" class="num"></span><button class="x" id="chX" aria-label="Close the chart" title="Close (Esc)">✕</button></div>
   <div class="seg" id="chRange"></div>
+  <div class="ch-hov num" id="chHover"></div>
   <div id="chBox"></div>
   <div class="ch-leg" id="chLeg"></div>
   <p class="note" id="chNote"></p>

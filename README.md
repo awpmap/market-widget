@@ -1,6 +1,6 @@
 # Market Widget
 
-A small desktop market app: portfolio summary, sector heatmap, watchlist with buy levels, and intraday dip alerts. A static web page (index.html, app.js, engine.js) plus an app manifest, so Edge or Chrome can install it as a standalone app.
+A small desktop market app: portfolio summary, sector heatmap, watchlist with price alerts, and intraday dip alerts. A static web page (index.html, app.js, engine.js) plus an app manifest, so Edge or Chrome can install it as a standalone app.
 
 - Data: the free Finnhub API with your own key (60 calls a minute), plus an optional free Twelve Data key for history, fund prices and backup prices.
 - Source: the beta lives in `lab/` (branch `lab`, served at /lab/). `labdev/promote.mjs` on that branch turns it into the regular version at the site root; edit `lab/`, not the root files.
