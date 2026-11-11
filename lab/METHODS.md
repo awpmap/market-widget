@@ -1,6 +1,6 @@
 # How MW Beta makes its numbers
 
-MW Beta is the beta version of Market Widget: turn it on in MW under Settings → General → Beta, and switch back from the same place in the beta. This page says, for every number it shows, where the data comes from and how it is worked out. All code is in `lab/engine.js` (pure functions, tested in `labdev/test/`). MW Beta is information only: it never trades and never connects to a brokerage.
+MW Beta is the beta version of Market Widget: turn it on in MW under Settings → General → Beta, and switch back from the same place in the beta. Each time you turn it on, it starts from a copy of your MW setup and keeps its own from there; MW's setup is only read, never changed. This page says, for every number it shows, where the data comes from and how it is worked out. All code is in `lab/engine.js` (pure functions, tested in `labdev/test/`). MW Beta is information only: it never trades and never connects to a brokerage.
 
 ## Data sources
 
@@ -17,7 +17,17 @@ MW Beta is the beta version of Market Widget: turn it on in MW under Settings �
 
 Every price row has a tooltip naming its source and how old the last trade is.
 
-**The price shown is the latest known trade.** In market hours that is the regular price. Before and after them, with an Alpaca key, it is the latest pre-market or after-hours trade, marked "Pre" or "AH". Friday's last after-hours trade stays the price over the weekend, and the first pre-market trade replaces it. IEX is one exchange, so these prices are a close guide with thin trading. The day's % change, alerts and the portfolio's value stay on the regular session; the "Pre"/"AH" chip and the portfolio's after-hours line show the move against the close.
+**The price shown is the latest known trade.** In market hours that is the regular price. Before and after them, with an Alpaca key, it is the latest pre-market or after-hours trade, marked "Pre" or "AH". Friday's last after-hours trade stays the price over the weekend, and the first pre-market trade replaces it. IEX is one exchange, so these prices are a close guide with thin trading. The day's change, alerts and the portfolio's value stay on the regular session; the "Pre"/"AH" chip and the portfolio's after-hours line show the move against the close.
+
+## The day's change, for one share and for your position
+
+Wherever MW Beta shows a day's percent, it shows the same change in dollars for one share, in one box with the dollars first: `+$5.27 +2.59%` (`chgOf` and `dchg` in `lab/app.js`).
+
+- **For one share:** the price now minus the previous close. The percent is that change against the previous close. A price under $1 shows four decimals, and so does its change. A change of zero is grey, not green, and a figure that rounds to zero carries no plus or minus sign.
+- **On your position:** the change for one share × your shares. An account's change and the portfolio's change are the sums of these.
+- **Other time frames in Markets (5D, 1M, …):** the percent is the price now against the close on the day the time frame starts, from daily history. The dollars are the price now minus that close, for one share. Before history has loaded, the percent is Finnhub's figure and the dollars are worked back from it.
+- **Mutual funds:** the official change for one share is the newest price (NAV) minus the one before it. An estimate's dollars are the estimated price minus the last official price. See "Mutual funds" below.
+- **Alert messages** give the move the same way, for example "ABCD is down $6.20 a share (3.2%) today at $187.42" (`E.evaluate`).
 
 ## When a price may raise an alert
 
@@ -41,7 +51,7 @@ From daily closes, simple returns:
 - **σ (the one alerts use):** exponentially weighted (RiskMetrics, λ = 0.94) over the last 250 days, seeded with the first 20 days. Falls back to the plain 60-day standard deviation when there is too little history.
 - **Robust check:** 1.4826 × median absolute deviation over 250 days (ignores a few huge days).
 - **Tail quantiles:** the 2nd and 5th percentile daily return over 250 days (shown when there are at least 100 days).
-- **ATR:** Wilder's 14-day average true range, shown as "Daily range" in a watchlist row's details.
+- **ATR:** Wilder's 14-day average true range, shown as "Daily range (ATR)" on the Trend tab of an open row, for tickers on your watchlist.
 
 ## Alert rules
 
@@ -90,6 +100,25 @@ A five-letter ticker ending in X in the Holdings table is treated as a mutual fu
 ## News
 
 One list for every headline: Finnhub company news for your holdings and watchlist (the last 3 days, up to 8 per ticker) plus general market news (the newest 20). The same story reported under several of your tickers is one line listing them (`E.newsMerge`, matched on the headline's words); the list holds up to 80 headlines from the last 4 days, newest first. A headline is "new" until you open it, for 24 hours. Read marks are kept on this PC. The ticker tags on a headline show that ticker's change for the day.
+
+## Portfolio
+
+- **Total:** stocks, ETFs and mutual funds at their latest regular-session prices, plus cash. A holding with no price is left out and named under the total.
+- **Per share and Position:** each row shows the price over the day's change for one share, and your value over that change × your shares.
+- **Today in dollars (the bar under the summary boxes):** one piece per holding, as wide as its dollar change today is of all gains plus all losses. Gains fill from the left, losses from the right. The same ticker in two accounts is one piece. A fund counts when its official price is for the session on screen; estimates never count. The bar shows when at least two holdings moved and the moves add up to $1 or more.
+- **Day line (next to the total):** one point a minute in market hours, the portfolio's change on the day so far. A point is kept only when every holding has a price from a trade made today, so the line never starts from a half-loaded total. It is kept on this PC, starts again each session, and needs MW Beta to be open during the day.
+- **Hide amounts** (the eye next to the total, or H): masks the total, position values and their dollar changes, share counts, cost, gain in dollars, cash and the risk figures in dollars. Prices, per-share changes, percents and weights stay. The tray tooltip, the window title and "Copy market brief" follow it. It only changes what is on screen: your setup is stored on this PC exactly as before.
+
+## Open rows
+
+A holding and a watchlist ticker open the same tabs. Where each figure comes from:
+
+- **Today in σ:** the day's percent ÷ σ (see "Volatility").
+- **vs your benchmark:** the day's percent minus the benchmark's (Settings → General, "Compare watchlist moves against").
+- **VWAP today:** the volume-weighted average price from today's 5-minute bars (Twelve Data), refreshed about every 10 minutes for tickers on your watchlist. **VWAP since a date:** the same from daily bars, starting at the last gap (usually earnings) or the recent high.
+- **50-day and 200-day average:** the average of the last 50 and 200 daily closes.
+- **From 52-week high, beta, market cap, P/E, sales growth, gross margin:** Finnhub's figures.
+- **Gain and gain a share (holdings):** the price now against your average cost from Settings → Holdings.
 
 ## Portfolio risk
 

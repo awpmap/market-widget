@@ -150,6 +150,28 @@ test("rules are silent when the quote can't alert", () => {
   assert.equal(E.evaluate(w, baseCtx(Q({c:90, dp:-10}), {alertOk:false}), {}).alerts.length, 0);
   assert.equal(E.evaluate(Object.assign({on:false}, w), baseCtx(Q({c:90, dp:-10})), {}).alerts.length, 0);
 });
+test("fmtPx: a price reads to the cent, or to four decimals under $1", () => {
+  assert.equal(E.fmtPx(187.5), "$187.50"); assert.equal(E.fmtPx(1253.021), "$1,253.02"); assert.equal(E.fmtPx(1), "$1.00");
+  assert.equal(E.fmtPx(0.4659), "$0.4659"); assert.equal(E.fmtPx(0.5), "$0.5000");
+  assert.equal(E.fmtPx(0.0159, 0.4659), "$0.0159", "a per-share difference follows the price it belongs to");
+  assert.equal(E.fmtPx(0.35, 12.4), "$0.35"); assert.equal(E.fmtPx(null), "—");
+});
+test("zero has no sign: a figure that rounds to zero is neither up nor down", () => {
+  assert.equal(E.fmtPct(0), "0.00%"); assert.equal(E.fmtPct(0.004), "0.00%"); assert.equal(E.fmtPct(-0.004), "0.00%"); assert.equal(E.fmtPct(-0.04, 1), "0.0%");
+  assert.equal(E.fmtPct(0.006), "+0.01%"); assert.equal(E.fmtPct(-0.006), "−0.01%"); assert.equal(E.fmtPct(2.594), "+2.59%"); assert.equal(E.fmtPct(-12.345, 1), "−12.3%");
+  assert.equal(E.fmtS$(0), "$0"); assert.equal(E.fmtS$(-0.004, 2), "$0.00"); assert.equal(E.fmtS$(0.4), "$0"); assert.equal(E.fmtS$(12.3, 2), "+$12.30"); assert.equal(E.fmtS$(-1234.5), "−$1,235");
+  assert.equal(E.sgn(0.0001, 4), "+"); assert.equal(E.sgn(-0.00004, 4), ""); assert.equal(E.fmtPct(null), "—");
+});
+test("alert messages give the move in dollars for one share, then in percent", () => {
+  const w = {sym:"ABC", dayDrop:3, hiDrop:4};
+  const msg = (q, kind, extra) => E.evaluate(w, baseCtx(Q(q), extra), {}).alerts.find(a => a.kind === kind).msg;
+  assert.equal(msg({c:95, pc:100, dp:-5, h:100}, "red"), "ABC is down $5.00 a share (5.0%) today at $95.00");
+  assert.equal(msg({c:95, pc:100, dp:-5, h:100}, "hd"), "ABC is $5.00 a share (5.0%) below today's high of $100.00, now $95.00");
+  assert.equal(msg({c:0.4659, pc:0.4821, dp:(0.4659 / 0.4821 - 1) * 100, h:0.4821}, "red"), "ABC is down $0.0162 a share (3.4%) today at $0.4659", "under $1 the price and the move keep four decimals");
+  assert.equal(msg({c:0.44, pc:0.4821, dp:-8.7}, "level", {levels:[{L:0.45, name:"$0.45"}]}), "ABC reached your $0.45 price alert (now $0.4400, down $0.0421 a share today)");
+  assert.equal(msg({c:95, pc:0, d:-5, dp:-5, h:100}, "red"), "ABC is down $5.00 a share (5.0%) today at $95.00", "no previous close: the feed's own change is used");
+  assert.equal(msg({c:95, pc:0, d:null, dp:-5, h:100}, "red"), "ABC is down 5.0% today at $95.00", "no dollars to show: percent only, never a made-up figure");
+});
 test("buy levels: one alert names the deepest level reached", () => {
   const w = {sym:"ABC"}, levels = [{L:150, name:"$150"}, {L:140, name:"$140"}, {L:130, name:"$130"}];
   const r = E.evaluate(w, baseCtx(Q({c:138, pc:150, dp:-8}), {levels}), {});

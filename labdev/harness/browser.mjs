@@ -35,7 +35,7 @@ const BASE = `http://127.0.0.1:${server.address().port}/market-widget/lab/`;
 /* ---------- synthetic market ---------- */
 let simNow = Date.parse("2026-11-05T15:30:00Z");   // 10:30 New York time, a Thursday
 const hash = s => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
-const px = {}, pcOf = s => 50 + hash(s) % 200;
+const px = {}, pcFix = {}, pcOf = s => pcFix[s] ?? 50 + hash(s) % 200;   // pcFix: a previous close set by hand (a price under $1, a four-digit one)
 const priceOf = s => px[s] ?? pcOf(s);
 let finnhubDown = false, tdDown = false, finnhubBadKey = false;
 const sent = {ntfy:[], hc:0}, quoteCalls = {};
@@ -93,6 +93,7 @@ await page.addInitScript(([live]) => {
   localStorage.setItem("mw_cfg", JSON.stringify(live));
   localStorage.setItem("mw_settings", JSON.stringify({key:"live-key-not-used"}));
   localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", tdKey:"test", ntfy:"mwlab-harness", hcUrl:"https://hc-ping.com/00000000-0000-0000-0000-000000000000", refresh:30}));
+  localStorage.setItem("mwlab_seenVer", JSON.stringify("99.0.0"));   // the "what's new" card has its own check further down
   localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"AAA", shares:10, acct:"Taxable"}, {sym:"BBB", shares:20, acct:"Roth"}, {sym:"QQQ", shares:2, acct:"Roth"}],
     fixed:[{name:"Cash (Taxable)", value:1000}, {name:"Cash (Roth)", value:500}],
     watch:[{sym:"AAA", note:"test", dayDrop:3, offHigh:10, levels:[90, 80], near:1.5, hiDrop:4, sigDrop:2, fastDrop:2, fastMins:15, buyAmt:200},
@@ -115,7 +116,7 @@ check(await page.locator("#pf-body .hero .val").innerText().then(t => /\$/.test(
 check(await page.locator("#mk-body .tile").count() >= 10, "market tiles render");
 check(await page.locator("#wl-body .wrow").count() === 2, "watchlist renders 2 rows");
 check(/MW Beta/.test(await page.title()), "title says MW Beta");
-check(await page.locator(".riskx h5").count() === 1, "risk block measured from price history");
+check(await page.locator(".riskx .rk-h").count() === 1 && /measured from price history/.test(await page.locator(".riskx").innerText()), "risk block measured from price history");
 await shot("1-start");
 const cashNames = await page.locator("#pf-body .grp-h[data-grp=__cash] + .grp-rows .hrow .s").evaluateAll(els => els.map(e => e.firstChild.textContent.trim()));
 check(cashNames.join("|") === "Cash (Taxable)|Cash (Roth)", "cash rows keep their names from Settings (" + cashNames.join(", ") + ")");
@@ -149,10 +150,14 @@ check(await page.locator("#wl-body .wrow").count() === 3 && await page.evaluate(
 check(await page.evaluate(() => { renderAll(); renderAll(); return document.activeElement && document.activeElement.id === "wAddSym" && !document.activeElement.value; }), "the add box stays ready for the next ticker, even through a refresh");
 await page.locator("#wAddSym").fill("AAA"); await page.keyboard.press("Enter"); await advance(1000, 500);
 check(await page.locator("#wl-body .wrow").count() === 3, "adding a ticker that's already there changes nothing");
+const openW = async sym => { if (!(await page.locator(`#wl-body [data-wrm="${sym}"]`).count())) { await page.locator(`#wl-body [data-row="w:${sym}"] .s`).click(); await advance(500, 250); } };
+check(await page.locator("#wl-body .wrow [data-wrm], #wl-body .wrow [data-ref]").count() === 0, "a closed watchlist row carries no buttons, only information");
+await openW("CCC");
 await page.locator('#wl-body [data-wrm="CCC"]').click(); await advance(1000, 500);
-check(await page.locator("#wl-body .wrow").count() === 2 && await page.locator("#wl-body .wundo").count() === 1, "✕ removes a ticker and offers Undo");
+check(await page.locator("#wl-body .wrow").count() === 2 && await page.locator("#wl-body .wundo").count() === 1, "Remove (in the open row) takes a ticker off and offers Undo");
 await page.locator("#wl-body [data-wundo]").click(); await advance(1000, 500);
 check(await page.locator("#wl-body .wrow").count() === 3, "Undo puts it back");
+await openW("CCC");
 await page.locator('#wl-body [data-wrm="CCC"]').click(); await advance(14000, 1000);
 check(await page.locator("#wl-body .wundo").count() === 0 && await page.locator("#wl-body .wrow").count() === 2, "the Undo note goes away by itself");
 await page.locator("#wAddSym").blur(); await page.keyboard.press("/"); await advance(500, 250);
@@ -242,10 +247,27 @@ check(/\/lab\//.test(p2.url()), "after opting in, opening MW opens the beta");
 await p2.evaluate(() => openSheet("general"));
 check(/Switch back to regular MW/.test(await p2.locator("#sChannel").innerText()), "the beta offers Switch back");
 check(await p2.locator("#bLeave").evaluate(b => !b.hidden && getComputedStyle(b).display !== "none"), "the beta's ⋯ menu has Switch back to regular MW too");
+await p2.evaluate(() => { cfg.watch.push({sym:"YYY", levels:[], dayDrop:3, near:0}); saveCfg(); });   // a change made in the beta only
 p2.once("dialog", d => d.accept());
 await p2.locator("#sChannel").click(); await p2.waitForURL(u => !/\/lab\//.test(String(u))); await p2.waitForTimeout(800);
 check(!/\/lab\//.test(p2.url()) && await ls("mw_channel") === "stable", "Switch back returns to regular MW and stays there");
 check(await ls("mw_cfg") === liveBefore, "the regular setup is unchanged after the round trip");
+// joining again: by now the beta has an older setup of its own, and the regular MW's is the one in use, so that one comes over,
+// with the keys the first copy never knew about. The beta's earlier setup stays in its history.
+await p2.evaluate(() => { cfg.watch.push({sym:"ZZZ", levels:[], dayDrop:3, near:0}); saveCfg();
+  Object.assign(settings, {alpKey:"test-key-id", alpSec:"test-secret", cvd:true, tdKey:""}); saveSettings(); });
+const liveNow = await ls("mw_cfg");
+await p2.evaluate(() => openSheet("general"));
+await p2.locator("#sBeta").click(); await p2.waitForURL(/\/lab\//); await p2.waitForTimeout(1500);
+const again = await p2.evaluate(() => { const g = k => JSON.parse(localStorage.getItem("mwlab_" + k) || "null"), c = g("cfg"), s = g("settings"), has = (x, sym) => x.watch.some(w => w.sym === sym);
+  return {zzz: has(c, "ZZZ"), yyy: has(c, "YYY"), alp: s.alpKey === "test-key-id" && s.alpSec === "test-secret", td: s.tdKey, cvd: s.cvd === true && document.documentElement.dataset.cvd === "1",
+    hist: (g("cfgHist") || []).map(x => x.why + (has(JSON.parse(x.cfg), "YYY") ? " (YYY)" : "")), toast: document.getElementById("toast").textContent, card: document.getElementById("whatsnew").classList.contains("show")}; });
+check(again.zzz && !again.yyy && liveNow !== liveBefore, "joining the beta again brings over the regular setup as it is now");
+check(again.alp && again.cvd, "with the fast-price keys and the color setting");
+check(again.td === "test", "an empty key box in MW does not wipe a key the beta has");
+check(again.hist[0] === "copied from MW" && again.hist.slice(1).some(x => / \(YYY\)$/.test(x)), "the beta's earlier setup, with the change made there, is kept in its history (" + again.hist.join(" < ") + ")");
+check(again.toast === "Copied your current setup from MW" && again.card, "it says so, and shows what is new (" + again.toast + ")");
+check(await ls("mw_cfg") === liveNow, "and the regular setup is still untouched");
 // a beta that never confirms it started: MW must fall back to the regular version
 await p2.evaluate(() => { localStorage.setItem("mw_channel", "beta"); localStorage.setItem("mw_betaTry", String(Date.now())); localStorage.setItem("mw_betaOk", "0"); });
 await p2.goto(LIVE); await p2.waitForTimeout(800);
@@ -303,7 +325,7 @@ console.log("Fast prices and quality of life (4.4)");
   });
   await p3.addInitScript(() => {
     if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
-    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", alpKey:"test-key-id", alpSec:"test-secret", refresh:60}));
+    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", alpKey:"test-key-id", alpSec:"test-secret", refresh:60})); localStorage.setItem("mwlab_seenVer", JSON.stringify("99.0.0"));
     localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"AAA", shares:10, acct:"Taxable"}], fixed:[], watch:[{sym:"AAA", levels:[90, 80], dayDrop:3, near:1.5}, {sym:"BBB", levels:[], dayDrop:3}, {sym:"CCC", levels:[], dayDrop:3}]}));
   });
   await p3.clock.install({time:t3});
@@ -410,7 +432,7 @@ console.log("Earnings, charts and alert repeat (4.5)");
   });
   await p4.addInitScript(() => {
     if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
-    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", tdKey:"test", refresh:60}));
+    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", tdKey:"test", refresh:60})); localStorage.setItem("mwlab_seenVer", JSON.stringify("99.0.0"));
     localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[], fixed:[], watch:[{sym:"AAA", levels:[], dayDrop:30, near:0}, {sym:"BBB", levels:[], dayDrop:30, near:0}, {sym:"CCC", levels:[], dayDrop:30, near:0}]}));
   });
   await p4.clock.install({time:t4});
@@ -422,10 +444,10 @@ console.log("Earnings, charts and alert repeat (4.5)");
   check(/±\d/.test(await p4.locator('#mk-body .erw:has-text("AAA") .mv').innerText().catch(() => "")), "and the typical report-day move from price history");
   // open rows: one at a time, tabs, a Close button and Esc
   await p4.locator('#wl-body [data-row="w:BBB"]').click(); await adv(500, 250);
-  await p4.locator('#wl-body [data-row="w:CCC"] .wtop').click(); await adv(500, 250);
+  await p4.locator('#wl-body [data-row="w:CCC"] .s').click(); await adv(500, 250);
   check(await p4.evaluate(() => [...openRows].filter(k => k.startsWith("w:")).join() === "w:CCC" && document.querySelectorAll("#wl-body .wdet").length === 1), "opening a row closes the one that was open");
   await p4.locator('#wl-body [data-wtab="trend"]').click(); await adv(300, 100);
-  check(/50-day avg/.test(await p4.locator("#wl-body .wpane").innerText()) && await p4.evaluate(() => settings.wdTab === "trend"), "detail tabs switch, and the choice sticks");
+  check(/50-day average/.test(await p4.locator("#wl-body .wpane").innerText()) && await p4.evaluate(() => settings.wdTab === "trend"), "detail tabs switch, and the choice sticks");
   if (SHOTS) await p4.screenshot({path:path.join(SHOTS, "10-row-open.png")});
   await p4.locator('#wl-body [data-wclose="CCC"]').click(); await adv(300, 100);
   check(await p4.evaluate(() => !openRows.has("w:CCC") && document.activeElement && document.activeElement.dataset.row === "w:CCC"), "Close shuts the details and keeps your place");
@@ -476,7 +498,7 @@ console.log("Monitor layout, sections, headlines (4.7)");
     return route.fulfill({json:[{headline:`${sym} test headline one`, source:"Testwire", url:`https://example.com/${sym}/1`, datetime:Math.floor(t5 / 1000) - 600}, {headline:`${sym} test headline two`, source:"Testwire", url:`https://example.com/${sym}/2`, datetime:Math.floor(t5 / 1000) - 7200}]}); });
   await p5.addInitScript(() => {
     if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
-    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", refresh:60}));
+    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", refresh:60})); localStorage.setItem("mwlab_seenVer", JSON.stringify("99.0.0"));
     localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"AAA", shares:1, acct:"Taxable"}], fixed:[], watch:[{sym:"AAA", grp:"Alpha"}, {sym:"BBB"}, {sym:"CCC", grp:"Alpha"}, {sym:"DDD"}]}));
   });
   await p5.clock.install({time:t5});
@@ -528,7 +550,7 @@ console.log("Dollars, mutual funds, News (5.0)");
       {id:hash(sym) % 1000 + 1000, headline:`${sym} older headline`, summary:"", source:"Testwire", url:`https://example.com/${sym}/2`, datetime:now - 30 * 3600}]}); });
   await p6.addInitScript(() => {
     if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
-    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", tdKey:"test", refresh:60}));
+    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", tdKey:"test", refresh:60})); localStorage.setItem("mwlab_seenVer", JSON.stringify("99.0.0"));
     localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"AAA", shares:10, acct:"Taxable"}, {sym:"BBB", shares:4, acct:"Taxable"}, {sym:"CCC", shares:2, acct:"Roth"}, {sym:"FNDBX", shares:50, avg:9, acct:"Roth"}],
       fixed:[{name:"Test fund", sym:"FNDAX", shares:100}, {name:"Cash", value:500}], watch:[{sym:"AAA"}, {sym:"DDD"}]}));
   });
@@ -539,11 +561,11 @@ console.log("Dollars, mutual funds, News (5.0)");
   await p6.goto(BASE); await adv(30000); await adv(9 * 60e3, 5000);   // price history loads at 8 a minute
   // dollars
   const aUsd = (px.AAA - pcOf("AAA")) * 10;
-  const rowUsd = await p6.locator('[data-row="h:AAA:Taxable"] .dp .du').innerText();
-  check(rowUsd === "+$" + (Math.abs(aUsd) < 100 ? aUsd.toFixed(2) : Math.round(aUsd).toLocaleString("en-US")), "a holding shows the day's change in dollars under its percent (" + rowUsd + ")");
-  check(/^−\$/.test(await p6.locator('[data-row="h:BBB:Taxable"] .dp .du').innerText()), "a falling holding shows its dollars in the red");
+  const rowUsd = await p6.locator('[data-row="h:AAA:Taxable"] .v small').innerText();
+  check(rowUsd === "+$" + (Math.abs(aUsd) < 100 ? aUsd.toFixed(2) : Math.round(aUsd).toLocaleString("en-US")), "a holding shows the day's change on the position in dollars, under its value (" + rowUsd + ")");
+  check(/^−\$/.test(await p6.locator('[data-row="h:BBB:Taxable"] .v small').innerText()) && await p6.locator('[data-row="h:BBB:Taxable"] .v small.down').count() === 1, "a falling holding shows its dollars in the red");
   check(/\$/.test(await p6.locator('.grp-h[data-grp="Taxable"] .cbox i').innerText()), "account headers show the day in dollars too");
-  check(/biggest gain AAA/.test(await p6.locator("#pf-body .movers").innerText()) && /biggest loss BBB/.test(await p6.locator("#pf-body .movers").innerText()), "one line names the day's biggest dollar gain and loss");
+  check(await p6.locator('#pf-body .flow-l [data-jump="h:AAA:Taxable"]').count() === 1 && await p6.locator('#pf-body .flow-l [data-jump="h:BBB:Taxable"]').count() === 1 && /gains\s*\+\$/.test(await p6.locator("#pf-body .flow-h").innerText()) && /losses\s*−\$/.test(await p6.locator("#pf-body .flow-h").innerText()), "the day's-dollars bar names the biggest dollar gain and loss, with the totals");
   await p6.locator('#sortSeg [data-sort="usd"]').click(); await adv(300, 100);
   check(JSON.stringify(await p6.locator('.grp-h[data-grp="Taxable"] + .grp-rows .hrow .tk').allInnerTexts()) === JSON.stringify(["AAA", "BBB"]), "Today $ sorts by dollars");
   await p6.locator('#sortSeg [data-sort="value"]').click();
@@ -551,19 +573,21 @@ console.log("Dollars, mutual funds, News (5.0)");
   const fit = await p6.evaluate(() => fundFit);
   check(fit.FNDAX && fit.FNDAX.sym === "SPY" && Math.abs(fit.FNDAX.beta - 0.9) < 0.08 && fit.FNDBX && fit.FNDBX.sym === "QQQ", "each fund is matched to the ETF it moves with (" + JSON.stringify(fit.FNDAX) + ")");
   const fA = '[data-row="f:FNDAX:"]', fB = '[data-row="f:FNDBX:Roth"]';
-  check(await p6.locator(fA + " .dp.est").count() === 1 && /^\+1\.[6-9]\d%/.test(await p6.locator(fA + " .dp").innerText()), "a fund without today's price shows an estimate in a dashed box (" + (await p6.locator(fA + " .dp").innerText()).replace(/\s+/g, " ") + ")");
+  const pill = async sel => (await p6.locator(sel + " .ps .dchg").evaluate(e => [...e.children].map(c => c.textContent).join(" ")).catch(() => ""));
+  check(await p6.locator(fA + " .dchg.est").count() === 1 && /^\+\$0\.3\d \+1\.[6-9]\d%$/.test(await pill(fA)) && /^est\. \+\$3\d\.\d\d$/.test(await p6.locator(fA + " .v small.est").innerText()), "a fund without today's price shows an estimate in a dashed box, per share and on the position (" + await pill(fA) + ")");
   check(/est\. since\s*Fri 11\/6/.test(await p6.locator(fA + " .navd").innerText()), "the row says the estimate runs from Friday's price");
   check(/as of 11\/6/.test(await p6.locator('.grp-h[data-grp="__funds"]').innerText()) && await p6.locator('.grp-h[data-grp="__funds"] .cbox.est').count() === 1, "the Mutual funds header says which day the prices are from");
   check(await p6.evaluate(() => { const P = portfolioCalc(), stocks = P.rows.filter(r => !r.fund).reduce((a, r) => a + r.dayUsd, 0); return P.est && P.est.n === 2 && Math.abs(P.dayUsd - stocks) < 0.005; }) && /Funds est\./.test(await p6.locator("#pf-body .hero .chg").innerText()), "estimates are shown apart and never added to the day's total");
   check(await p6.locator(fB).count() === 1 && /\$500/.test(await p6.locator(fB + " .v").innerText()) && (quoteCalls.FNDBX || 0) <= 2, "a fund typed into Holdings is priced as a fund, not asked for a live quote every refresh (" + (quoteCalls.FNDBX || 0) + " asks)");
-  await p6.locator(fA).click(); await adv(500, 100);
-  const fdet = await p6.locator(fA + " .detail").innerText();
+  await p6.locator(fA + " .s").click(); await adv(500, 100);
+  const fdet = await p6.locator(fA + " .wdet").innerText();
   check(/Price \(NAV\)\s*\$20\.00/.test(fdet) && /Priced\s*Fri 11\/6/.test(fdet) && /Moves most like\s*SPY/.test(fdet) && /Est\. since then/.test(fdet), "a fund's details give its price, the day it is from, the estimate and the ETF it follows");
   const asks = navAsk.FNDAX; await p6.locator(fA + " [data-navref]").click(); await adv(3000, 500);
   check(navAsk.FNDAX === asks + 1, "Check price asks for the fund's price right away");
-  await p6.locator(fA).click();
+  await p6.locator(fA + " [data-rclose]").click(); await adv(300, 100);
+  check(await p6.locator(fA + " .wdet").count() === 0, "Close shuts a fund's details");
   await p6.evaluate(() => { settings.fundEst = false; saveSettings(); renderAll(); });
-  check(await p6.locator("#pf-body .dp.est").count() === 0 && await p6.locator(fA + " .dp.old").count() === 1, "with estimates off, the last official change shows faded with its day");
+  check(await p6.locator("#pf-body .dchg.est").count() === 0 && await p6.locator(fA + " .dchg.old").count() === 1, "with estimates off, the last official change shows faded with its day");
   await p6.evaluate(() => { settings.fundEst = true; saveSettings(); renderAll(); });
   if (SHOTS) await p6.screenshot({path:path.join(SHOTS, "10-funds-estimate.png"), fullPage:true});
   // news
@@ -595,21 +619,180 @@ console.log("Dollars, mutual funds, News (5.0)");
   check(/Market test headline/.test(await p6.locator("#nw-sum .nw-latest").innerText()), "collapsed, the News header shows the newest headline");
   await p6.locator("#wl-sec .sec-h").focus(); await p6.keyboard.press("n"); await adv(500, 100);
   check(await p6.evaluate(() => !document.getElementById("nw-sec").classList.contains("collapsed") && !!document.activeElement.closest("#nw-sec .nw")), "N opens News and puts the keyboard on the first headline");
-  await p6.locator('[data-row="h:AAA:Taxable"]').click(); await adv(2000, 250);
-  check(await p6.locator('[data-row="h:AAA:Taxable"] .news a').count() >= 2 && await p6.locator('[data-row="h:AAA:Taxable"] .news [data-nwjump="AAA"]').count() === 1, "an open holding lists its own headlines with a link to all of them");
-  await p6.locator('[data-row="h:AAA:Taxable"]').click();
+  await p6.locator('[data-row="h:AAA:Taxable"] .s').click(); await adv(1000, 250);
+  await p6.locator('[data-row="h:AAA:Taxable"] [data-htab="news"]').click(); await adv(1500, 250);
+  check(await p6.locator('[data-row="h:AAA:Taxable"] .news a').count() >= 2 && await p6.locator('[data-row="h:AAA:Taxable"] .news [data-nwjump="AAA"]').count() === 1, "an open holding's News tab lists its own headlines with a link to all of them");
+  await p6.locator('[data-row="h:AAA:Taxable"] [data-htab="position"]').click(); await adv(300, 100);
+  await p6.locator('[data-row="h:AAA:Taxable"] .s').click(); await adv(300, 100);
   if (SHOTS) await p6.screenshot({path:path.join(SHOTS, "11-news.png"), fullPage:true});
   // the next morning: Monday's prices have been posted
   navDay = "2026-11-09"; await p6.clock.fastForward(20 * 3600e3); t6 += 20 * 3600e3; simNow = t6;   // 8:05 New York time, Tuesday
   for (let i = 0; i < 40 && (await p6.evaluate(() => (navs.FNDAX || {}).date)) !== "2026-11-09"; i++) await adv(60000, 5000);
   await adv(5000, 1000);
-  check(await p6.locator(fA + " .dp.est").count() === 0 && await p6.locator(fA + " .dp.old").count() === 0 && /\+1\.50%\s*\+\$30\.00/.test(await p6.locator(fA + " .dp").innerText()), "once the official price is posted it replaces the estimate (" + (await p6.locator(fA + " .dp").innerText()).replace(/\s+/g, " ") + ")");
+  check(await p6.locator(fA + " .dchg.est").count() === 0 && await p6.locator(fA + " .dchg.old").count() === 0 && await pill(fA) === "+$0.30 +1.50%" && await p6.locator(fA + " .v small").innerText() === "+$30.00", "once the official price is posted it replaces the estimate (" + await pill(fA) + ", " + await p6.locator(fA + " .v small").innerText() + " on the position)");
   check(/priced Mon 11\/9/.test(await p6.locator('.grp-h[data-grp="__funds"]').innerText()), "the header says the funds are priced for Monday");
   check(await p6.evaluate(() => { const P = portfolioCalc(), stocks = P.rows.filter(r => !r.fund).reduce((a, r) => a + r.dayUsd, 0); return !P.est && Math.abs(P.dayUsd - (stocks + 30 + 50 * 10 * 0.015)) < 0.01; }), "official fund changes count in the day's total");
-  check(/Gain/.test(await p6.evaluate(() => { openRows.add("f:FNDBX:Roth"); renderPortfolio(); return document.querySelector('[data-row="f:FNDBX:Roth"] .detail').innerText; })), "a fund in Holdings shows its gain against your cost");
+  check(/Gain/.test(await p6.evaluate(() => { openRows.add("f:FNDBX:Roth"); renderPortfolio(); return document.querySelector('[data-row="f:FNDBX:Roth"] .wdet').innerText; })), "a fund in Holdings shows its gain against your cost");
   if (SHOTS) await p6.screenshot({path:path.join(SHOTS, "12-funds-official.png"), fullPage:true});
   check(errs6.length === 0, "no page errors in the 5.0 checks" + (errs6.length ? ": " + [...new Set(errs6)].slice(0, 4).join(" | ") : ""));
   await ctx6.close();
+}
+
+/* ---------- 6.0: dollars for one share next to every day's percent, hide amounts, shared tabs, tile details, sticky headers (made-up tickers) ---------- */
+console.log("Per-share dollars and the 6.0 screen (6.0)");
+{
+  const ctx7 = await browser.newContext({viewport:{width:400, height:760}, timezoneId:"America/Chicago"});   // the desktop app's default window
+  const p7 = await ctx7.newPage(); await mock(p7);
+  const errs7 = []; p7.on("pageerror", e => errs7.push(e.message)); p7.on("console", m => { if (m.type() === "error" && !/Failed to load resource|sentry/i.test(m.text())) errs7.push(m.text()); });
+  let t7 = Date.parse("2026-11-09T17:05:00Z");   // 12:05 New York time, a Monday
+  await p7.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
+    // a setup saved by 5.0: it has never seen a "what's new" card, so the 6.0 one is due
+    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", tdKey:"test", refresh:60}));
+    localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"AAA", shares:10, avg:100, acct:"Taxable"}, {sym:"BBB", shares:4, acct:"Taxable"}, {sym:"CCC", shares:2, acct:"Roth"}],
+      fixed:[{name:"Cash", value:500}], watch:[{sym:"AAA", levels:[], dayDrop:3, near:0}, {sym:"DDD", levels:[], dayDrop:30, near:0}]}));
+  });
+  await p7.clock.install({time:t7});
+  const adv = async (ms, step = 1000) => { for (let t = 0; t < ms; t += step) { t7 += step; simNow = t7; await p7.clock.runFor(step); await p7.waitForTimeout(25); } };
+  simNow = t7; Object.keys(px).forEach(k => delete px[k]);
+  px.AAA = +(pcOf("AAA") * 1.03).toFixed(2); px.BBB = +(pcOf("BBB") * 0.98).toFixed(2); px.CCC = +(pcOf("CCC") * 1.01).toFixed(2);
+  px.SPY = +(pcOf("SPY") * 1.02).toFixed(2); px.QQQ = +(pcOf("QQQ") * 0.99).toFixed(2); px.XLK = +(pcOf("XLK") * 1.012).toFixed(2);
+  // how MW writes a change: "+$4.50" and "+3.00%", with a real minus sign
+  const sgn = v => v >= 0 ? "+" : "−", usd = v => sgn(v) + "$" + Math.abs(v).toFixed(2), pctS = (v, d = 2) => sgn(v) + Math.abs(v).toFixed(d) + "%";
+  const dOf = s => px[s] - pcOf(s), pOf = s => (px[s] / pcOf(s) - 1) * 100, pair = s => usd(dOf(s)) + " " + pctS(pOf(s));
+  const pill = async sel => (await p7.locator(sel + " .dchg").first().evaluate(e => [...e.children].map(c => c.textContent).join(" ")).catch(() => ""));
+  const hA = '[data-row="h:AAA:Taxable"]', hB = '[data-row="h:BBB:Taxable"]';
+  await p7.goto(BASE); await adv(30000);
+  // what's new: once, after the update
+  const wn = await p7.locator("#whatsnew").innerText();
+  check(await p7.locator("#whatsnew.show").count() === 1 && /New in MW Beta 6\.0/.test(wn) && /Dollars for one share/.test(wn), "after the update, one card says what is new in 6.0");
+  await p7.locator('#whatsnew .btn[data-wn="ok"]').click(); await adv(300, 100);
+  check(await p7.locator("#whatsnew.show").count() === 0 && await p7.evaluate(() => { renderWhatsNew(); return JSON.parse(localStorage.getItem("mwlab_seenVer")) === "6.0.0" && !document.getElementById("whatsnew").classList.contains("show"); }), "Got it puts the card away for good");
+  await adv(9 * 60e3, 5000);   // price history loads at 8 a minute
+  // dollars for one share, next to the percent
+  check(await pill(hA + " .ps") === pair("AAA") && await p7.locator(hA + " .ps .dchg.up").count() === 1, "a holding shows the day's change for one share in dollars, then in percent (" + await pill(hA + " .ps") + ")");
+  const posA = await p7.locator(hA + " .v small").innerText();
+  check(posA === usd(dOf("AAA") * 10), "and the change on the position is that figure times the shares (" + usd(dOf("AAA")) + " × 10 = " + posA + ")");
+  check(await pill(hB + " .ps") === pair("BBB") && await p7.locator(hB + " .ps .dchg.down").count() === 1, "a falling holding shows a minus and a red box (" + await pill(hB + " .ps") + ")");
+  check(await pill('[data-row="w:AAA"] .c') === pair("AAA"), "a watchlist row shows the same pair");
+  check(await p7.locator('[data-row="w:DDD"] .c .dchg.flat').count() === 1 && await pill('[data-row="w:DDD"] .c') === "$0.00 0.00%", "a price that hasn't moved gets a grey box, not a green one, and no plus sign (" + await pill('[data-row="w:DDD"] .c') + ")");
+  check(await p7.locator('#mk-body .idx .c[data-tile="SPY"] u').innerText() === usd(dOf("SPY")), "an index cell shows the dollars for one share under its percent (" + usd(dOf("SPY")) + ")");
+  check(await p7.locator('#mk-body .tile[data-tile="XLK"] .d .u').innerText() === usd(dOf("XLK")), "and so does a sector tile");
+  await p7.keyboard.press("c"); await adv(1000, 250);
+  const cells = await p7.locator("#strip .srow").first().evaluate(r => [...r.children].map(c => c.textContent.trim()));
+  check(cells[0].startsWith("AAA") && cells[1] === "$" + px.AAA.toFixed(2) && cells[2] === usd(dOf("AAA")) && cells[3] === pctS(pOf("AAA"), 1), "the compact strip shows the price, the dollars for one share and the percent (" + cells.slice(0, 4).join(" | ") + ")");
+  const flatRow = await p7.locator("#strip .srow").evaluateAll(rs => { const r = rs.find(x => x.textContent.trim().startsWith("DDD")); return r ? [...r.children].map(c => c.textContent.trim() + "|" + c.className) : []; });
+  check(flatRow[2] === "$0.00|" && flatRow[3] === "0.0%|", "an unchanged ticker has no sign and no color there (" + flatRow.slice(2, 4).join(" ") + ")");
+  await p7.keyboard.press("c"); await adv(1000, 250);
+  // where the day's dollars came from
+  check(await p7.locator("#pf-body .flow-bar button.g").count() === 2 && await p7.locator("#pf-body .flow-bar button.l").count() === 1, "the day's-dollars bar has one piece for each holding that moved");
+  await p7.locator('#pf-body .flow-bar [data-jump="h:BBB:Taxable"]').click(); await adv(600, 100);
+  check(await p7.evaluate(() => { const a = document.activeElement; return !!a && a.dataset.row === "h:BBB:Taxable" && a.classList.contains("hl"); }), "clicking a piece goes to that holding and marks it");
+  // an open holding: the same tabs as a watchlist row, behind a Position tab
+  await p7.locator(hA + " .s").click(); await adv(800, 200);
+  const tabs = await p7.locator(hA + " [data-htab]").evaluateAll(els => els.map(e => e.dataset.htab));
+  const posTxt = (await p7.locator(hA + " .wpane").innerText()).replace(/\s+/g, " ");
+  check(tabs[0] === "position" && ["today", "trend", "news"].every(k => tabs.includes(k)), "an open holding has Position, Today, Trend and News tabs (" + tabs.join(", ") + ")");
+  check(posTxt.includes("Today " + usd(dOf("AAA") * 10) + " " + usd(dOf("AAA")) + " × 10") && /Gain a share \+\$/.test(posTxt), "Position shows the day's dollars as one share's change times your shares, and your gain for one share");
+  await p7.locator(hA + ' [data-htab="today"]').click(); await adv(300, 100);
+  const tdTxt = (await p7.locator(hA + " .wpane").innerText()).replace(/\s+/g, " ");
+  check(tdTxt.includes(usd(dOf("AAA")) + " a share") && tdTxt.includes("Previous close $" + pcOf("AAA").toFixed(2)), "Today gives the change for one share and the previous close");
+  await p7.locator(hB + " .s").click(); await adv(600, 100);
+  check(await p7.locator(hB + ' [data-htab="today"].on').count() === 1 && await p7.evaluate(() => settings.hdTab === "today"), "the tab you chose stays for the next holding");
+  await p7.locator(hB + ' [data-htab="position"]').click(); await adv(300, 100);
+  await p7.locator(hB + " [data-rclose]").click(); await adv(300, 100);
+  check(await p7.locator("#pf-body .wdet").count() === 0, "Close shuts the holding's details");
+  // hide amounts: what you own is masked, what the market did stays
+  await p7.keyboard.press("h"); await adv(500, 100);
+  const scan = () => p7.evaluate(() => { const sec = document.getElementById("pf-sec"), bad = [];
+    const w = document.createTreeWalker(sec, NodeFilter.SHOW_TEXT); let n;
+    while ((n = w.nextNode())) if (/\$\d/.test(n.textContent) && !n.parentElement.closest(".ps, .wpane")) bad.push(n.textContent.trim().slice(0, 50));
+    sec.querySelectorAll("[title]").forEach(e => { if (/\$\d/.test(e.title) && !e.closest(".ps, .wpane")) bad.push("tooltip: " + e.title.slice(0, 70)); });
+    return {bad, total: sec.querySelector(".hero .val span").textContent.trim(), vals: [...sec.querySelectorAll(".hrow .v")].map(e => e.textContent.trim()),
+      sh: [...sec.querySelectorAll(".hrow:not(.cash) .s small")].map(e => e.textContent.trim()), ps: [...sec.querySelectorAll(".hrow:not(.cash) .ps")].map(e => e.textContent.trim()), eye: !!sec.querySelector(".eye.on")}; });
+  const hd = await scan();
+  check(hd.total === "•••" && hd.eye && hd.vals.length === 4 && hd.vals.every(t => !/\d/.test(t)) && hd.sh.every(t => t.startsWith("••• sh")), "H hides the total, every value, share count and cash (" + hd.vals.join(" | ") + ")");
+  check(hd.bad.length === 0, "and no dollar amount of yours is left on screen or in a tooltip" + (hd.bad.length ? ": " + hd.bad.slice(0, 4).join(" | ") : ""));
+  check(hd.ps.length === 3 && hd.ps.every(t => /^\$\d/.test(t) && /%/.test(t)), "prices, per-share changes and percents stay (" + hd.ps[0] + ")");
+  await p7.locator(hA + " .s").click(); await adv(600, 100);
+  const hidPos = (await p7.locator(hA + " .wpane").innerText()).replace(/\s+/g, " ");
+  check(!/\d/.test(hidPos.replace(/[+−]?\d+(\.\d+)?%/g, "")) && /Shares •••/.test(hidPos), "an open holding's Position tab is masked too (" + hidPos.slice(0, 90) + ")");
+  await p7.locator(hA + " [data-rclose]").click(); await adv(300, 100);
+  await p7.locator("#pf-body .eye").click(); await adv(500, 100);
+  const sh = await scan();
+  check(/^\$[\d,]+/.test(sh.total) && !sh.eye && sh.vals.every(t => /\$\d/.test(t)), "the eye next to the total shows them again (" + sh.total + ")");
+  // the Risk block folds away
+  await p7.locator('#pf-body [data-act="risk"]').click(); await adv(300, 100);
+  check(await p7.locator("#pf-body .riskx.shut").count() === 1 && /1-in-20 bad day/.test(await p7.locator("#pf-body .riskx").innerText()) && await p7.evaluate(() => settings.riskHide === true), "the Risk block folds to one line");
+  await p7.locator('#pf-body [data-act="risk"]').click(); await adv(300, 100);
+  check(await p7.locator("#pf-body .riskx.shut").count() === 0 && await p7.locator("#pf-body .riskx .rk").count() >= 1, "and opens again");
+  // section headers stay in view
+  await p7.evaluate(() => { const m = document.getElementById("main"), s = document.getElementById("pf-sec"); m.scrollTop += s.getBoundingClientRect().top - m.getBoundingClientRect().top + 140; }); await adv(400, 100);
+  const st = await p7.evaluate(() => { const m = document.getElementById("main"), s = document.getElementById("pf-sec"), h = s.querySelector(".sec-h"); return {stuck: s.classList.contains("stuck"), gap: Math.round(h.getBoundingClientRect().top - m.getBoundingClientRect().top)}; });
+  check(st.stuck && Math.abs(st.gap) <= 1, "a section's header stays at the top while you scroll through the section (" + JSON.stringify(st) + ")");
+  await p7.evaluate(() => { document.getElementById("main").scrollTop = 0; }); await adv(400, 100);
+  check(await p7.evaluate(() => !document.getElementById("pf-sec").classList.contains("stuck")), "and lets go when you are back at the top");
+  // a market tile opens a details bar
+  await p7.locator('#mk-body .idx .c[data-tile="QQQ"]').click(); await adv(1500, 250);
+  check(await p7.locator('#mk-body .mkf[data-mkf="QQQ"]').count() === 1 && await pill("#mk-body .mkf") === pair("QQQ"), "clicking an index opens its details bar with the change for one share (" + await pill("#mk-body .mkf") + ")");
+  check(await p7.locator('#mk-body .mkf [data-chart="QQQ"]').count() === 1 && await p7.locator('#mk-body .mkf [data-wadd="QQQ"]').count() === 1, "the bar offers its chart and + Watchlist");
+  await p7.locator('#mk-body .mkf [data-wadd="QQQ"]').click(); await adv(1500, 250);
+  check(await p7.evaluate(() => cfg.watch.some(w => w.sym === "QQQ")) && await p7.locator('#wl-body [data-row="w:QQQ"]').count() === 1 && await p7.locator('#mk-body .mkf [data-wgo="QQQ"]').count() === 1, "+ Watchlist adds the ticker, and the button becomes Open in Watchlist");
+  await p7.locator('#mk-body .mkf [data-act="mkclose"]').click(); await adv(300, 100);
+  check(await p7.locator("#mk-body .mkf").count() === 0 && await p7.evaluate(() => settings.focus === ""), "✕ closes the bar");
+  // the chart's readout
+  await p7.locator(hA + " .s").click(); await adv(600, 100);
+  await p7.locator(hA + ' [data-chart="AAA"]').click(); await adv(3000, 250);
+  const ro = (await p7.locator("#chHover").innerText()).replace(/\s+/g, " ");
+  check(/Close [\d.]+ [+−]\$[\d.]+ [+−][\d.]+%/.test(ro) && /Open [\d.]+ High [\d.]+ Low [\d.]+/.test(ro), "the chart's readout gives the candle under the pointer: close, change in dollars and percent, open, high and low (" + ro + ")");
+  await p7.mouse.move(399, 2); await adv(500, 100);
+  const ro2 = (await p7.locator("#chHover").innerText()).replace(/\s+/g, " ");
+  check(ro2.startsWith("Mon, 11/9 Close " + px.AAA.toFixed(2) + " " + pair("AAA")), "with the pointer away it gives today's candle (" + ro2 + ")");
+  check((await p7.locator("#chPx").innerText()).replace(/\s+/g, " ").includes(pair("AAA")), "and the chart's header carries today's pair");
+  await p7.keyboard.press("Escape"); await adv(300, 100);
+  await p7.locator(hA + " [data-rclose]").click(); await adv(300, 100);
+  // an alert says the drop in dollars for one share
+  px.AAA = +(pcOf("AAA") * 0.96).toFixed(2); await adv(75000, 5000);
+  const msgs = await p7.evaluate(() => firedToday().log.map(l => l.msg));
+  check(msgs.some(m => m.includes("AAA is down $" + (-dOf("AAA")).toFixed(2) + " a share (" + (-pOf("AAA")).toFixed(1) + "%) today")), "an alert gives the drop in dollars for one share, then percent (" + (msgs.find(m => /AAA/.test(m)) || "no AAA alert") + ")");
+  check(await pill(hA + " .ps") === pair("AAA") && await p7.locator(hA + " .v small.down").count() === 1, "and the row turns red with the new figures (" + await pill(hA + " .ps") + ")");
+  // nothing is cut short: a price under $1, a four-digit price, a long note, and a window narrower than the app allows
+  pcFix.PNY = 0.4821; px.PNY = 0.4659; pcFix.BIG = 7843.2; px.BIG = 7973.12;
+  await p7.evaluate(() => { cfg.watch.push({sym:"PNY", levels:[], dayDrop:30, near:0}, {sym:"BIG", levels:[7500], dayDrop:30, near:0});
+    cfg.watch.find(w => w.sym === "DDD").note = "A made-up note that is long enough to need a second line in a narrow window, and then a few words more"; saveCfg(); renderAll(); });
+  await adv(75000, 5000);
+  const pny = '[data-row="w:PNY"]', pnyPx = (await p7.locator(pny + " .v").innerText()).trim();
+  check(pnyPx === "$0.4659" && await pill(pny + " .c") === "−$0.0162 −3.36%", "a price under $1 shows four decimals, and so does its change (" + pnyPx + " " + await pill(pny + " .c") + ")");
+  check(await pill('[data-row="w:BIG"] .c') === pair("BIG") && (await p7.locator('[data-row="w:BIG"] .v').innerText()).trim() === "$7,973.12", "a four-digit price keeps its cents and its pair (" + await pill('[data-row="w:BIG"] .c') + ")");
+  check(await p7.evaluate(() => { const r = document.querySelector('[data-row="w:DDD"]'), n = r.querySelector(".wnote"); return r.classList.contains("nl") && n.scrollWidth <= n.clientWidth + 1 && n.getBoundingClientRect().height > 24 && n.textContent.endsWith("a few words more"); }), "a long note wraps onto more lines and is never cut");
+  const cutIn = sel => p7.evaluate(s => [...document.querySelectorAll(s)].filter(e => e.offsetParent && e.scrollWidth > e.clientWidth + 1).map(e => e.textContent.trim().slice(0, 24)), sel);
+  const FULL = "#pf-body .grp-h > .muted, #pf-body .hrow .s, #wl-body .wrow > .s, #wl-body .wl, #wl-body .wnote, #nw-body .nw-bar .seg";
+  const stripState = () => p7.evaluate(() => { const st = document.getElementById("strip"); return {cls: st.className,
+    cut: st.scrollWidth > st.clientWidth + 1 || [...st.querySelectorAll(".s, .er")].some(c => c.scrollWidth > c.clientWidth + 1), wrapped: [...st.querySelectorAll(".srow")].some(r => r.getBoundingClientRect().height > 30),
+    big: [...st.querySelectorAll(".srow")].find(r => r.textContent.includes("BIG")).querySelector(".d").innerText.trim()}; });
+  for (const w of [400, 360]) {
+    await p7.setViewportSize({width:w, height:760}); await adv(800, 200);
+    const cut = await cutIn(FULL);
+    check(cut.length === 0, `at ${w} px no ticker, account label, alert status, note or news tab is cut` + (cut.length ? ": " + cut.join(" | ") : ""));
+    await p7.keyboard.press("c"); await adv(1200, 200);
+    const s = await stripState();
+    check(!s.cut && !s.wrapped, `at ${w} px the compact view cuts and wraps nothing` + (s.cls ? " (" + s.cls + ")" : ""));
+    await p7.keyboard.press("c"); await adv(800, 200);
+  }
+  // narrower than the app's own minimum, the compact view sheds detail in steps instead of cutting. The window is squeezed
+  // while the compact view is open, until the alert price goes; where that happens depends on the font, so the width is found, not fixed
+  await p7.keyboard.press("c"); await adv(1200, 200);
+  let sq = await stripState(), sqW = 360, sqClean = !sq.cut && !sq.wrapped;
+  while (!/\btighter\b/.test(sq.cls) && sqW > 240) {
+    sqW -= 20; await p7.setViewportSize({width:sqW, height:760}); await adv(1200, 200);
+    sq = await stripState(); sqClean = sqClean && !sq.cut && !sq.wrapped;
+  }
+  check(sqClean && /\btighter\b/.test(sq.cls) && /^[\d.]+%$/.test(sq.big), `squeezed to ${sqW} px it drops the alert price and keeps the distance (${sq.big}), cutting nothing on the way`);
+  await p7.keyboard.press("c"); await p7.setViewportSize({width:400, height:760}); await adv(800, 200);
+  check(await p7.evaluate(() => !document.getElementById("strip").className), "and back in the full view the strip is reset");
+  if (SHOTS) await p7.screenshot({path:path.join(SHOTS, "13-per-share.png"), fullPage:true});
+  check(errs7.length === 0, "no page errors in the 6.0 checks" + (errs7.length ? ": " + [...new Set(errs7)].slice(0, 4).join(" | ") : ""));
+  await ctx7.close();
 }
 
 await browser.close(); server.close();
