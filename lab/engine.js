@@ -6,7 +6,7 @@
 (function (root) {
 "use strict";
 const E = {};
-E.VERSION = "5.0.0";
+E.VERSION = "6.0.0";
 
 /* ====================================================================================
    1. Calendar (NYSE). Source: NYSE Group release of 2025-12-23, "2026, 2027 and 2028 Holiday
@@ -95,8 +95,12 @@ E.session = function (now, mstat, opts) {
    2. Formatting (shared by alert messages and the page)
    ==================================================================================== */
 E.fmt$ = (n, d = 2) => (n == null || !isFinite(n)) ? "—" : (n < 0 ? "−" : "") + "$" + Math.abs(n).toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
-E.fmtS$ = (n, d = 0) => (n == null || !isFinite(n)) ? "—" : (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
-E.fmtPct = (n, d = 2) => (n == null || !isFinite(n)) ? "—" : (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(d) + "%";
+/* a price: to the cent, or to four decimals under $1. ref: the price that decides, when n is a per-share difference */
+E.fmtPx = (n, ref) => { const p = ref == null ? n : ref; return E.fmt$(n, p > 0 && p < 1 ? 4 : 2); };
+/* the sign of a figure shown to d decimals: one that rounds to zero is neither up nor down, so it gets none */
+E.sgn = (n, d = 2) => +Math.abs(n).toFixed(d) === 0 ? "" : n > 0 ? "+" : "−";
+E.fmtS$ = (n, d = 0) => (n == null || !isFinite(n)) ? "—" : E.sgn(n, d) + "$" + Math.abs(n).toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
+E.fmtPct = (n, d = 2) => (n == null || !isFinite(n)) ? "—" : E.sgn(n, d) + Math.abs(n).toFixed(d) + "%";
 E.fmtL = L => E.fmt$(L, L < 100 ? 2 : 0);
 E.mdLabel = d => (+d.slice(5,7)) + "/" + (+d.slice(8,10));
 E.roundLevel = p => p < 100 ? +p.toFixed(2) : Math.round(p);
@@ -258,7 +262,10 @@ E.evaluate = function (w, ctx, state) {
   const next = {fast: Object.assign({n:0, armed:true, low:null}, state.fast || {}), off: state.off, vw: state.vw};
   const out = [];
   if (!ctx.alertOk || w.on === false) return {alerts:[], state:next};
-  const sym = ctx.sym, q = ctx.q, px = q.c, $ = E.fmt$, er = ctx.er;
+  const sym = ctx.sym, q = ctx.q, px = q.c, $ = E.fmtPx, er = ctx.er;
+  // every message says the move in dollars a share as well as in percent (the page does the same)
+  const shd = px > 0 && px < 1 ? 4 : 2, sh = v => E.fmt$(Math.abs(v), shd) + " a share";
+  const chg = q.pc > 0 ? px - q.pc : (q.d != null && isFinite(q.d) ? +q.d : null);
   const erTxt = er && er.days <= 7 ? ` · earnings ${er.days === 0 ? "today" : er.days === 1 ? "tomorrow" : er.label.slice(3)}` : "";
   const lag = ctx.benchDp != null && q.dp != null ? q.dp - ctx.benchDp : null;
   const lagOk = !(w.lagOn && w.lagBy) || sym === ctx.benchSym || (lag != null && lag <= -w.lagBy);
@@ -272,15 +279,15 @@ E.evaluate = function (w, ctx, state) {
     if (!fs.armed) { fs.low = Math.min(fs.low == null ? px : fs.low, px); if (px >= fs.low * (1 + w.fastDrop/200)) fs.armed = true; }
     // needs the window to be (mostly) covered by ticks: the oldest recent tick within the first half
     if (fs.armed && top && recent[0][0] <= since + mins*30e3 && px <= top * (1 - w.fastDrop/100)) { fs.armed = false; fs.low = px; fs.n++; fs.top = top; }
-    if (!fs.armed && fs.low === px && fs.n) dip.push({id:`${sym}-fast-${fs.n}`, kind:"fast", sym, msg:`${sym} dropped ${((1 - px/(fs.top || top || px))*100).toFixed(1)}% in the last ${mins} min (from ${$(fs.top || top)} to ${$(px)})`});
+    if (!fs.armed && fs.low === px && fs.n) dip.push({id:`${sym}-fast-${fs.n}`, kind:"fast", sym, msg:(t => `${sym} dropped ${sh(t - px)} (${((1 - px/t)*100).toFixed(1)}%) in the last ${mins} min (from ${$(t)} to ${$(px)})`)(fs.top || top || px)});
   }
-  if (on(w, "redOn", "dayDrop") && w.dayDrop && q.dp != null && q.dp <= -w.dayDrop) dip.push({id:`${sym}-red`, kind:"red", sym, msg:`${sym} is down ${Math.abs(q.dp).toFixed(1)}% today at ${$(px)}${erTxt}`});
-  if (on(w, "sigOn", "sigDrop") && w.sigDrop && ctx.vol && q.dp != null && q.dp / ctx.vol <= -w.sigDrop) dip.push({id:`${sym}-sig`, kind:"sig", sym, msg:`${sym} is down ${Math.abs(q.dp/ctx.vol).toFixed(1)}σ today (${E.fmtPct(q.dp,1)}; a normal day is ±${ctx.vol.toFixed(1)}%)${erTxt}`});
-  if (on(w, "hiOn", "hiDrop") && w.hiDrop && q.h && px <= q.h * (1 - w.hiDrop/100)) dip.push({id:`${sym}-hd`, kind:"hd", sym, msg:`${sym} is ${((1 - px/q.h)*100).toFixed(1)}% below today's high (${$(q.h)}), now ${$(px)}${erTxt}`});
+  if (on(w, "redOn", "dayDrop") && w.dayDrop && q.dp != null && q.dp <= -w.dayDrop) dip.push({id:`${sym}-red`, kind:"red", sym, msg:`${sym} is down ${chg != null && chg < 0 ? `${sh(chg)} (${Math.abs(q.dp).toFixed(1)}%)` : Math.abs(q.dp).toFixed(1) + "%"} today at ${$(px)}${erTxt}`});
+  if (on(w, "sigOn", "sigDrop") && w.sigDrop && ctx.vol && q.dp != null && q.dp / ctx.vol <= -w.sigDrop) dip.push({id:`${sym}-sig`, kind:"sig", sym, msg:`${sym} is down ${Math.abs(q.dp/ctx.vol).toFixed(1)}σ today (${chg != null && chg < 0 ? "−" + sh(chg) + ", " : ""}${E.fmtPct(q.dp,1)}; a normal day is ±${ctx.vol.toFixed(1)}%)${erTxt}`});
+  if (on(w, "hiOn", "hiDrop") && w.hiDrop && q.h && px <= q.h * (1 - w.hiDrop/100)) dip.push({id:`${sym}-hd`, kind:"hd", sym, msg:`${sym} is ${sh(q.h - px)} (${((1 - px/q.h)*100).toFixed(1)}%) below today's high of ${$(q.h)}, now ${$(px)}${erTxt}`});
   if (lagOk) dip.forEach(a => { a.msg += lagTxt; out.push(a); });
   if (ctx.hi52 && w.offHigh && w.offOn !== false) {
     const off = (1 - px/ctx.hi52)*100, inZone = off >= w.offHigh;
-    if (inZone && next.off === false) out.push({id:`${sym}-off`, kind:"off", sym, msg:`${sym} just fell ${off.toFixed(1)}% below its 52-week high (${$(ctx.hi52)})${erTxt}`});
+    if (inZone && next.off === false) out.push({id:`${sym}-off`, kind:"off", sym, msg:`${sym} just fell ${off.toFixed(1)}% (${sh(ctx.hi52 - px)}) below its 52-week high of ${$(ctx.hi52)}, now ${$(px)}${erTxt}`});
     next.off = inZone;
   }
   // VWAP reclaim (opt-in in the lab)
@@ -292,9 +299,9 @@ E.evaluate = function (w, ctx, state) {
   }
   if (w.levelsOn !== false && ctx.levels && ctx.levels.length) {
     const lv = ctx.levels.map(x => x.L), hit = ctx.levels.filter(x => px <= x.L);
-    if (hit.length) { const deep = hit[hit.length - 1]; out.push({id:`${sym}-L${deep.L}${deep.tag || ""}`, also:hit.map(x => `${sym}-L${x.L}${x.tag || ""}`), kind:"level", sym, level:deep.L, msg:`${sym} reached your ${deep.name} price alert (now ${$(px)})${hit.length > 1 ? ` · through ${hit.length} alerts` : ""}${erTxt}`}); }
+    if (hit.length) { const deep = hit[hit.length - 1]; out.push({id:`${sym}-L${deep.L}${deep.tag || ""}`, also:hit.map(x => `${sym}-L${x.L}${x.tag || ""}`), kind:"level", sym, level:deep.L, msg:`${sym} reached your ${deep.name} price alert (now ${$(px)}${chg != null && chg < 0 ? `, down ${sh(chg)} today` : ""})${hit.length > 1 ? ` · through ${hit.length} alerts` : ""}${erTxt}`}); }
     const nx = ctx.levels.find(x => x.L < px);
-    if (nx && on(w, "nearOn", "near") && w.near && px <= nx.L * (1 + w.near/100)) out.push({id:`${sym}-N${nx.L}`, kind:"near", sym, level:nx.L, msg:`${sym} is ${((px/nx.L - 1)*100).toFixed(1)}% above your ${nx.name} price alert`});
+    if (nx && on(w, "nearOn", "near") && w.near && px <= nx.L * (1 + w.near/100)) out.push({id:`${sym}-N${nx.L}`, kind:"near", sym, level:nx.L, msg:`${sym} is ${sh(px - nx.L)} (${((px/nx.L - 1)*100).toFixed(1)}%) above your ${nx.name} price alert`});
     void lv;
   }
   return {alerts:out, state:next};
@@ -318,7 +325,7 @@ E.bundle = function (items, fired, now, opts) {
     const lq = it.ctx.q, lb = f.lastBy[sym], legPct = (w.fastDrop || 2) * 2 ** ((lb && lb.legs) || 0);
     if (!news.length && lb && lb.px && (lb.legs || 0) < 3 && now - lb.t >= E.BUNDLE_MS && it.ctx.alertOk && w.on !== false && lq && lq.c <= lb.px * (1 - legPct/100)) {
       const n = (lb.legs || 0) + 1;
-      news.push({id:`${sym}-leg-${n}`, kind:"fast", sym, leg:true, msg:`${sym} is down another ${((1 - lq.c/lb.px)*100).toFixed(1)}% since the ${opts.timeStr ? opts.timeStr(lb.t) : "last"} alert (${E.fmt$(lb.px)} → ${E.fmt$(lq.c)})`});
+      news.push({id:`${sym}-leg-${n}`, kind:"fast", sym, leg:true, msg:`${sym} is down another ${((1 - lq.c/lb.px)*100).toFixed(1)}% since the ${opts.timeStr ? opts.timeStr(lb.t) : "last"} alert (${E.fmtPx(lb.px)} → ${E.fmtPx(lq.c)})`});
       lb.legs = n;
     }
     if (!news.length) return;
