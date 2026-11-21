@@ -1364,7 +1364,7 @@ function tapeAdd(src, what, data){
 /* what comes over besides holdings and watchlist: every key, alert setting and preference the regular MW has.
    Left behind on purpose: the recording switch and what only this screen remembers (the open tile, the last tab). */
 const LIVE_SETTINGS = ["key","tdKey","alpKey","alpSec","fast","refresh","overnight","ntfy","ntfyFull","hcUrl","sound","allOff","pauseUntil","snooze",
-  "theme","cvd","compact","layout","hideSec","collapsed","grpCollapsed","secHide","erHide","heatOrder","splash",
+  "theme","cvd","compact","layout","hideSec","collapsed","grpCollapsed","secHide","erHide","heatOrder","splash","map",
   "period","sort","bench","tz","newsTab","newsAll","chRange","chOv","fundEst","showZeroCash","sentryDsn"];
 function liveSetup(){
   if (!BETA) return null;
@@ -1789,7 +1789,7 @@ function renderMarkets(){
     <div class="idx num">${[...idx, ...oth, ...my].map(m=>{ const q = quotes[m.sym], c = chgFor(m.sym, per); return `<button class="c ${settings.focus===m.sym?"focus":""}" data-tile="${m.sym}" data-fx="${m.sym}" title="${esc(m.name === m.sym ? m.sym : m.name + " (" + m.sym + ")")}\n${esc(multi(m.sym))}\nClick for more."><span>${esc(m.name)}${erChip(m.sym)}</span><b class="${cls(c.pct)}">${fmtPct(c.pct, dec)}</b>${c.usd != null ? `<u class="${cls(c.pct)}">${fmtSh$(c.usd, q && q.c)}</u>` : ""}<em>${q?fmtPx(lastPx(m.sym)):"—"}</em>${(()=>{ const x = extFor(m.sym); return x ? `<i class="${cls(x.pct)}" title="${x.ph === "pre" ? "Pre-market" : "After hours"} ${fmtPx(x.p)} on IEX: ${fmtSh$(x.p - x.base, x.p)} a share against the close">${x.ph === "pre" ? "Pre" : "AH"} ${fmtPct(x.pct,1)}</i>` : ""; })()}</button>`; }).join("")}</div>
     ${fIdx ? mkFocusHtml() : ""}
     <div class="toolbar"><button class="sec-t" data-act="sectors" style="flex:1;font-size:11px;text-align:left;display:flex;align-items:center;gap:4px" title="Show or hide the sector tiles"><svg class="chev" style="width:11px;height:11px;${settings.secHide?"transform:rotate(-90deg)":""}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>Sectors</button>
-      <div class="seg" id="ordSeg"><button data-ord="fixed" class="${settings.heatOrder!=="rank"?"on":""}" title="Tiles stay in the same place">Fixed</button><button data-ord="rank" class="${settings.heatOrder==="rank"?"on":""}" title="Best to worst">Ranked</button></div><button class="rbtn secref" data-act="secref" title="Refresh every sector tile now" aria-label="Refresh sectors" ${refreshMany.busy?"disabled":""}>${refreshMany.busy?"…":"↻"}</button><button class="rbtn" data-open="markets" title="Add your own tickers to the market tiles, or hide any tile (Settings → Markets)">Edit</button></div>
+      <div class="seg" id="ordSeg"><button data-ord="fixed" class="${settings.heatOrder!=="rank"?"on":""}" title="Tiles stay in the same place">Fixed</button><button data-ord="rank" class="${settings.heatOrder==="rank"?"on":""}" title="Best to worst">Ranked</button></div><button class="rbtn secref" data-act="secref" title="Refresh every sector tile now" aria-label="Refresh sectors" ${refreshMany.busy?"disabled":""}>${refreshMany.busy?"…":"↻"}</button><button class="rbtn" data-act="map" title="Open the market map: about 200 funds in 11 panels (M)">Map</button><button class="rbtn" data-open="markets" title="Add your own tickers to the market tiles, or hide any tile (Settings → Markets)">Edit</button></div>
     ${settings.secHide ? "" : `<div class="heat">${tiles(sec)}</div>${fSec ? mkFocusHtml() : ""}`}
     ${secP.length?`<div class="breadth" title="How many of the 11 S&amp;P sector funds (XLK to XLRE) are up today, and how many trade above their 50-day average. Chips, power grid and software are left out because they overlap those 11."><span>${upN} of ${secP.length} sectors up today${above.length?` · ${aboveN} of ${above.length} above 50-day`:""}</span><span class="bar"><i style="width:${(upN/secP.length*100).toFixed(0)}%"></i></span></div>`:""}
     ${erPanelHtml()}
@@ -2186,6 +2186,7 @@ document.addEventListener("click", e=>{
   if (e.target.closest("[data-act=mkclose]")){ settings.focus = ""; saveSettings(); renderMarkets(); return; }
   if (e.target.closest("[data-wundo]")){ watchRestore(); return; }
   if (e.target.closest("#wAdd")) return;   // typing in the add box never opens a row
+  if (e.target.closest("[data-act=map]")){ openMap(); return; }
   if (e.target.closest("[data-act=secref]")){ refreshMany(MARKETS.sectors.filter(m => !cfg.hiddenMk.includes(m.sym)).map(m => m.sym), "Sectors"); return; }
   { const c = e.target.closest("[data-chart]"); if (c){ e.stopPropagation(); openChart(c.dataset.chart); return; } }
   { const s = e.target.closest("[data-wsort]"); if (s){ wSort = s.dataset.wsort; renderWatch(); return; } }
@@ -2270,6 +2271,7 @@ $("bRefresh").onclick = ()=>{ schedule(true); const s = session().s;
 $("bAlerts").onclick = ()=>{ markSeen(); settings.collapsed.log = false; settings.compact = false; saveSettings(); renderAll(); $("log-sec").scrollIntoView({behavior:"smooth", block:"start"}); };
 $("bSettings").onclick = ()=>{ closeMenu(); openSheet(settings.sheetTab || "general"); };
 $("bBrief").onclick = ()=>{ closeMenu(); copyBrief(false); };
+$("bMap").onclick = ()=>{ closeMenu(); openMap(); };
 $("bHide").onclick = ()=>{ closeMenu(); toggleHide(); };
 /* in the beta that MW opened, the menu has a way back too (it's also at the top of Settings → General) */
 if (BETA && onBeta()) $("bLeave").hidden = false;
@@ -2705,7 +2707,8 @@ function palCmds(){
     {n:"Refresh sectors", run:()=>refreshMany(MARKETS.sectors.filter(m => !cfg.hiddenMk.includes(m.sym)).map(m => m.sym), "Sectors")},
     {n:"News: show every headline", k:"N", run:()=>{ settings.newsAll = true; newsJump(""); }},
     {n:"News: check for new headlines", run:()=>{ loadHeadlines(true).then(()=> toast(news.err ? "Some headlines didn't load: " + news.err : "Headlines updated")); }},
-    {n:"Copy market brief", run:()=>copyBrief(false)}
+    {n:"Copy market brief", run:()=>copyBrief(false)},
+    {n:"Market map: about 200 funds at a glance", k:"M", run:()=>openMap()}
   ];
   if (newsItems().some(nwIsNew)) C.splice(5, 0, {n:"News: mark all as read", run:()=>{ const n = nwMark(newsItems().map(x => x.id)); toast(`${n} headline${n === 1 ? "" : "s"} marked as read`); safe("news", renderNews); }});
   if (fundSyms().length && settings.tdKey) C.push({n:"Check mutual fund prices now", run:()=>{ loadNavs(true).then(()=>{ const fs = fundSyms().map(x => navs[x]).filter(n => n && n.nav > 0), d = fs.map(n => n.date).sort()[0]; toast(d ? "Funds are priced " + navDayLabel(d) + (d < E.navDueDate(Date.now()) ? ". Nothing newer is posted yet" : "") : "No fund prices came back"); }); }});
@@ -3199,11 +3202,11 @@ if (NATIVE){
   main.addEventListener("scroll", () => { if (!raf) raf = requestAnimationFrame(upd); }, {passive:true});
 })();
 /* ---------- what's new (6.0): one card, once, after an update that changes how the screen reads ---------- */
-const WHATS_NEW = {ver:"6.0.0", url:"https://github.com/awpmap/market-widget/blob/main/lab/CHANGES-6.0.0.md", title:"New in MW Beta 6.0", items:[
-  "<b>Dollars for one share, everywhere.</b> Next to every day's percent is the change for one share, like +$5.27 +2.59%: holdings, watchlist, market tiles, funds, the chart and alerts.",
-  "<b>Two columns in Portfolio.</b> Per share is the price over its change. Position is your value over its change.",
-  "<b>Hide amounts.</b> Click the eye next to your total, or press H. Prices and percents stay.",
-  "<b>More to click.</b> A holding opens Position, Today, Trend, Company and News. A market tile opens its details. The bar under your total shows where the day's dollars came from."]};
+const WHATS_NEW = {ver:"6.1.0", url:"https://github.com/awpmap/market-widget/blob/main/lab/CHANGES-6.1.0.md", title:"New in MW Beta 6.1: the market map", items:[
+  "<b>About 200 funds on one screen.</b> US indexes, inverse and leveraged funds, dividends, every sector, large, mid and small caps, international, global themes like chips and gold miners, bonds, commodities, crypto and strategies.",
+  "<b>Big tiles for big funds.</b> Tile size follows the fund's size (or today's volume), color follows the move. Pick 1D to 1Y, or Since close for pre-market and after hours.",
+  "<b>Click any tile</b> for its price, the change for one share, its time frames, the day's range and how it ranks in its group, with Chart and + Watchlist.",
+  "<b>Open it</b> with Map in Markets, the ⋯ menu, or press M. Make the window wide for the full picture."]};
 function renderWhatsNew(){
   const el = $("whatsnew"); if (!el) return;
   const seen = store.get("seenVer", "");

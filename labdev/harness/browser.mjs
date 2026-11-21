@@ -665,9 +665,9 @@ console.log("Per-share dollars and the 6.0 screen (6.0)");
   await p7.goto(BASE); await adv(30000);
   // what's new: once, after the update
   const wn = await p7.locator("#whatsnew").innerText();
-  check(await p7.locator("#whatsnew.show").count() === 1 && /New in MW Beta 6\.0/.test(wn) && /Dollars for one share/.test(wn), "after the update, one card says what is new in 6.0");
+  check(await p7.locator("#whatsnew.show").count() === 1 && /New in MW Beta 6\.1/.test(wn) && /market map/.test(wn), "after the update, one card says what is new in 6.1");
   await p7.locator('#whatsnew .btn[data-wn="ok"]').click(); await adv(300, 100);
-  check(await p7.locator("#whatsnew.show").count() === 0 && await p7.evaluate(() => { renderWhatsNew(); return JSON.parse(localStorage.getItem("mwlab_seenVer")) === "6.0.0" && !document.getElementById("whatsnew").classList.contains("show"); }), "Got it puts the card away for good");
+  check(await p7.locator("#whatsnew.show").count() === 0 && await p7.evaluate(() => { renderWhatsNew(); return JSON.parse(localStorage.getItem("mwlab_seenVer")) === "6.1.0" && !document.getElementById("whatsnew").classList.contains("show"); }), "Got it puts the card away for good");
   await adv(9 * 60e3, 5000);   // price history loads at 8 a minute
   // dollars for one share, next to the percent
   check(await pill(hA + " .ps") === pair("AAA") && await p7.locator(hA + " .ps .dchg.up").count() === 1, "a holding shows the day's change for one share in dollars, then in percent (" + await pill(hA + " .ps") + ")");
@@ -793,6 +793,87 @@ console.log("Per-share dollars and the 6.0 screen (6.0)");
   if (SHOTS) await p7.screenshot({path:path.join(SHOTS, "13-per-share.png"), fullPage:true});
   check(errs7.length === 0, "no page errors in the 6.0 checks" + (errs7.length ? ": " + [...new Set(errs7)].slice(0, 4).join(" | ") : ""));
   await ctx7.close();
+}
+
+/* ---------- 6.1: the market map (synthetic Alpaca and Finnhub answers; every price here is made up) ---------- */
+console.log("Market map (6.1)");
+{
+  const ctx8 = await browser.newContext({viewport:{width:1400, height:900}, timezoneId:"America/Chicago"});
+  const p8 = await ctx8.newPage(); await mock(p8);
+  const errs8 = []; p8.on("pageerror", e => errs8.push(e.message)); p8.on("console", m => { if (m.type() === "error" && !/Failed to load resource|sentry/i.test(m.text())) errs8.push(m.text()); });
+  let t8 = Date.parse("2026-11-10T21:30:00Z");   // 4:30 PM New York, a Tuesday: after hours
+  const calls = {snap:0, bars:0, coin:0};
+  const day = "2026-11-10", synth = s => { const pc = pcOf(s), c = +(pc * (1 + ((hash(s) % 9) - 4) / 100)).toFixed(2); return {c, pc}; };
+  await p8.route(/https:\/\/data\.alpaca\.markets\/.*/, route => {
+    const u = new URL(route.request().url()), syms = (u.searchParams.get("symbols") || "").split(",").filter(Boolean);
+    if (u.pathname.includes("/crypto/") && u.pathname.endsWith("snapshots")) { calls.coin++; return route.fulfill({json:{snapshots:Object.fromEntries(syms.map(s => [s, {latestTrade:{p:110, t:new Date(t8).toISOString()}, dailyBar:{t:new Date(t8).toISOString().slice(0, 10) + "T00:00:00Z", o:100, h:111, l:99, c:110, v:5, vw:105}, prevDailyBar:{c:100}}]))}}); }
+    if (u.pathname.includes("/crypto/")) return route.fulfill({json:{bars:{}}});
+    if (u.pathname.endsWith("snapshots")) { if (!syms.includes("AAA")) calls.snap++;   // MW's own fast prices always ask for the watchlist's AAA; the map never does
+      return route.fulfill({json:Object.fromEntries(syms.map(s => { const {c, pc} = synth(s);
+      return [s, {dailyBar:{t:day + "T05:00:00Z", o:pc, h:Math.max(c, pc) * 1.01, l:Math.min(c, pc) * 0.99, c, v:1e5 + hash(s) % 1e6, vw:c}, prevDailyBar:{t:"2026-11-09T05:00:00Z", c:pc},
+        latestTrade:{p: s === "SPY" ? +(c * 1.01).toFixed(2) : c, t: new Date(s === "SPY" ? Date.parse("2026-11-10T21:20:00Z") : Date.parse("2026-11-10T20:59:00Z")).toISOString()}}]; }))}); }
+    if (u.pathname.endsWith("bars")) { calls.bars++; return route.fulfill({json:{bars:Object.fromEntries(syms.map(s => [s, dailyBars(s, day).slice(0, 300).reverse().map(b => ({t:b.datetime + "T05:00:00Z", c:+b.close}))])), next_page_token:null}}); }
+    return route.fulfill({json:{}});
+  });
+  await p8.addInitScript(() => { if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
+    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", alpKey:"test-key-id", alpSec:"test-secret", refresh:60})); localStorage.setItem("mwlab_seenVer", JSON.stringify("99.0.0"));
+    localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[], fixed:[], watch:[{sym:"AAA", levels:[], dayDrop:3, near:0}]})); });
+  await p8.clock.install({time:t8});
+  const adv = async (ms, step = 1000) => { for (let t = 0; t < ms; t += step) { t8 += step; simNow = t8; await p8.clock.runFor(step); await p8.waitForTimeout(25); } };
+  simNow = t8; Object.keys(px).forEach(k => delete px[k]);
+  await p8.goto(BASE); await adv(8000);
+  check(await p8.locator('#mk-body [data-act="map"]').count() === 1, "Markets has a Map button");
+  await p8.keyboard.press("m"); await adv(3000, 500);
+  const nT = await p8.locator("#mpGrid .mt").count(), nP = await p8.locator("#mpGrid .mp-p").count();
+  check(nP === 11 && nT >= 200, `M opens the map: ${nP} panels, ${nT} tiles`);
+  check(calls.snap >= 3 && calls.snap <= 4, `every fund came in ${calls.snap} snapshot calls (100 tickers each)`);
+  const geo = await p8.evaluate(() => { const bad = []; document.querySelectorAll(".mp-tm").forEach(tm => { const R = tm.getBoundingClientRect();
+    tm.querySelectorAll(".mt").forEach(t => { const r = t.getBoundingClientRect(); if (r.left < R.left - 1 || r.right > R.right + 1 || r.top < R.top - 1 || r.bottom > R.bottom + 1) bad.push(t.dataset.ms); }); }); return bad; });
+  check(geo.length === 0, "every tile sits inside its panel" + (geo.length ? ": " + geo.slice(0, 5).join(", ") : ""));
+  const spy = await p8.evaluate(() => { const el = document.querySelector('#mpGrid .mt[data-ms="SPY"]'), r = el.getBoundingClientRect(), d = document.querySelector('#mpGrid .mt[data-ms="DOG"]').getBoundingClientRect();
+    return {pct: el.children[1].textContent, area: r.width * r.height, dog: d.width * d.height, tip: el.dataset.tip, bg: el.style.background}; });
+  const sq = synth("SPY"), want = (sq.c / sq.pc - 1) * 100;
+  check(spy.pct === E.fmtPct(want, 2), `a tile shows the regular session's change (SPY ${spy.pct}, expected ${E.fmtPct(want, 2)})`);
+  check(spy.area > spy.dog * 8, "a big fund gets a much bigger tile than a tiny one");
+  check(/After hours/.test(spy.tip) && /against the close/.test(spy.tip), "the tooltip carries the after-hours trade");
+  check(/color-mix/.test(spy.bg), "tiles are colored by their move");
+  const crypto = await p8.locator('#mpGrid .mt[data-ms="BTC/USD"] i').innerText();
+  check(crypto === "+10.00%", "spot coins price from the crypto feed (" + crypto + ")");
+  // Since close: the after-hours move against the close
+  await p8.locator('#mpBar [data-mv="ext"]').click(); await adv(600, 200);
+  const ext = await p8.locator('#mpGrid .mt[data-ms="SPY"] i').innerText();
+  check(ext === E.fmtPct(1, 2), "Since close shows the after-hours trade against the close (" + ext + ")");
+  await p8.locator('#mpBar [data-mv="day"]').click(); await adv(300, 100);
+  // details
+  await p8.locator('#mpGrid .mt[data-ms="SPY"]').click(); await adv(600, 200);
+  const det = (await p8.locator("#mpDet").innerText()).replace(/\s+/g, " ");
+  check(/SPY/.test(det) && /S&P 500/.test(det) && /After hours/.test(det) && await p8.locator("#mpDet .pe").count() >= 5, "clicking a tile opens its details with its group ranked");
+  check(await p8.locator('#mpDet [data-chart="SPY"]').count() === 1 && await p8.locator('#mpDet [data-wadd="SPY"]').count() === 1, "the details offer Chart and + Watchlist");
+  // a longer time frame loads daily bars once
+  await p8.keyboard.press("3"); await adv(3000, 500);
+  const b1 = calls.bars, p3 = await p8.locator('#mpGrid .mt[data-ms="QQQ"] i').innerText();
+  check(b1 >= 3 && /%$/.test(p3) && p3 !== "—", `3M comes from daily bars (${b1} calls; QQQ ${p3})`);
+  await p8.keyboard.press("5"); await adv(2000, 500);
+  check(calls.bars === b1, "switching time frames again costs no more calls");
+  // find, Esc, M
+  await p8.keyboard.press("/"); await p8.keyboard.type("XLE"); await adv(300, 100);
+  check(await p8.locator("#mpGrid .mt.dim").count() > 150 && await p8.locator('#mpGrid .mt[data-ms="XLE"].dim').count() === 0, "Find dims every other tile");
+  await p8.keyboard.press("Escape"); await p8.keyboard.press("Escape"); await adv(200, 100);
+  await p8.keyboard.press("Escape"); await adv(200, 100);   // details
+  await p8.keyboard.press("Escape"); await adv(200, 100);   // the map
+  check(await p8.locator("#map.hide").count() === 1, "Esc closes the details and then the map");
+  const before = calls.snap; await adv(60000, 5000);
+  check(calls.snap === before, "nothing is fetched for the map while it is closed");
+  // panels can be hidden, and a narrow window stacks them
+  await p8.setViewportSize({width:400, height:760}); await p8.keyboard.press("m"); await adv(1500, 500);
+  await p8.locator('[data-act="mpPanels"]').click(); await p8.locator('[data-mpp="bonds"]').uncheck(); await adv(500, 100);
+  check(await p8.locator("#mpGrid .mp-p").count() === 10 && await p8.locator('#mpGrid .mt[data-ms="TLT"]').count() === 0, "a panel can be hidden");
+  const narrow = await p8.evaluate(() => { const g = document.getElementById("mpGrid"); return g.scrollWidth <= g.clientWidth + 1 && [...g.querySelectorAll(".mp-p")].every(p => p.getBoundingClientRect().width <= innerWidth); });
+  check(narrow, "at 400 px the panels stack in one column with no sideways scroll");
+  if (SHOTS) await p8.screenshot({path:path.join(SHOTS, "14-market-map-400.png")});
+  await p8.locator('[data-mpp="bonds"]').check(); await p8.keyboard.press("m"); await adv(300, 100);
+  check(errs8.length === 0, "no page errors in the map checks" + (errs8.length ? ": " + [...new Set(errs8)].slice(0, 4).join(" | ") : ""));
+  await ctx8.close();
 }
 
 await browser.close(); server.close();

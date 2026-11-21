@@ -16,6 +16,7 @@ app = swap(app, 'const NS = "mwlab_";', 'const NS = "mw_";', "app.js");
 app = swap(app, "MW Beta", "MW", "app.js");
 write("app.js", HEAD + app);
 write("engine.js", HEAD + read("engine.js"));
+write("map.js", HEAD + read("map.js"));
 write("boot.js", HEAD + read("boot.js"));
 write("sw.js", HEAD.replace("/*", "//").replace(" */", "") + read("sw.js"));
 write("version.json", read("version.json"));

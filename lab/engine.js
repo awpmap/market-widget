@@ -6,7 +6,7 @@
 (function (root) {
 "use strict";
 const E = {};
-E.VERSION = "6.0.0";
+E.VERSION = "6.1.0";
 
 /* ====================================================================================
    1. Calendar (NYSE). Source: NYSE Group release of 2025-12-23, "2026, 2027 and 2028 Holiday
@@ -874,6 +874,185 @@ E.newsMerge = function (items, now, opts) {
 };
 /* "12m", "3h", "2d" */
 E.agoShort = function (t, now) { const m = Math.max(0, Math.round((now - t) / 60e3)); return m < 1 ? "now" : m < 60 ? m + "m" : m < 1440 ? Math.round(m / 60) + "h" : Math.round(m / 1440) + "d"; };
+
+/* ====================================================================================
+   19. Market map (6.1). About 200 funds in eleven panels, each split into groups, drawn as nested treemaps.
+   Universe line format: "SYM size Name", where size is the fund's rough size in billions of dollars (rounded,
+   approximate, mid-2026; used ONLY for tile area, never shown as a figure) and an optional leverage tag in the
+   name ("3x", "-1x"). Spot coins (BTC/USD...) are sized against each other, scaled to sit beside the funds.
+   ==================================================================================== */
+E.MAP_SRC = [
+  ["us", "US", 2, [
+    ["Index", "VOO 750 Vanguard S&P 500|SPY 700 SPDR S&P 500|IVV 700 iShares Core S&P 500|VTI 550 Total US market|QQQ 400 Nasdaq 100|RSP 80 Equal-weight S&P 500|SCHX 60 Schwab US large cap|IWB 45 Russell 1000|DIA 38 Dow 30|OEF 25 S&P 100|IWV 18 Russell 3000"],
+    ["Inverse", "SQQQ 3 Nasdaq 100 -3x|SH 1.2 S&P 500 -1x|SPXS 0.6 S&P 500 -3x|PSQ 0.6 Nasdaq 100 -1x|SPXU 0.5 S&P 500 -3x|SDS 0.5 S&P 500 -2x|QID 0.3 Nasdaq 100 -2x|DOG 0.15 Dow -1x"],
+    ["Leverage", "TQQQ 28 Nasdaq 100 3x|QLD 9 Nasdaq 100 2x|SSO 7 S&P 500 2x|SPXL 6 S&P 500 3x|UPRO 4.5 S&P 500 3x|UDOW 0.8 Dow 3x"],
+    ["Dividend", "VIG 95 Dividend growth|SCHD 72 Schwab US dividend|VYM 65 High dividend yield|DGRO 34 iShares dividend growth|DVY 20 Select dividend|SDY 20 Dividend aristocrats (S&P 1500)|NOBL 12 Dividend aristocrats|HDV 12 High dividend"]]],
+  ["sector", "US sectors", 2, [
+    ["Technology", "VGT 110 Vanguard info tech|XLK 85 Technology|IGV 10 Software|TECL 4 Technology 3x"],
+    ["Financials", "XLF 52 Financials|VFH 13 Vanguard financials|KRE 4 Regional banks|KBE 2 Banks"],
+    ["Health care", "XLV 37 Health care|VHT 17 Vanguard health care|XBI 7 Biotech|IBB 6 Biotech (large)"],
+    ["Energy", "XLE 27 Energy|VDE 7 Vanguard energy|XOP 2 Oil & gas producers|OIH 1.3 Oil services"],
+    ["Communication", "XLC 25 Communication|VOX 5.5 Vanguard communication"],
+    ["Consumer cyclical", "XLY 23 Consumer discretionary|VCR 6.5 Vanguard discretionary|ITB 2.5 Home construction|XHB 2 Homebuilders|XRT 0.4 Retail"],
+    ["Industrials", "XLI 23 Industrials|ITA 9 Aerospace & defense|VIS 6.5 Vanguard industrials|JETS 1 Airlines"],
+    ["Utilities", "XLU 20 Utilities|VPU 8 Vanguard utilities"],
+    ["Staples", "XLP 16 Consumer staples|VDC 7.5 Vanguard staples"],
+    ["Real estate", "VNQ 34 Real estate|XLRE 7.5 Real estate (S&P)|IYR 3.7 iShares real estate"],
+    ["Materials", "XLB 5 Materials|VAW 3 Vanguard materials|XME 2.5 Metals & mining"]]],
+  ["intl", "International", 2, [
+    ["Developed", "VEA 160 Developed markets|IEFA 145 Core developed|EFA 63 EAFE|EFV 26 Developed value|EFG 13 Developed growth|SCZ 10 Developed small caps"],
+    ["Emerging", "IEMG 100 Core emerging|VWO 95 Emerging markets|EEM 20 iShares emerging"],
+    ["Global ex-US", "VXUS 95 Total international|VEU 65 All-world ex-US|IXUS 48 Core total international"],
+    ["Asia-Pacific", "EWJ 15 Japan|INDA 10 India|EWT 6.5 Taiwan|EWY 5.5 South Korea|EWA 1.5 Australia"],
+    ["Europe", "VGK 26 Europe|EZU 8 Eurozone|EWU 3 United Kingdom|EWG 2 Germany"],
+    ["China", "FXI 7 China large caps|MCHI 7 MSCI China|KWEB 7 China internet"],
+    ["Americas", "EWZ 5 Brazil|EWC 3 Canada|EWW 1.5 Mexico"]]],
+  ["large", "US large cap", 1, [
+    ["Growth", "VUG 190 Vanguard growth|IWF 120 Russell 1000 growth|IVW 63 S&P 500 growth|SCHG 48 Schwab large growth|SPYG 42 SPDR S&P 500 growth|MGK 30 Mega-cap growth"],
+    ["Value", "VTV 145 Vanguard value|IWD 64 Russell 1000 value|IVE 41 S&P 500 value|SPYV 29 SPDR S&P 500 value|SCHV 13 Schwab large value|VOOV 6 Vanguard S&P 500 value"]]],
+  ["small", "US small cap", 1, [
+    ["Blend", "IJR 86 S&P 600|IWM 72 Russell 2000|VB 67 Vanguard small cap|SCHA 19 Schwab small cap|VTWO 13 Vanguard Russell 2000"],
+    ["Value", "VBR 32 Small value|AVUV 18 Avantis small value|IWN 12 Russell 2000 value"],
+    ["Growth", "VBK 21 Small growth|IWO 13 Russell 2000 growth"],
+    ["Leverage", "TNA 2.2 Small caps 3x|UWM 0.4 Russell 2000 2x"],
+    ["Inverse", "TZA 0.4 Small caps -3x|RWM 0.15 Russell 2000 -1x|TWM 0.05 Russell 2000 -2x"]]],
+  ["mid", "US mid cap", 1, [
+    ["Blend", "IJH 100 S&P 400|VO 90 Vanguard mid cap|IWR 45 Russell mid cap|MDY 24 SPDR S&P 400|SCHM 12 Schwab mid cap"],
+    ["Growth", "IWP 21 Mid growth (Russell)|VOT 18 Vanguard mid growth|IJK 9 S&P 400 growth"],
+    ["Value", "VOE 19 Vanguard mid value|IWS 14 Mid value (Russell)|IJJ 8 S&P 400 value"]]],
+  ["global", "Global themes", 2, [
+    ["Semiconductors", "SMH 33 Semiconductors (VanEck)|SOXX 15 Semiconductors (iShares)|SOXL 13 Semiconductors 3x|SOXS 1 Semiconductors -3x"],
+    ["Tech & AI", "CIBR 10 Cybersecurity|ARKK 6 ARK Innovation|AIQ 4 AI & big data|BOTZ 3 Robotics & AI"],
+    ["Gold & silver miners", "GDX 20 Gold miners|GDXJ 7 Junior gold miners|SIL 2 Silver miners"],
+    ["Power & resources", "GRID 4 Power grid|URA 4 Uranium|COPX 3 Copper miners|ICLN 1.5 Clean energy|TAN 1 Solar"],
+    ["World index", "VT 55 Total world|ACWI 24 All-country world"]]],
+  ["bonds", "Fixed income", 2, [
+    ["Cash & short", "SGOV 55 0-3 month T-bills|BIL 42 1-3 month T-bills|VGSH 27 Short Treasury (Vanguard)|SHY 24 1-3 year Treasury|SHV 21 Short Treasury"],
+    ["Treasuries", "VGIT 37 Intermediate Treasury|TLT 55 20+ year Treasury|IEF 35 7-10 year Treasury|GOVT 32 All Treasuries|IEI 16 3-7 year Treasury|TLH 12 10-20 year Treasury"],
+    ["Corporate", "VCIT 57 Intermediate corporate|VCSH 46 Short corporate|LQD 32 Investment-grade corporate|HYG 17 High yield|USIG 15 Broad corporate|VCLT 11 Long corporate|JNK 8 High yield (SPDR)"],
+    ["Broad", "BND 135 Total bond market|AGG 130 Core US bond|BNDX 70 International bond"],
+    ["Inflation-linked", "VTIP 16 Short TIPS|TIP 14 TIPS|SCHP 14 Schwab TIPS"],
+    ["Mortgages", "MBB 40 Mortgage-backed"],
+    ["Muni & sovereign", "VTEB 42 Tax-exempt munis|MUB 41 National munis|EMB 15 Emerging market bonds"]]],
+  ["cmdty", "Commodities", 1, [
+    ["Gold", "GLD 130 Gold (SPDR)|IAU 55 Gold (iShares)|GLDM 18 Gold mini"],
+    ["Silver", "SLV 20 Silver|SIVR 2.5 Silver (abrdn)"],
+    ["Energy", "USO 1.2 Crude oil|UNG 0.8 Natural gas|BNO 0.25 Brent crude"],
+    ["Broad", "PDBC 4.5 Diversified commodities|DBC 1.4 Commodity index|DBA 0.8 Agriculture|CPER 0.3 Copper"],
+    ["Leverage", "AGQ 1 Silver 2x|UCO 0.6 Crude oil 2x|UGL 0.5 Gold 2x|SCO 0.1 Crude oil -2x"]]],
+  ["crypto", "Crypto", 1, [
+    ["Bitcoin funds", "IBIT 85 iShares Bitcoin|FBTC 22 Fidelity Bitcoin|GBTC 17 Grayscale Bitcoin|ARKB 4.5 ARK Bitcoin|BITB 4.5 Bitwise Bitcoin|BITO 2.3 Bitcoin futures"],
+    ["Ether funds", "ETHA 12 iShares Ethereum|ETHE 3 Grayscale Ethereum|FETH 2.5 Fidelity Ethereum"],
+    ["Spot, 24/7", "BTC/USD 60 Bitcoin|ETH/USD 12 Ether|SOL/USD 4 Solana"]]],
+  ["strategy", "Strategy", 1, [
+    ["Factor", "QUAL 55 Quality|USMV 24 Minimum volatility|MTUM 18 Momentum|VLUE 7 Value factor"],
+    ["Income", "JEPI 41 Equity premium income|JEPQ 30 Nasdaq premium income|QYLD 8 Nasdaq covered calls|DIVO 5 Dividend + covered calls"],
+    ["Equal weight", "QQQE 1.3 Nasdaq 100 equal weight"]]]
+];
+/* -> [{k, title, big, groups:[{name, items:[{sym, aum, name, lev, crypto}]}]}] */
+E.mapUniverse = function (src) {
+  return (src || E.MAP_SRC).map(([k, title, big, groups]) => ({k, title, big: big === 2, groups: groups.map(([name, s]) => ({name, items: s.split("|").map(t => {
+    const m = /^(\S+) ([\d.]+) (.+)$/.exec(t.trim()); if (!m) throw new Error("bad map line: " + t);
+    const lv = /(-?\d)x$/.exec(m[3]);
+    return {sym: m[1], aum: +m[2], name: m[3], lev: lv ? +lv[1] : 1, crypto: m[1].includes("/")};
+  })}))}));
+};
+
+/* squarified treemap (Bruls, Huizing, van Wijk). items: [{w > 0, ...}] -> the same items with x, y, w0 (width), h0
+   (height), in the rectangle (x, y, W, H). Order is biggest first; equal weights keep their given order. */
+E.squarify = function (items, x, y, W, H) {
+  const list = items.filter(i => i.w > 0).map((it, i) => ({it, i})).sort((a, b) => b.it.w - a.it.w || a.i - b.i).map(o => o.it);
+  const total = list.reduce((s, i) => s + i.w, 0), out = [];
+  if (!(total > 0) || !(W > 0) || !(H > 0)) return out;
+  const scale = W * H / total;
+  let rx = x, ry = y, rw = W, rh = H, row = [], i = 0;
+  const worst = (r, side) => { if (!r.length) return Infinity; let s = 0, mx = 0, mn = Infinity; r.forEach(o => { const a = o.w * scale; s += a; mx = Math.max(mx, a); mn = Math.min(mn, a); }); return Math.max(side * side * mx / (s * s), s * s / (side * side * mn)); };
+  const place = r => {
+    const s = r.reduce((a, o) => a + o.w * scale, 0);
+    if (rw >= rh) { const cw = s / rh; let cy = ry; r.forEach(o => { const h = o.w * scale / cw; out.push(Object.assign(o, {x: rx, y: cy, w0: cw, h0: h})); cy += h; }); rx += cw; rw -= cw; }
+    else { const ch = s / rw; let cx = rx; r.forEach(o => { const w = o.w * scale / ch; out.push(Object.assign(o, {x: cx, y: ry, w0: w, h0: ch})); cx += w; }); ry += ch; rh -= ch; }
+  };
+  while (i < list.length) {
+    const side = Math.min(rw, rh), it = list[i];
+    if (!row.length || worst(row.concat(it), side) <= worst(row, side)) { row.push(it); i++; }
+    else { place(row); row = []; }
+  }
+  if (row.length) place(row);
+  return out;
+};
+
+/* tile weights for a size mode: "aum" (fund size), "vol" (today's dollar volume), "eq" (equal). Square roots keep a
+   giant fund from flattening its neighbours; a floor keeps the smallest tile in a group visible. */
+E.mapWeight = function (item, mode, dv) {
+  if (mode === "eq") return 1;
+  if (mode === "vol") return dv > 0 ? Math.sqrt(dv / 1e6) : 0;
+  return Math.sqrt(item.aum);
+};
+E.mapGroupWeights = function (ws, mode) {
+  const mx = Math.max(0, ...ws), fl = ws.map(w => Math.max(w > 0 ? w : 0, mx * 0.04 || 1));
+  const sum = fl.reduce((a, b) => a + b, 0);
+  return {tiles: fl, group: mode === "eq" ? Math.pow(fl.length, 0.8) : Math.pow(sum, 0.55)};
+};
+
+/* the most recent regular session that has started: today from 9:30 ET on a trading day, else the one before */
+E.lastSessionDate = function (now) {
+  const p = E.etParts(now);
+  if (E.isTradingDay(p.date) && p.mins >= 570) return p.date;
+  let d = E.addDays(p.date, -1); for (let i = 0; i < 10 && !E.isTradingDay(d); i++) d = E.addDays(d, -1);
+  return d;
+};
+/* one Alpaca stock snapshot -> a map quote: c (the regular price: live in market hours, else the regular close),
+   pc (the close before it), dp, o/h/l, dv (the day's dollar volume on IEX), t (ms of the trade behind c),
+   ext {p, pct against c, ph:"pre"|"after", t} for a later pre-market or after-hours trade, quiet (no IEX trade yet in
+   today's session: the price is still yesterday's close, so the day's change is 0, not yesterday's move). */
+E.mapSnap = function (snap, now) {
+  const db = snap && snap.dailyBar, pdb = snap && snap.prevDailyBar, lt = snap && snap.latestTrade;
+  if (!db || !(db.c > 0)) return null;
+  const dbDate = E.etDateOf(Date.parse(db.t)), last = E.lastSessionDate(now);
+  const out = {c: +db.c, pc: pdb && pdb.c > 0 ? +pdb.c : null, o: +db.o || null, h: +db.h || null, l: +db.l || null, dv: (+db.v || 0) * (+db.vw || +db.c), t: 0, day: dbDate, ext: null, quiet: false, src: "alpaca"};
+  if (dbDate < last) { out.pc = out.c; out.o = out.h = out.l = null; out.dv = 0; out.quiet = true; out.day = last; }
+  if (lt && lt.p > 0) {
+    const tms = Date.parse(lt.t), tp = E.etParts(tms), close = E.closeMins(tp.date);
+    if (tp.date === out.day && tp.mins >= 570 && tp.mins < close && !out.quiet) { out.c = +lt.p; out.t = tms; }
+    else if (tp.mins >= 240 && tp.mins < 1200 && (tp.date > out.day || (tp.date === out.day && tp.mins >= close))) out.ext = {p: +lt.p, pct: (lt.p / out.c - 1) * 100, ph: tp.date > out.day ? "pre" : "after", t: tms};
+  }
+  out.dp = out.pc > 0 ? (out.c / out.pc - 1) * 100 : null;
+  return out;
+};
+/* one Alpaca crypto snapshot: the change since the day began (00:00 UTC) */
+E.mapCryptoSnap = function (snap, now) {
+  const db = snap && snap.dailyBar, pdb = snap && snap.prevDailyBar, lt = snap && snap.latestTrade;
+  const c = lt && lt.p > 0 ? +lt.p : db && db.c > 0 ? +db.c : 0; if (!c) return null;
+  const today = new Date(now).toISOString().slice(0, 10), dbToday = db && String(db.t).slice(0, 10) === today;
+  const pc = dbToday ? (pdb && pdb.c > 0 ? +pdb.c : +db.o) : db && db.c > 0 ? +db.c : null;
+  return {c, pc, dp: pc > 0 ? (c / pc - 1) * 100 : null, h: dbToday ? +db.h : null, l: dbToday ? +db.l : null, o: dbToday ? +db.o : null, dv: dbToday ? (+db.v || 0) * (+db.vw || c) : 0, t: lt ? Date.parse(lt.t) : 0, day: today, ext: null, quiet: false, src: "alpaca", crypto: true};
+};
+/* reference closes for the longer time frames, from daily bars [[date "YYYY-MM-DD", close], ...] oldest first.
+   Same rules as the Markets panel: 5D = the close 5 sessions back (today counts as one); 1M/3M/1Y = the last close
+   on or before that many months ago; YTD = the last close of last year. Only completed days before `today` count. */
+E.mapRefs = function (bars, today) {
+  const done = (bars || []).filter(b => b[0] < today && b[1] > 0), n = done.length, out = {};
+  if (!n) return out;
+  const back = m => { const d = new Date(today + "T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() - m); return d.toISOString().slice(0, 10); };
+  if (n >= 5) out["5D"] = done[n - 5];
+  [["1M", 1], ["3M", 3], ["1Y", 12]].forEach(([k, m]) => { const t = back(m); if (done[0][0] <= t) { for (let i = n - 1; i >= 0; i--) if (done[i][0] <= t) { out[k] = done[i]; break; } } });
+  const jan = today.slice(0, 4) + "-01-01";
+  if (done[0][0] < jan) for (let i = n - 1; i >= 0; i--) if (done[i][0] < jan) { out.YTD = done[i]; break; }
+  return out;
+};
+/* a panel's or the whole map's read: average of the 1x funds (leveraged and inverse funds would distort it),
+   weighted like the tiles; ups and downs; best and worst 1x fund */
+E.mapStats = function (rows) {
+  let sw = 0, s = 0, up = 0, down = 0, flat = 0, best = null, worst = null;
+  (rows || []).forEach(r => {
+    if (r.pct == null || !isFinite(r.pct)) return;
+    if (Math.abs(r.pct) < 0.005) flat++; else if (r.pct > 0) up++; else down++;
+    if (r.lev !== 1) return;
+    const w = r.w > 0 ? r.w : 1; sw += w; s += w * r.pct;
+    if (!best || r.pct > best.pct) best = r; if (!worst || r.pct < worst.pct) worst = r;
+  });
+  return {avg: sw ? s / sw : null, up, down, flat, best, worst};
+};
 
 if (typeof module !== "undefined" && module.exports) module.exports = E;
 else root.MWE = E;

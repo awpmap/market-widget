@@ -591,3 +591,51 @@ test("newsMerge: one line per story, newest first, old and broken lines dropped"
 test("agoShort", () => {
   const t = 1e12; assert.equal(E.agoShort(t, t + 20e3), "now"); assert.equal(E.agoShort(t, t + 12 * 60e3), "12m"); assert.equal(E.agoShort(t, t + 3 * 3600e3), "3h"); assert.equal(E.agoShort(t, t + 49 * 3600e3), "2d");
 });
+
+/* ---------------- market map (6.1) ---------------- */
+test("map universe: every line parses, no ticker twice, leverage read from the name", () => {
+  const U = E.mapUniverse(), all = U.flatMap(p => p.groups.flatMap(g => g.items));
+  assert.equal(U.length, 11); assert.ok(all.length >= 200, "about 200 funds (" + all.length + ")");
+  assert.equal(new Set(all.map(i => i.sym)).size, all.length);
+  const by = Object.fromEntries(all.map(i => [i.sym, i]));
+  assert.equal(by.SQQQ.lev, -3); assert.equal(by.TQQQ.lev, 3); assert.equal(by.SPY.lev, 1); assert.equal(by["BTC/USD"].crypto, true);
+  assert.ok(all.every(i => i.aum > 0 && i.name));
+});
+test("squarify fills the rectangle exactly, biggest first, no overlaps", () => {
+  fc.assert(fc.property(fc.array(fc.double({min:0.01, max:1000, noNaN:true}), {minLength:1, maxLength:40}), fc.integer({min:20, max:900}), fc.integer({min:20, max:900}), (ws, W, H) => {
+    const out = E.squarify(ws.map(w => ({w})), 0, 0, W, H);
+    const area = out.reduce((s, r) => s + r.w0 * r.h0, 0);
+    if (Math.abs(area - W * H) > W * H * 1e-6) return false;
+    const tot = ws.reduce((a, b) => a + b, 0);
+    for (const r of out) { if (Math.abs(r.w0 * r.h0 - r.w / tot * W * H) > 1e-6 * W * H) return false; if (r.x < -1e-6 || r.y < -1e-6 || r.x + r.w0 > W + 1e-6 || r.y + r.h0 > H + 1e-6) return false; }
+    for (let i = 0; i < out.length; i++) for (let j = i + 1; j < out.length; j++) { const a = out[i], b = out[j];
+      if (Math.min(a.x + a.w0, b.x + b.w0) - Math.max(a.x, b.x) > 1e-6 && Math.min(a.y + a.h0, b.y + b.h0) - Math.max(a.y, b.y) > 1e-6) return false; }
+    return true;
+  }), {numRuns:200});
+  assert.deepEqual(E.squarify([], 0, 0, 10, 10), []);
+});
+test("mapSnap: live in market hours, the close and an after-hours trade after it, quiet funds, pre-market", () => {
+  const db = {t:"2026-11-20T05:00:00Z", o:100, h:104, l:96, c:98, v:1000, vw:99}, pdb = {t:"2026-11-19T05:00:00Z", c:100};
+  const live = E.mapSnap({dailyBar:db, prevDailyBar:pdb, latestTrade:{p:97, t:new Date(at("2026-11-20", "11:00")).toISOString()}}, at("2026-11-20", "11:00"));
+  assert.equal(live.c, 97); assert.ok(Math.abs(live.dp + 3) < 1e-9); assert.equal(live.ext, null); assert.equal(live.dv, 99000);
+  const ah = E.mapSnap({dailyBar:db, prevDailyBar:pdb, latestTrade:{p:99, t:new Date(at("2026-11-20", "17:30")).toISOString()}}, at("2026-11-20", "21:00"));
+  assert.equal(ah.c, 98); assert.ok(Math.abs(ah.dp + 2) < 1e-9); assert.equal(ah.ext.ph, "after"); assert.ok(Math.abs(ah.ext.pct - (99 / 98 - 1) * 100) < 1e-9);
+  const pre = E.mapSnap({dailyBar:db, prevDailyBar:pdb, latestTrade:{p:95, t:new Date(at("2026-11-23", "08:00")).toISOString()}}, at("2026-11-23", "08:10"));
+  assert.equal(pre.c, 98); assert.equal(pre.ext.ph, "pre"); assert.equal(pre.quiet, false, "before the open, Friday's session is still the last one");
+  const quiet = E.mapSnap({dailyBar:db, prevDailyBar:pdb, latestTrade:{p:98, t:new Date(at("2026-11-20", "15:59")).toISOString()}}, at("2026-11-23", "10:30"));
+  assert.equal(quiet.quiet, true); assert.equal(quiet.dp, 0, "no IEX trade yet today: no change, not Friday's move");
+  assert.equal(E.mapSnap({}, Date.now()), null);
+});
+test("mapRefs: 5D, months and YTD from daily closes; today never counts", () => {
+  const bars = []; let d = "2025-10-01"; for (let i = 0; i < 420; i++) { if (E.isTradingDay(d)) bars.push([d, 100 + bars.length]); d = E.addDays(d, 1); }
+  const today = "2026-11-20", r = E.mapRefs(bars.concat([[today, 1]]), today), done = bars.filter(b => b[0] < today);
+  assert.deepEqual(r["5D"], done[done.length - 5]);
+  assert.ok(r["1M"][0] <= "2026-10-20" && r["1M"][0] >= "2026-10-15");
+  assert.ok(r.YTD[0] < "2026-01-01" && r.YTD[0] >= "2025-12-29");
+  assert.ok(r["1Y"][0] <= "2025-11-20");
+  assert.deepEqual(E.mapRefs([], today), {});
+});
+test("mapStats: leveraged and inverse funds stay out of the average and the best/worst", () => {
+  const s = E.mapStats([{pct:-2, lev:1, w:3, sym:"A"}, {pct:1, lev:1, w:1, sym:"B"}, {pct:9, lev:-3, w:5, sym:"C"}, {pct:null, lev:1, w:1, sym:"D"}]);
+  assert.ok(Math.abs(s.avg - (-6 + 1) / 4) < 1e-9); assert.equal(s.up, 2); assert.equal(s.down, 1); assert.equal(s.best.sym, "B"); assert.equal(s.worst.sym, "A");
+});
