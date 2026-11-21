@@ -38,3 +38,7 @@ Make the window wide for the full picture; in a narrow window the panels stack a
 - For tickers MW already tracks, MW's regular prices win when they are newer.
 - Nothing is fetched for the map while it is closed.
 - Fund sizes are rough, rounded figures (mid-2026) used only for tile area; they are never shown as numbers.
+
+## 6.1.1
+- Since close: spot coins show their day (since 00:00 UTC) instead of the last time frame you picked.
+- After-hours labels on tiles get a little more room, so they never touch the tile's edge.

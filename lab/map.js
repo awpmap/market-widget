@@ -53,7 +53,8 @@ function mapVal(it){
   if (mode === "ext" && !it.crypto){
     return q.ext ? {pct:q.ext.pct, usd:q.ext.p - q.c, px:q.ext.p, q, ext:true} : {pct:null, q, noExt:true};
   }
-  if (per === "1D") return {pct:q.dp, usd: q.pc > 0 ? q.c - q.pc : null, px:q.c, q};
+  // coins trade around the clock, so Since close shows their day (since 00:00 UTC)
+  if (per === "1D" || (mode === "ext" && it.crypto)) return {pct:q.dp, usd: q.pc > 0 ? q.c - q.pc : null, px:q.c, q};
   const r = MAP.refs.r[it.sym] && MAP.refs.r[it.sym][per];
   let ref = r ? r[1] : null;
   if (!(ref > 0) && !it.crypto){ const h = hist[it.sym], hr = h && h.refs && h.refs[per]; if (hr && hr.c > 0) ref = hr.c; }
@@ -263,7 +264,7 @@ function mapPaint(){
     const usd = v.usd != null && isFinite(v.usd) ? fmtSh$(v.usd, v.px) : "";
     const xs = mode === "day" && c.per === "1D" && v.q && v.q.ext && !it.crypto && Math.abs(v.q.ext.pct) >= 0.05 ? (v.q.ext.ph === "pre" ? "Pre " : "AH ") + fmtPct(v.q.ext.pct, 1) : "";
     const third = H >= f1 * 1.1 + f2 * 2.6 + 6 ? (xs && H >= 70 ? xs : usd) : "";
-    let f3 = third && f2 ? Math.min(f2 * 0.72, W / (third.length * 0.58), 13) : 0; if (f3 < 7) f3 = 0;
+    let f3 = third && f2 ? Math.min(f2 * 0.72, W / (third.length * 0.64), 13) : 0; if (f3 < 7) f3 = 0;
     fitTxt(el.children[0], label, f1); fitTxt(el.children[1], pctS, f2); fitTxt(el.children[2], third, f3);
     el.children[2].className = third === xs && xs ? "x" : "";
     el.dataset.tip = mapTip(it, v);
