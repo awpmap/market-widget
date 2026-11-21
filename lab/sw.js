@@ -3,8 +3,8 @@
 // Offline shell, network first so updates always arrive (market data is never cached).
 // The old GitHub background checker (Web Push) is retired (R9): this worker has no push handler.
 const SCOPE = new URL(self.registration.scope).pathname, BETA = /\/lab\/$/.test(SCOPE);
-const PREFIX = BETA ? "mwlab-shell-" : "mw-shell-", CACHE = PREFIX + "6.0.0";
-const SHELL = ["./", "./index.html", "./app.js", "./engine.js", "./boot.js", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
+const PREFIX = BETA ? "mwlab-shell-" : "mw-shell-", CACHE = PREFIX + "6.1.1";
+const SHELL = ["./", "./index.html", "./app.js", "./map.js", "./engine.js", "./boot.js", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith(PREFIX) && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener("fetch", e => {

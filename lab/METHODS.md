@@ -144,3 +144,18 @@ A heuristic, not a signal. Each input is scaled by its own normal daily move (ca
 ## Settings history
 
 Every saved change keeps a copy (the last 30; edits of the same kind within 10 minutes replace the newest copy). Restore any of them from Settings → Backup. A setup link always shows what it would change and asks first.
+
+## Market map (6.1)
+- Universe: `E.MAP_SRC` in engine.js, one line per fund: ticker, rough size in $ billions (rounded, approximate,
+  mid-2026, for tile area only), name, and a leverage tag ("3x", "-1x") read from the name.
+- Layout: panels in a CSS grid (big panels span two rows, and two columns from 1180 px; rows stretch or shrink so
+  the map fits one screen where they can). Inside a panel, groups and then funds are laid out with a squarified
+  treemap (`E.squarify`). Tile weight = sqrt(size) (or sqrt(dollar volume), or 1), floored at 4% of the largest in its
+  group; group weight = (sum of tile weights)^0.55 (or n^0.8 for Equal), so small groups stay readable.
+- Prices: `E.mapSnap` turns an Alpaca snapshot into the regular price (live in market hours, else the daily bar's
+  close, which excludes extended hours), the previous close, and any later pre-market or after-hours trade. A fund
+  with no IEX trade yet in today's session shows no change (quiet), not yesterday's move.
+- Time frames: `E.mapRefs`, the same rules as the Markets panel (5D = the close 5 sessions back counting today; months
+  = the last close on or before that date; YTD = last year's final close), from split-adjusted IEX daily bars.
+- Colors: intensity = (|change| / cap)^0.8, caps 3% (1D), 6% (5D), 10% (1M), 15% (3M), 25% (YTD), 35% (1Y), 2% (Since close).
+- Averages (`E.mapStats`): 1x funds only, weighted like the tiles.
