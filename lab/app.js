@@ -198,7 +198,7 @@ function saveCfg(why){ cfg.v = E.CFG_V; store.set("cfg", cfg); snapCfg(why || "e
   if (location.hash) try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
 })();
 
-let settings = Object.assign({key:"", tdKey:"", ntfy:"", ntfyFull:false, hcUrl:"", sound:"on", theme:"auto", refresh:60, compact:false, collapsed:{}, allOff:false, period:"1D", sort:"value", grpCollapsed:{}, heatOrder:"fixed", focus:"", bench:"SMH", pauseUntil:0, snooze:{}, layout:null, hideSec:{}, sentryDsn:"", tz:"auto", overnight:false, sizing:false, refVol:2, concCap:25, record:false, showZeroCash:false, alpKey:"", alpSec:"", fast:true, cvd:false, fundEst:true, newsTab:"live", liveF:"all", newsPing:"mine", newsBeep:true, wireOff:{}, secUa:"", newsAll:false, hideAmt:false, hdTab:"position", riskHide:false}, store.get("settings", {}));
+let settings = Object.assign({key:"", tdKey:"", ntfy:"", ntfyFull:false, hcUrl:"", sound:"on", theme:"auto", refresh:60, compact:false, collapsed:{}, allOff:false, period:"1D", sort:"value", grpCollapsed:{}, heatOrder:"fixed", focus:"", bench:"SMH", pauseUntil:0, snooze:{}, layout:null, hideSec:{}, sentryDsn:"", tz:"auto", overnight:false, sizing:false, refVol:2, concCap:25, record:false, showZeroCash:false, alpKey:"", alpSec:"", fast:true, cvd:false, fundEst:true, newsTab:"live", liveF:"all", newsPing:"mine", newsBeep:true, wireOff:{}, secUa:"", trOn:true, newsAll:false, hideAmt:false, hdTab:"position", riskHide:false}, store.get("settings", {}));
 if (!settings.live62){ settings.newsTab = "live"; settings.live62 = 1; }   // 6.2: the News section opens on the live feed once
 const DEFAULT_LAYOUT = ["news","portfolio","markets","watch","log"];   // sections added by the files below join the end (registerSection)
 const SEC_NAMES = {news:"News", portfolio:"Portfolio", markets:"Markets", watch:"Watchlist", log:"Today's alerts"};
@@ -826,7 +826,7 @@ function newsHtml(sym){
   const c = newsCache[sym], L = rowNews(sym);
   if (!L.length && (!c || c.loading)) return `<div class="news muted">Loading headlines…</div>`;
   if (!L.length) return `<div class="news muted">No headlines for ${esc(sym)} in the last 3 days${c && c.err ? " (" + esc(c.err) + ")" : ""}.</div>`;
-  return `<div class="news">${L.slice(0, 4).map(n => `<a href="${esc(n.url)}" target="_blank" rel="noopener" data-nwgo="${esc(n.id)}" class="${nwIsNew(n) ? "new" : ""}"${n.sum && E.newsKey(n.sum) !== E.newsKey(n.h) ? ` title="${esc(n.sum)}"` : ""}><span>${esc(n.h)}</span><small>${esc(n.src)}${n.src ? " · " : ""}${E.agoShort(n.t, Date.now())} ago</small></a>`).join("")}${L.length > 4 || newsItems().some(n => n.syms.includes(sym)) ? `<button class="rbtn" data-nwjump="${esc(sym)}" title="Open the News section showing only ${esc(sym)}">All ${esc(sym)} news${L.length > 4 ? " (" + L.length + ")" : ""}</button>` : ""}</div>`;
+  return `<div class="news">${L.slice(0, 4).map(n => `<a href="${esc(n.url)}" target="_blank" rel="noopener" data-nwgo="${esc(n.id)}" class="${nwIsNew(n) ? "new" : ""}"${n.sum && E.newsKey(n.sum) !== E.newsKey(n.h) ? ` title="${esc(trS(n, n.sum))}"` : ""}><span>${trTag(n)}${esc(trH(n))}</span><small>${esc(n.src)}${n.src ? " · " : ""}${E.agoShort(n.t, Date.now())} ago</small></a>`).join("")}${L.length > 4 || newsItems().some(n => n.syms.includes(sym)) ? `<button class="rbtn" data-nwjump="${esc(sym)}" title="Open the News section showing only ${esc(sym)}">All ${esc(sym)} news${L.length > 4 ? " (" + L.length + ")" : ""}</button>` : ""}</div>`;
 }
 /* ---------- mutual funds (5.0) ----------
    A fund has one price a day (its NAV). Twelve Data's free plan posts it the next morning, so MW asks again often
@@ -1415,7 +1415,7 @@ function tapeAdd(src, what, data){
    Left behind on purpose: the recording switch and what only this screen remembers (the open tile, the last tab). */
 const LIVE_SETTINGS = ["key","tdKey","alpKey","alpSec","fast","refresh","overnight","ntfy","ntfyFull","hcUrl","sound","allOff","pauseUntil","snooze",
   "theme","cvd","compact","layout","board","hideSec","collapsed","grpCollapsed","secHide","erHide","heatOrder","splash","map",
-  "period","sort","bench","tz","newsTab","newsAll","liveF","newsPing","newsBeep","wireOff","secUa","chRange","chOv","fundEst","showZeroCash","sentryDsn"];
+  "period","sort","bench","tz","newsTab","newsAll","liveF","newsPing","newsBeep","wireOff","secUa","trOn","chRange","chOv","fundEst","showZeroCash","sentryDsn"];
 function liveSetup(){
   if (!BETA) return null;
   const c = liveStore.get("cfg"), s = liveStore.get("settings");
@@ -2106,6 +2106,7 @@ function renderStatus(){
     ${(()=>{ const fs = fundSyms().map(x => navs[x]).filter(n => n && n.nav > 0); if (!fs.length) return "";
       const d = fs.map(n => n.date).sort()[0], behind = d < E.navDueDate(now), at = Math.max(...fs.map(n => n.at || 0));
       return kv("Fund prices", `${fs.length} fund${fs.length > 1 ? "s" : ""}, priced ${esc(navDayLabel(d))}` + (behind ? ` · ${esc(navDayLabel(E.navDueDate(now)))} not posted yet` : "") + (at ? ` · checked ${timeStr(at)}` : "")); })()}
+    ${kv("Translation", !trOn() ? "off" : `${trSt.ok} this session${trSt.via ? " · " + esc(trSt.via) : ""}${trQ.length ? " · " + trQ.length + " waiting" : ""}${trSt.err ? " · ⚠ " + esc(trSt.err) : ""}`)}
     ${kv("Live wire", WIRE_SRC.filter(x => wireOn(x.k) && wireAvail(x)).map(x => esc(x.b) + ": " + esc(wireHealth(x).t)).join(" · ") || (NATIVE ? "desktop app 1.3 needed" : "Alpaca/Finnhub keys needed"))}
     ${news.at ? kv("News", `${newsItems().length} headline${newsItems().length === 1 ? "" : "s"} · updated ${timeStr(news.at)}` + (news.err ? ` · ⚠ ${esc(news.err)}` : "")) : ""}
     ${settings.tdKey ? kv("Twelve Data today", budgetHtml(L, ses)) : kv("Twelve Data", "no key")}
@@ -2783,6 +2784,8 @@ function showTab(tab){
       <div class="field"><label for="nwPing">Pop-up for breaking news about</label><select id="nwPing"><option value="mine" ${settings.newsPing === "mine" ? "selected" : ""}>Holdings and watchlist</option><option value="hold" ${settings.newsPing === "hold" ? "selected" : ""}>Holdings only</option><option value="off" ${settings.newsPing === "off" ? "selected" : ""}>Off</option></select>
         <label style="display:flex;gap:7px;align-items:center;font-weight:400;margin-top:6px"><input type="checkbox" id="nwBeep" ${settings.newsBeep !== false ? "checked" : ""}> Soft beep with it (when sound is on)</label>
         <p>A press release, filing or headline tagged with one of your tickers, less than 15 minutes old: one Windows pop-up per ticker per 5 minutes. Snoozed tickers and paused alerts stay quiet.</p></div>
+      <div class="field"><label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="nwTr" ${trOn() ? "checked" : ""}> Show every headline in English</label>
+        <p>Headlines and summaries in other languages are translated, with the original one click away (a small "DE→EN" tag marks them). ${"Translator" in self ? "This window has the on-device translator, so most of it never leaves this PC; " : ""}Otherwise MW uses Google Translate's free web translator: only the headline text is sent, never your tickers. ${trSt.ok ? trSt.ok + " lines translated this session" + (trSt.via ? " (" + esc(trSt.via) + ")" : "") + "." : ""}${trSt.err ? " ⚠ " + esc(trSt.err) : ""}</p></div>
       <div class="field"><label>Sources</label><div class="ws-list">${WIRE_SRC.map(row).join("")}</div>
         <p>"Stories arrive ~Xs after release" is how long after a story's own publish time MW saw it. GlobeNewswire stamps the minute only, so its figure is rough. Alpaca's free news posts in batches about every 30 minutes, so it is broad but slow.</p></div>
       <div class="field"><label for="nwSec">SEC contact (optional)</label><input id="nwSec" value="${esc(settings.secUa || "")}" placeholder="Name or email, only if SEC says 403" autocomplete="off" spellcheck="false" maxlength="80">
@@ -2791,6 +2794,7 @@ function showTab(tab){
     B.onchange = e => {
       const k = e.target.dataset.wsrc;
       if (k){ settings.wireOff = Object.assign({}, settings.wireOff); if (e.target.checked) delete settings.wireOff[k]; else settings.wireOff[k] = 1; saveSettings(); if (wireSt[k]) wireSt[k].next = 0; wireTick(); safe("news", renderNews); return; }
+      if (e.target.id === "nwTr"){ settings.trOn = e.target.checked; saveSettings(); if (trOn()) trScan(); safe("news", renderNews); return; }
       if (e.target.id === "nwPing"){ settings.newsPing = e.target.value; saveSettings(); return; }
       if (e.target.id === "nwBeep"){ settings.newsBeep = e.target.checked; saveSettings(); return; }
       if (e.target.id === "nwSec"){ settings.secUa = e.target.value.trim().slice(0, 80); saveSettings(); ["sec", "secco", "secpr"].forEach(x => { if (wireSt[x]) wireSt[x].next = 0; }); toast("Saved"); return; }
@@ -3088,9 +3092,9 @@ function nwRow(n, live){
   const badge = S ? `<span class="nw-b b-${S.kind}" title="${esc(S.n)}${(n.also || []).length ? " (also on " + esc(n.also.join(", ")) + ")" : ""}">${esc(n.form && S.kind === "filing" ? n.form : S.b)}</span>` : n.w === "fhc" || !n.w ? `<span class="nw-b b-news" title="${esc(n.src || "Finnhub")}">FH</span>` : "";
   const lead = live ? `<time class="nw-clk" title="${esc(dateTime(n.t) + " " + tzAbbr(n.t))}${lag != null && lag >= 0 ? ". MW had it " + E.lagShort(lag) + " after it was published" : ""}">${new Date(n.t).toLocaleTimeString("en-US", {hour:"numeric", minute:"2-digit", timeZone:tzName()}).replace(/\s?[AP]M$/, "")}</time>${badge}` : "";
   return `<div class="nw${isNew ? " new" : ""}${open ? " open" : ""}${live ? " lv" : ""}${n.hot ? " hot" : ""}" data-row="n:${esc(n.id)}" role="button" tabindex="0" aria-expanded="${open}">
-    <div class="nw-top">${lead}<div class="nw-h">${esc(n.h)}</div><a class="nw-go" href="${esc(n.url)}" target="_blank" rel="noopener" tabindex="-1" data-nwgo="${esc(n.id)}" title="Open the article in your browser (O)" aria-label="Open the article">${NW_GO}</a></div>
+    <div class="nw-top">${lead}<div class="nw-h">${trTag(n)}${esc(trH(n))}</div><a class="nw-go" href="${esc(n.url)}" target="_blank" rel="noopener" tabindex="-1" data-nwgo="${esc(n.id)}" title="Open the article in your browser (O)" aria-label="Open the article">${NW_GO}</a></div>
     <div class="nw-m">${live && !n.syms.length ? "" : tags}<span class="nw-src">${esc(n.src)}</span><time title="${esc(dateTime(n.t) + " " + tzAbbr(n.t))}">${n.src ? "· " : ""}${E.agoShort(n.t, now)}${live && lag != null && lag >= 0 && lag < 6*3600 ? ` <i class="nw-lag" title="How long after publishing MW saw it">+${E.lagShort(lag)}</i>` : ""}</time></div>
-    ${open ? `<div class="nw-x"><p${sum ? "" : ` class="muted"`}>${sum ? esc(sum) : "No summary came with this headline."}</p>
+    ${open ? `<div class="nw-x">${trGet(n.h) && trOn() ? `<p class="nw-orig" title="The headline as published">Original (${esc(E.langName(trGet(n.h).lang))}): ${esc(n.h)}</p>` : ""}<p${sum ? "" : ` class="muted"`}>${sum ? esc(trS(n, sum)) : "No summary came with this headline."}</p>
       <div class="nw-acts"><a class="btn primary" href="${esc(n.url)}" target="_blank" rel="noopener" data-nwgo="${esc(n.id)}">Open article ${NW_GO}</a><button class="rbtn" data-nwcopy="${esc(n.id)}">Copy link</button>${n.syms.slice(0, 2).map(x => `<button class="rbtn" data-chart="${esc(x)}" title="Open ${esc(x)}'s chart">${esc(x)} chart</button>`).join("")}<button class="rbtn nw-cl" data-nwclose="1" title="Close the summary (Esc)">Close</button></div></div>` : ""}
   </div>`;
 }
@@ -3107,7 +3111,7 @@ function renderNews(){
   const items = newsItems(), fk = focusKey(), nNew = items.filter(nwIsNew).length, top = items[0];
   const shut = !!settings.collapsed.news || !!settings.compact;
   sum.innerHTML = (nNew ? `<span class="nw-new" title="Headlines from the last 24 hours you haven't opened yet">${nNew} new</span>` : "")
-    + (shut && top ? `<span class="nw-latest" title="${esc(top.h)}">${top.syms[0] ? `<b>${esc(top.syms[0])}</b> ` : ""}${esc(top.h)}</span>` : nwBusy ? `<span class="muted">updating…</span>` : news.at ? `<span class="muted" title="Headlines refresh every 15 minutes">updated ${timeStr(news.at)}</span>` : "");
+    + (shut && top ? `<span class="nw-latest" title="${esc(trH(top))}">${top.syms[0] ? `<b>${esc(top.syms[0])}</b> ` : ""}${esc(trH(top))}</span>` : nwBusy ? `<span class="muted">updating…</span>` : news.at ? `<span class="muted" title="Headlines refresh every 15 minutes">updated ${timeStr(news.at)}</span>` : "");
   const anyWire = WIRE_SRC.some(x => wireOn(x.k) && wireAvail(x));
   if (!settings.key && !anyWire){ body.innerHTML = `<div class="empty" style="padding:6px 4px 2px">Headlines appear once your Finnhub key is in Settings.</div>`; return; }
   if (!items.length && !wireItems().length){ body.innerHTML = (NATIVE && wireNative === false ? wireCallout() : "") + `<div class="empty" style="padding:6px 4px 2px">${nwBusy || !news.at ? "Loading headlines…" : news.err ? "Headlines didn't load (" + esc(news.err) + "). " : "No headlines in the last 3 days for your tickers. "}${nwBusy || !news.at ? "" : `<button data-nw="ref">Try again</button>`}</div>`; return; }
@@ -3153,6 +3157,7 @@ const WIRE_SRC = [
   {k:"secpr", n:"SEC press releases", b:"SEC", kind:"macro", every:120, nat:1, url:"https://www.sec.gov/news/pressreleases.rss"},
   {k:"alp", n:"Alpaca news", b:"ALP", kind:"news", every:60},
   {k:"fh", n:"Finnhub market news", b:"FH", kind:"news", every:120},
+  {k:"intl", n:"World press on your stocks (GDELT)", b:"INTL", kind:"intl", every:20},
 ];
 const WSRC = Object.fromEntries(WIRE_SRC.map(s => [s.k, s]));
 let wire = store.get("wire", {items:[]}); if (!Array.isArray(wire.items)) wire = {items:[]};
@@ -3161,7 +3166,7 @@ let wireNative = NATIVE ? null : false;   // null = not known yet; false = this 
 let wireV = 0;   // bumps whenever the list changes (memo key)
 const WIRE_PINGED = {};
 function wireOn(k){ return !(settings.wireOff || {})[k]; }
-function wireAvail(s){ return s.nat ? NATIVE && wireNative !== false : s.k === "alp" ? !!(settings.alpKey && settings.alpSec) : !!settings.key; }
+function wireAvail(s){ return s.nat ? NATIVE && wireNative !== false : s.k === "alp" ? !!(settings.alpKey && settings.alpSec) : !!settings.key; }   // intl needs Finnhub for the company names
 function wireSave(){ clearTimeout(wireSave._t); wireSave._t = setTimeout(() => store.set("wire", {items:wire.items.slice(0, 300)}), 1500); }
 /* SEC CIK -> ticker map (sec.gov company_tickers.json, through the app, refreshed weekly) */
 let secTk = store.get("secTk", {at:0, m:{}});
@@ -3186,6 +3191,7 @@ function wireMine(){ return new Set([...cfg.holdings.map(h => (h.sym||"").toUppe
 function wireLines(s, body){
   const now = Date.now();
   if (s.k === "alp"){ const j = JSON.parse(body || "{}"); return (j.news || []).filter(n => n.url).map(n => ({id:"alp:" + n.id, h:n.headline, url:n.url, t:Date.parse(n.created_at) || now, sum:n.summary || "", syms:(n.symbols || []).slice(0, 6), src:"Alpaca", w:"alp", kind:"news"})); }
+  if (s.k === "intl"){ let j = {}; try{ j = JSON.parse(body || "{}"); }catch(e){ return []; } return E.gdeltParse(j, s.sym); }
   if (s.k === "fh"){ const j = JSON.parse(body || "[]"); return (Array.isArray(j) ? j : []).slice(0, 40).map(n => ({id:"fh:" + n.id, h:n.headline, url:n.url, t:+n.datetime * 1000, sum:n.summary || "", syms:String(n.related || "").split(",").map(x => x.trim().toUpperCase()).filter(x => /^[A-Z.]{1,6}$/.test(x)).slice(0, 4), src:n.source || "Finnhub", w:"fh", kind:"news"})); }
   const L = E.feedParse(body), m = secTk.m || {};
   if (s.k === "sec" || s.k === "secco") return L.map(n => {
@@ -3216,13 +3222,24 @@ async function wirePoll(s){
     } else if (s.k === "alp"){
       const r = await fetchT("https://data.alpaca.markets/v1beta1/news?limit=50&sort=desc&include_content=false", {headers:{"APCA-API-KEY-ID":settings.alpKey, "APCA-API-SECRET-KEY":settings.alpSec}, cache:"no-store"}, 10000);
       status = r.status; body = r.ok ? await r.text() : ""; st.ms = Date.now() - t0;
+    } else if (s.k === "intl"){
+      // one stock per turn: the world press (not English) about it over the last day, from GDELT (keyless, 1 ask per 5 s at most)
+      const mine = [...wireMine()].filter(x => !isFund(x));
+      if (!mine.length){ st.ok = true; st.at = Date.now(); st.note = "add stocks to your holdings or watchlist"; return; }
+      st.rr = ((st.rr || 0) + 1) % mine.length; const sym = mine[st.rr], nm = await coName(sym);
+      if (!nm){ st.ok = true; st.at = Date.now(); return; }
+      s = Object.assign({}, s, {sym});
+      const r = await fetchT("https://api.gdeltproject.org/api/v2/doc/doc?query=" + encodeURIComponent(`"${nm}" -sourcelang:english`) + "&mode=artlist&format=json&maxrecords=12&timespan=1d&sort=datedesc", {cache:"no-store"}, 15000);
+      status = r.status; body = r.ok ? await r.text() : ""; st.ms = Date.now() - t0;
+      if (status === 429){ st.errs = Math.max(st.errs || 0, 2); }
+      st.primedFor = st.primedFor || {};
     } else if (s.k === "fh"){
       const j = await limited(() => api("news?category=general"), true); body = JSON.stringify(j); st.ms = Date.now() - t0;
     }
     if (status === 304){ st.ok = true; st.err = ""; st.errs = 0; st.at = Date.now(); return; }
     if (status !== 200) throw new Error(status === 403 ? "the site refused (403)" : status === 429 ? "too many requests (429)" : "HTTP " + status);
     const lines = wireLines(s, body), now = Date.now();
-    const primed = s.k === "secco" ? !!st.primedFor[s.sym] : st.primed;
+    const primed = s.k === "secco" || s.k === "intl" ? !!st.primedFor[s.sym] : st.primed;
     lines.forEach(n => { n.seen = now; });
     const r = E.wireMerge(wire.items, lines, now);
     wire.items = r.list; st.got = lines.length;
@@ -3231,7 +3248,7 @@ async function wirePoll(s){
       r.added.forEach(n => { if (n.t > 0 && now - n.t < 6*3600e3) st.lags = st.lags.concat((now - n.t) / 1000).slice(-30); });
       wirePing(r.added);
     } else r.added.forEach(n => { n.old = 1; });   // the first read of a source is backlog, not breaking
-    if (s.k === "secco") st.primedFor[s.sym] = 1; else st.primed = true;
+    if (s.k === "secco" || s.k === "intl") st.primedFor[s.sym] = 1; else st.primed = true;
     st.ok = true; st.err = ""; st.errs = 0; st.note = ""; st.at = now; st.newest = lines.reduce((a, n) => Math.max(a, n.t || 0), st.newest || 0);
     if (r.added.length) safe("news", renderNews);
   }catch(e){
@@ -3241,7 +3258,7 @@ async function wirePoll(s){
     if (st.errs === 3) mwLog("warn", `news feed ${s.n} failing: ${st.err}`);
   } finally {
     st.inFlight = false;
-    const base = s.k === "secco" ? WSRC.secco.every : s.every;
+    const base = WSRC[s.k] ? WSRC[s.k].every : s.every;
     st.next = Date.now() + base * 1000 * Math.min(32, 2 ** Math.max(0, (st.errs || 0) - 1)) + Math.random() * 1500;
   }
 }
@@ -3255,7 +3272,7 @@ function wirePing(added){
   const fresh = hits.filter(n => { const x = n.syms.find(y => mine.has(y)); if (WIRE_PINGED[x] && now - WIRE_PINGED[x] < 5*60e3) return false; WIRE_PINGED[x] = now; return true; });
   if (!fresh.length) return;
   const n = fresh[0], x = n.syms.find(y => mine.has(y));
-  showToast(`${x} news · ${WSRC[n.w] ? WSRC[n.w].b : n.src}`, n.h + (fresh.length > 1 ? `\n+${fresh.length - 1} more in MW` : ""), "wire:" + n.id, false);
+  showToast(`${x} news · ${WSRC[n.w] ? WSRC[n.w].b : n.src}`, trH(n) + (fresh.length > 1 ? `\n+${fresh.length - 1} more in MW` : ""), "wire:" + n.id, false);
   if (settings.sound === "on" && settings.newsBeep !== false) beep(1);
   mwLog("info", `breaking news ping: ${x} (${n.w})`);
 }
@@ -3273,6 +3290,87 @@ function wireTick(){
 setTimeout(() => { wireTick(); setInterval(wireTick, 2000); }, 2500);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) wireTick(); });
 const wireItems = () => wire.items.filter(n => n && n.h && Array.isArray(n.syms));
+
+/* ---------- Translation (6.4): every headline that isn't English is shown in English ----------
+   1) Windows' own on-device translator when this Edge/WebView2 has it (Translator + LanguageDetector web APIs):
+      nothing leaves the PC. 2) Otherwise Google Translate's keyless web endpoint (translate.googleapis.com, the
+      one translate.google.com itself uses; free, no account, unofficial, so it can rate-limit: MW asks once every
+      1.2 s and backs off 10 minutes on a refusal). Only the headline or summary text is sent, never your tickers.
+      Translations are kept on this PC (up to 1,500). The original stays one click away. */
+let trCache = store.get("tr", {}); if (!trCache || typeof trCache !== "object") trCache = {};
+const trKey = t => { let h = 5381; const s = String(t); for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h.toString(36) + ":" + s.length; };
+const trQ = [], trSeen = new Set(), trSt = {via:"", ok:0, err:"", pauseUntil:0, local:null};
+let trV = 0;
+function trOn(){ return settings.trOn !== false; }
+/* the English for a line, or null when it is English already or not translated yet */
+function trGet(text){ const c = trCache[trKey(text)]; return c && c[0] && c[0] !== text ? {en:c[0], lang:c[1]} : null; }
+function trNeed(text, lang){
+  if (!trOn() || !text) return false;
+  const c = trCache[trKey(text)]; if (c) return false;
+  if (lang && /^(en|english)$/i.test(lang)) return false;
+  return !!lang || !E.looksEnglish(text);
+}
+function trAsk(text, lang){
+  if (!trNeed(text, lang)) return; const k = trKey(text); if (trSeen.has(k)) return;
+  trSeen.add(k); trQ.push({text: String(text).slice(0, 900), k}); trPump();
+}
+const trTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+async function trLocal(text){
+  if (trSt.local === false) return null;
+  try{ return await trTimeout(trLocal1(text), 8000); }catch(e){ trSt.localFails = (trSt.localFails || 0) + 1; if (trSt.localFails >= 3) trSt.local = false; return null; }
+}
+async function trLocal1(text){
+  try{
+    if (!("Translator" in self) || !("LanguageDetector" in self)){ trSt.local = false; return null; }
+    const det = trLocal.det || (trLocal.det = await LanguageDetector.create());
+    const r = (await det.detect(text))[0]; const from = r && r.confidence > 0.5 ? r.detectedLanguage : "";
+    if (!from || from === "und" || from === "en") return null;   // only trusted when it agrees the line is foreign; short lines fool it
+    const S = trLocal.s || (trLocal.s = {});
+    if (!S[from]){ const a = await Translator.availability({sourceLanguage:from, targetLanguage:"en"}); if (a === "unavailable") return null; S[from] = await Translator.create({sourceLanguage:from, targetLanguage:"en"}); }
+    const en = await S[from].translate(text); trSt.local = true;
+    return en ? {text:en, lang:from} : null;
+  }catch(e){ throw e; }
+}
+async function trWeb(text){
+  const r = await fetchT("https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=" + encodeURIComponent(text), {cache:"force-cache"}, 10000);
+  if (r.status === 429 || r.status === 403){ trSt.pauseUntil = Date.now() + 10*60e3; throw new Error("the translator is busy (" + r.status + "), trying again in 10 min"); }
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return E.gtxParse(await r.json());
+}
+async function trPump(){
+  if (trPump.busy || !trQ.length || Date.now() < trSt.pauseUntil) return; trPump.busy = true;
+  const job = trQ.shift();
+  try{
+    let r = await trLocal(job.text), via = "on this PC";
+    if (!r){ r = await trWeb(job.text); via = "Google Translate"; }
+    if (r){ trCache[job.k] = [r.lang === "en" ? job.text : r.text, r.lang]; trSt.via = via; trSt.ok++; trSt.err = ""; trSt.errs = 0;
+      const keys = Object.keys(trCache); if (keys.length > 1500) keys.slice(0, keys.length - 1500).forEach(k => delete trCache[k]);
+      store.set("tr", trCache); if (r.lang !== "en"){ trV++; clearTimeout(trPump.r); trPump.r = setTimeout(() => { safe("news", renderNews); }, 300); } }
+  }catch(e){ trSt.err = String(e && e.message || e).slice(0, 120); trSeen.delete(job.k); trSt.errs = (trSt.errs || 0) + 1; if (trSt.errs >= 3){ trSt.pauseUntil = Math.max(trSt.pauseUntil, Date.now() + 2*60e3); trSt.errs = 0; trQ.length = 0; trSeen.clear(); } }
+  finally{ trPump.busy = false; setTimeout(trPump, Date.now() < trSt.pauseUntil ? trSt.pauseUntil - Date.now() + 500 : 1200); }
+}
+/* every few seconds: queue the headlines on screen and in the lists that aren't English (summaries when opened) */
+function trScan(){
+  if (!trOn()) return;
+  [...wireItems().slice(0, 200), ...(news.items || [])].forEach(n => { if (n && n.h) trAsk(n.h, n.lang); });
+  if (nwOpen){ const n = [...wireItems(), ...(news.items || [])].find(x => x && x.id === nwOpen); if (n && n.sum) trAsk(n.sum, n.lang || ((trCache[trKey(n.h)] || [])[1])); }
+  Object.values(newsCache || {}).forEach(c => (c && c.items || []).forEach(n => trAsk(n.h, n.lang)));
+}
+setInterval(trScan, 4000); setTimeout(trScan, 3000);
+/* shown text: the English when there is one */
+const trH = n => { const t = trOn() && trGet(n.h); return t ? t.en : n.h; };
+const trS = (n, s) => { const t = trOn() && trGet(s); return t ? t.en : s; };
+function trTag(n){ const t = trOn() && trGet(n.h); return t ? `<span class="nw-tr" title="Translated from ${esc(E.langName(t.lang))}. Original: ${esc(n.h)}">${esc(String(t.lang || "").split("-")[0].toUpperCase())}→EN</span>` : n.lang && trOn() && trNeed(n.h, n.lang) ? `<span class="nw-tr wait" title="Translating from ${esc(n.lang)}…">${esc(String(n.lang).slice(0, 2).toUpperCase())}…</span>` : ""; }
+/* names to search the world press with: Finnhub's company name for each stock you hold or watch, kept 30 days */
+let coNames = store.get("coNames", {});
+async function coName(sym){
+  const c = coNames[sym]; if (c && Date.now() - c.at < 30*864e5) return c.n;
+  if (!settings.key) return "";
+  try{ const j = await limited(() => api("stock/profile2?symbol=" + encodeURIComponent(sym)), true);
+    const n = j && j.name && !/etf|fund|trust|ishares|spdr|vanguard|invesco|proshares|direxion/i.test(j.name + " " + (j.finnhubIndustry || "")) ? E.searchName(j.name) : "";
+    coNames[sym] = {n, at:Date.now()}; store.set("coNames", coNames); return n;
+  }catch(e){ return ""; }
+}
 /* the source's health in one short line */
 function wireHealth(s){
   const st = wireSt[s.k];
@@ -3291,11 +3389,12 @@ function liveList(f){
   else if (f === "filing") L = L.filter(n => n.kind === "filing");
   else if (f === "macro") L = L.filter(n => n.kind === "macro");
   else if (f === "wire") L = L.filter(n => n.kind === "wire");
+  else if (f === "intl") L = L.filter(n => n.kind === "intl" || (n.lang && !/^en/i.test(n.lang)) || !!(trOn() && trGet(n.h)));
   return L;
 }
 /* Live tab: a filter row (Everything, Your tickers, Wires, Filings, Macro) and the sources' health underneath */
 function liveBar(){
-  const F = [["all","Everything"],["mine","Your tickers"],["wire","Wires"],["filing","Filings"],["macro","Fed & data"]], f = F.some(x => x[0] === settings.liveF) ? settings.liveF : "all";
+  const F = [["all","Everything"],["mine","Your tickers"],["wire","Wires"],["filing","Filings"],["macro","Fed & data"],["intl","World"]], f = F.some(x => x[0] === settings.liveF) ? settings.liveF : "all";
   return `<div class="nw-lf" role="group" aria-label="Filter the live feed">${F.map(([k, n]) => `<button data-livef="${k}" class="${k === f ? "on" : ""}" aria-pressed="${k === f}">${n}</button>`).join("")}</div>` + wireCallout();
 }
 function wireCallout(){
@@ -3548,7 +3647,35 @@ async function checkUpdates(force){
   } finally { upd.checking = false; renderVersion(); maybeAutoReload(); }
 }
 // fresh copy of the page: a new URL skips every cache (browser, service worker, GitHub's CDN)
-function reloadForUpdate(){ mwLog("info", "reloading for widget " + upd.widget); location.replace(location.pathname + "?v=" + encodeURIComponent(upd.widget || Date.now()) + location.hash); }
+/* The new index.html alone isn't enough: its scripts (engine.js carries the version) can still come from the browser's
+   10-minute cache or GitHub's CDN right after a release, which brought the old version back and asked again (6.3.0).
+   So: re-download every file past the caches first, clear the offline copy, then reload. If the reload still comes up
+   old, try at most twice more a minute apart, then stop asking and say GitHub is still publishing it. */
+const UPD_FILES = ["./", "index.html", "boot.js", "engine.js", "app.js", "map.js", "pulse.js", "radar.js", "plan.js", "sw.js"];
+async function freshFiles(){
+  await Promise.all(UPD_FILES.map(f => fetchT(f + (f.includes("?") ? "&" : "?") + "u=" + Date.now(), {cache:"no-store"}, 10000).catch(()=>{})));   // reach the newest copy on GitHub
+  await Promise.all(UPD_FILES.map(f => fetch(f, {cache:"reload"}).catch(()=>{})));   // and overwrite the cached copies the page will load
+  try{ const ks = await caches.keys(); await Promise.all(ks.filter(k => /^mw(lab)?-shell-/.test(k)).map(k => caches.delete(k))); }catch(e){}
+  try{ const r = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (r) await r.update(); }catch(e){}
+}
+function updTries(){ try{ const t = JSON.parse(sessionStorage.getItem(NS + "updTry") || "{}"); return t && t.v === upd.widget && Date.now() - (t.at || 0) < 20*60e3 ? t : {v:upd.widget, n:0, at:Date.now()}; }catch(e){ return {v:upd.widget, n:0, at:Date.now()}; } }
+async function reloadForUpdate(){
+  if (reloadForUpdate.busy) return; reloadForUpdate.busy = true;
+  const t = updTries();
+  if (t.n >= 3){ reloadForUpdate.busy = false; upd.publishing = true; renderVersion(); toast("GitHub is still publishing MW " + upd.widget + ". It installs by itself in a few minutes."); mwLog("warn", "update " + upd.widget + " still serves " + APP_VERSION + " after 3 reloads"); return; }
+  mwLog("info", "reloading for widget " + upd.widget + (t.n ? " (try " + (t.n + 1) + ")" : ""));
+  toast("Updating to MW " + upd.widget + "…");
+  try{ sessionStorage.setItem(NS + "updTry", JSON.stringify({v:upd.widget, n:t.n + 1, at:t.at || Date.now()})); }catch(e){}
+  await freshFiles();
+  location.replace(location.pathname + "?v=" + encodeURIComponent(upd.widget || Date.now()) + "&r=" + (t.n + 1) + location.hash);
+}
+/* came back from an update reload still on the old code (a cache answered first): retry after a minute, quietly */
+(function(){ const q = new URLSearchParams(location.search), want = q.get("v");
+  if (!want || !/^\d+\.\d+\.\d+$/.test(want)) return;
+  if (!newer(want, APP_VERSION)){ try{ sessionStorage.removeItem(NS + "updTry"); }catch(e){} history.replaceState(null, "", location.pathname + location.hash); return; }
+  upd.widget = want; upd.publishing = true;
+  setTimeout(() => { if (newer(upd.widget, APP_VERSION)) reloadForUpdate(); }, 60e3);
+})();
 // widget update while nobody is looking (hidden in the tray / tab in the background): take it, once per version,
 // but never between 9:25 and 4:05 on a trading day (R2): a new version waits for the close instead of swapping code mid-session
 function inMarketHours(){ const t = etNow(); return E.calendarValid(t.date) && isTradingDay(t.date) && t.mins >= 565 && t.mins < closeMins(t.date) + 5; }
@@ -3579,7 +3706,8 @@ function renderVersion(){
   $("bMore").title = st.any ? "Menu · update available" : "Menu";
   const el = $("update"), parts = [];
   if (st.appNew) parts.push(`<div><b>New desktop app: ${esc(upd.app.tag.replace(/^(lab-)?app-v/,""))}</b> ${nat.state ? `You have ${esc(nat.state.version)}.` : "Your app is too old to report its version."} Quit ${labShell() ? "MW Lab" : "MW"} from the tray, run the installer, your settings stay. <button class="lnk" data-upd="app">Download</button></div>`);
-  if (st.widgetNew) parts.push(`<div><b>MW Beta ${esc(upd.widget)} is ready</b> You're on ${esc(APP_VERSION)}.${inMarketHours() ? " It installs by itself after the close, or now if you click:" : ""} <button class="lnk" data-upd="reload">Reload now</button></div>`);
+  if (st.widgetNew && upd.publishing) parts.push(`<div><b>Installing MW Beta ${esc(upd.widget)}…</b> GitHub is still sending out the new files (this can take a few minutes after a release). MW finishes it by itself; nothing to click.</div>`);
+  else if (st.widgetNew) parts.push(`<div><b>MW Beta ${esc(upd.widget)} is ready</b> You're on ${esc(APP_VERSION)}.${inMarketHours() ? " It installs by itself after the close, or now if you click:" : ""} <button class="lnk" data-upd="reload">Reload now</button></div>`);
   if (parts.length && store.get("updDismiss", "") !== (upd.widget || "") + "|" + (upd.app && upd.app.tag || "")){
     el.innerHTML = parts.join("") + `<button class="x" data-upd="dismiss" aria-label="Hide until the next version">×</button>`; el.classList.add("show");
   } else el.classList.remove("show");
@@ -3658,17 +3786,16 @@ if (NATIVE){
   const main = $("main"); if (!main) return; let raf = 0;
   const upd = () => { raf = 0; const top = main.getBoundingClientRect().top;
     document.querySelectorAll(".sec").forEach(sec => { const r = sec.getBoundingClientRect(); sec.classList.toggle("stuck", !sec.classList.contains("collapsed") && r.top < top - 1 && r.bottom > top + 34); }); };
-  // one pass per frame while scrolling, plus a last one after the scroll settles (a frame can land mid-scroll on a busy PC)
+  // straight from the scroll event (eight rectangles, cheap): a frame-timed update could be skipped on a busy or
+  // background window and leave the state stale; a last pass after the scroll settles covers smooth scrolling
   let last = 0;
-  main.addEventListener("scroll", () => { if (!raf) raf = requestAnimationFrame(upd); clearTimeout(last); last = setTimeout(upd, 150); }, {passive:true});
+  main.addEventListener("scroll", () => { upd(); clearTimeout(last); last = setTimeout(upd, 150); }, {passive:true});
 })();
 /* ---------- what's new (6.0): one card, once, after an update that changes how the screen reads ---------- */
-const WHATS_NEW = {ver:"6.3.0", url:"https://github.com/awpmap/market-widget/blob/main/lab/CHANGES-6.3.0.md", title:"New in MW Beta 6.3: arrange your screen, three trader sections", items:[
-  "<b>Move sections yourself.</b> Drag any section by its header, right on the main screen. On a wide window each one stays in the column you drop it in. Alt+arrows move a focused section. ⋯ → Arrange shrinks everything to headers, with Trading day and Long-term presets.",
-  "<b>Market pulse.</b> Risk-on or risk-off at a glance: chips, Nasdaq and small caps against the S&amp;P, credit, high beta, consumer appetite, the dollar, rates, gold, oil, bitcoin and sector breadth, rolled into one Risk appetite reading.",
-  "<b>In-play radar.</b> What is moving on unusual volume right now, across your tickers and about 150 liquid names, with gap, VWAP, range and new-high tags, plus a scope chart of change against volume.",
-  "<b>Game plan.</b> Today's key levels for your tickers (yesterday's high and low, pre-market, opening range, VWAP) and the calendar that moves markets: Fed, CPI, jobs, PCE, earnings and options expiration, with a countdown.",
-  "The three new sections start folded. Open one to switch it on; nothing is fetched while it is folded."]};
+const WHATS_NEW = {ver:"6.4.0", url:"https://github.com/awpmap/market-widget/blob/main/lab/CHANGES-6.4.0.md", title:"New in MW Beta 6.4: all news in English, plus the world press", items:[
+  "<b>Every headline in English.</b> News in German, Korean, Japanese, Spanish and 100+ other languages is translated, with a small DE→EN tag. Open a line to see the original.",
+  "<b>The world press on your stocks.</b> MW now searches newspapers and sites in 65 languages (GDELT) for each stock you hold or watch, one stock every 20 seconds. Find them under News → Live → World.",
+  "<b>Free and keyless.</b> The translation uses Windows' own on-device translator when it has one, otherwise Google Translate's free web translator. Only the headline text is sent. Turn it off in Settings → News."]};
 function renderWhatsNew(){
   const el = $("whatsnew"); if (!el) return;
   const seen = store.get("seenVer", "");

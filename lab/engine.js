@@ -6,7 +6,7 @@
 (function (root) {
 "use strict";
 const E = {};
-E.VERSION = "6.3.0";
+E.VERSION = "6.4.0";
 
 /* ====================================================================================
    1. Calendar (NYSE). Source: NYSE Group release of 2025-12-23, "2026, 2027 and 2028 Holiday
@@ -1148,7 +1148,7 @@ E.wireMerge = function (list, incoming, now, opts) {
       if (t < cur.t) cur.t = t;
       return;
     }
-    const x = {id: n.id || (n.src || "w") + ":" + hk.slice(0, 60), h: String(n.h).slice(0, 300), url: n.url, t, seen: n.seen || now, src: n.src || "", sum: String(n.sum || "").slice(0, 700), syms: (n.syms || []).slice(0, 6), kind: n.kind || "wire", form: n.form || "", w: n.w || "", cat: n.cat || "", old: n.old ? 1 : 0};
+    const x = {id: n.id || (n.src || "w") + ":" + hk.slice(0, 60), h: String(n.h).slice(0, 300), url: n.url, t, seen: n.seen || now, src: n.src || "", sum: String(n.sum || "").slice(0, 700), syms: (n.syms || []).slice(0, 6), kind: n.kind || "wire", form: n.form || "", w: n.w || "", cat: n.cat || "", old: n.old ? 1 : 0, lang: n.lang || ""};
     out.push(x); byU.set(uk, x); byH.set(hk, x); added.push(x);
   });
   out.sort((a, b) => b.t - a.t);
@@ -1874,6 +1874,58 @@ E.planTimeline = function (date) {
 /* ===== PLAN END ===== */
 
 /* (spacer so the three regions merge cleanly) */
+
+/* ====================================================================================
+   21. Translation (6.4). Every headline that isn't English is shown in English. E.looksEnglish decides cheaply on this
+   PC which lines need it (other scripts, or more foreign than English function words); short or unclear lines count
+   as English. E.gtxParse reads Google Translate's keyless web answer; E.gdeltParse reads GDELT's world press list.
+   ==================================================================================== */
+const SW = {
+  en: "the and of to in for on with is at by from as its are has have will after over new says said amid",
+  de: "der die das und mit für ist von den dem nicht auf eine einen auch sich zum zur bei nach wird über hebt senkt steigt fällt aktie aktien prozent quartal",
+  fr: "le la les des et pour est du une dans sur au aux par avec pas plus qui que sont été",
+  es: "el los las del para con por una que más sus como pero sobre tras según ante",
+  it: "il della delle dei per con che non sono gli nel alla dalla una sulla",
+  pt: "os das dos para com não uma pelo pela mais sobre após são",
+  nl: "het een van voor met niet zijn op naar bij ook dat wordt",
+};
+const SWS = Object.fromEntries(Object.entries(SW).map(([k, v]) => [k, new Set(v.split(" "))]));
+E.looksEnglish = function (text) {
+  const s = String(text || "").trim(); if (!s) return true;
+  const letters = s.replace(/[\s\d\p{P}\p{S}]/gu, ""); if (!letters) return true;
+  const other = letters.replace(/[A-Za-zÀ-ɏ]/g, "").length;
+  if (other / letters.length > 0.15) return false;   // CJK, Hangul, Cyrillic, Arabic, Hebrew, Thai...
+  const words = s.toLowerCase().normalize("NFC").split(/[^a-zÀ-ɏ']+/).filter(Boolean);
+  let en = 0, best = 0; const f = {};
+  words.forEach(w => { if (SWS.en.has(w)) en++; for (const k in SWS) if (k !== "en" && SWS[k].has(w)) f[k] = (f[k] || 0) + 1; });
+  for (const k in f) best = Math.max(best, f[k]);
+  const accents = (s.match(/[À-ɏ]/g) || []).length;
+  if (best >= 2 && best > en) return false;
+  if (best >= 1 && en === 0 && (accents >= 2 || words.length >= 5)) return false;   // a wrong guess only costs one translator ask that comes back "en"
+  return true;
+};
+/* Google Translate web answer: [[["Hello World","Hallo Welt",...],...],null,"de",...] */
+E.gtxParse = function (j) {
+  if (!Array.isArray(j) || !Array.isArray(j[0])) return null;
+  const text = j[0].map(x => Array.isArray(x) && typeof x[0] === "string" ? x[0] : "").join("").trim();
+  return text ? {text, lang: typeof j[2] === "string" ? j[2] : ""} : null;
+};
+E.LANG_NAMES = {de:"German", fr:"French", es:"Spanish", it:"Italian", pt:"Portuguese", nl:"Dutch", ja:"Japanese", ko:"Korean", zh:"Chinese", "zh-CN":"Chinese", "zh-TW":"Chinese", ru:"Russian", ar:"Arabic", he:"Hebrew", iw:"Hebrew", hi:"Hindi", tr:"Turkish", pl:"Polish", sv:"Swedish", da:"Danish", no:"Norwegian", fi:"Finnish", cs:"Czech", el:"Greek", th:"Thai", vi:"Vietnamese", id:"Indonesian", ms:"Malay", uk:"Ukrainian", hu:"Hungarian", ro:"Romanian"};
+E.langName = code => E.LANG_NAMES[code] || E.LANG_NAMES[String(code || "").split("-")[0]] || (code ? String(code).toUpperCase() : "another language");
+/* GDELT DOC 2.0 artlist JSON -> wire lines. seendate "20261124T151500Z"; titles are in the original language. */
+E.gdeltTime = function (s) { const m = String(s || "").match(/^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z$/); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : 0; };
+E.gdeltParse = function (j, sym) {
+  const A = j && Array.isArray(j.articles) ? j.articles : [];
+  return A.filter(a => a && a.title && /^https?:\/\//.test(a.url || "") && String(a.language || "").toLowerCase() !== "english").map(a => ({
+    h: String(a.title).replace(/\s+/g, " ").trim().slice(0, 300), url: a.url, t: E.gdeltTime(a.seendate), sum: "",
+    syms: sym ? [sym] : [], src: String(a.domain || "").replace(/^www\./, "").slice(0, 40) + (a.sourcecountry ? " · " + String(a.sourcecountry).slice(0, 24) : ""),
+    lang: String(a.language || ""), w: "intl", kind: "intl"}));
+};
+/* "NVIDIA Corp" -> "NVIDIA"; the name GDELT is searched with. Too short or too common a name is not searched. */
+E.searchName = function (name) {
+  const n = String(name || "").replace(/[,.]/g, " ").replace(/\b(Inc|Corp|Corporation|Co|Ltd|Limited|PLC|plc|Holdings?|Group|N ?V|S ?A|AG|SE|SpA|ADR|Class [A-C]|Common Stock|Ordinary Shares|The)\b/gi, " ").replace(/\s+/g, " ").trim();
+  return n.length >= 4 ? n : "";
+};
 
 if (typeof module !== "undefined" && module.exports) module.exports = E;
 else root.MWE = E;
