@@ -323,6 +323,10 @@ console.log("Fast prices and quality of life (4.4)");
       out[s] = {latestTrade:{t:new Date(alpTradeAt || t3 - 1500).toISOString(), p:c, s:100}, dailyBar:{t:day + "T04:00:00Z", o:pc, h:Math.max(pc, c), l:Math.min(pc, c), c, v:1e5}, prevDailyBar:{t:"2026-11-04T04:00:00Z", o:pc, h:pc, l:pc, c:pc, v:1e5}}; });
     return route.fulfill({json:out});
   });
+  const alpNews = [];   // 6.2: Alpaca's news (the live tape), kept apart from the price calls counted above
+  await p3.route(/https:\/\/data\.alpaca\.markets\/v1beta1\/news.*/, route => { const h = route.request().headers(); alpNews.push({id:h["apca-api-key-id"]});
+    route.fulfill({json:{news:[{id:5001, headline:"AAA wins a made-up contract", summary:"Test summary.", url:"https://example.com/alp/1", created_at:new Date(t3 - 120e3).toISOString(), symbols:["AAA"], source:"testwire"},
+      {id:5002, headline:"ZZZ names a new CFO", summary:"", url:"https://example.com/alp/2", created_at:new Date(t3 - 600e3).toISOString(), symbols:["ZZZ"], source:"testwire"}]}}); });
   await p3.addInitScript(() => {
     if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
     localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", alpKey:"test-key-id", alpSec:"test-secret", refresh:60})); localStorage.setItem("mwlab_seenVer", JSON.stringify("99.0.0"));
@@ -334,6 +338,10 @@ console.log("Fast prices and quality of life (4.4)");
   await p3.goto(BASE); await adv(20000);
   check(await p3.evaluate(() => quotes.AAA && quotes.AAA.src === "alpaca"), "fast prices: Alpaca's price is used during the session");
   check(alpCalls.length > 0 && alpCalls.every(c => c.id === "test-key-id" && c.sec === "test-secret" && c.feed === "iex"), "the keys go in Alpaca's headers, on the free IEX feed");
+  check(alpNews.length >= 1 && alpNews.every(c => c.id === "test-key-id") && await p3.locator('#nw-body .nw.lv .nw-b', {hasText:"ALP"}).count() === 2 && await p3.locator('#nw-body .nw.lv', {hasText:"ZZZ names a new CFO"}).count() === 1, "Alpaca's news (every ticker) streams into the Live tape with its source badge");
+  await p3.locator('#nw-body [data-livef="mine"]').click(); await p3.waitForTimeout(100);
+  check(await p3.locator('#nw-body .nw.lv').count() === 1 && /AAA wins/.test(await p3.locator('#nw-body .nw.lv').innerText()), "Your tickers keeps only lines about what you hold or watch");
+  await p3.locator('#nw-body [data-livef="all"]').click();
   const n0 = alpCalls.length; await adv(30000);
   check(alpCalls.length - n0 >= 4 && alpCalls.length - n0 <= 7, `about one Alpaca call every 5 seconds while open (${alpCalls.length - n0} in 30 s)`);
   alpPx.BBB = +(priceOf("BBB") * 0.99).toFixed(2);
@@ -513,6 +521,7 @@ console.log("Monitor layout, sections, headlines (4.7)");
   check(await p5.evaluate(() => cfg.watch.map(w => w.sym).join() === "AAA,BBB,CCC,DDD"), "the sort doesn't change your saved order");
   await p5.locator('#wl-body [data-wsort="mine"]').click();
   for (let i = 0; i < 24 && !(await p5.evaluate(() => newsItems().length)); i++) await adv(5000, 1000);   // headlines are low-priority calls
+  await p5.locator('#nw-body [data-nwtab="all"]').click().catch(() => {}); await adv(300, 100);
   check(/8 new/.test(await p5.locator("#nw-sum .nw-new").innerText().catch(() => "")) && /test headline one/.test(await p5.locator("#nw-body").innerText()), "the News section shows the newest headlines with an N new count");
   check(await p5.locator("#nw-body .nw").count() === 3 && /Show all 8 headlines/.test(await p5.locator("#nw-body .nw-foot").innerText()), "three headlines to start, with a button for the rest");
   if (SHOTS) await p5.screenshot({path:path.join(SHOTS, "9-monitor.png")});
@@ -594,7 +603,9 @@ console.log("Dollars, mutual funds, News (5.0)");
   for (let i = 0; i < 12 && (await p6.evaluate(() => newsItems().length)) < 8; i++) await adv(5000, 1000);
   const nws = await p6.evaluate(() => newsItems().map(n => ({h:n.h, syms:n.syms})));
   check(nws.filter(n => n.h === "A story about both tickers").length === 1 && nws.find(n => n.h === "A story about both tickers").syms.length >= 2, "the same story on several tickers is one headline");
-  check(JSON.stringify(await p6.locator("#nw-body [data-nwtab]").evaluateAll(els => els.map(e => e.dataset.nwtab))) === JSON.stringify(["all", "mine", "watch", "market"]), "News has tabs for All, Holdings, Watchlist and Market");
+  check(JSON.stringify(await p6.locator("#nw-body [data-nwtab]").evaluateAll(els => els.map(e => e.dataset.nwtab))) === JSON.stringify(["live", "all", "mine", "watch", "market"]), "News has tabs for Live, All, Holdings, Watchlist and Market");
+  check(await p6.locator('#nw-body [data-nwtab="live"].on').count() === 1 && await p6.locator("#nw-body .nw-list.live .nw.lv").count() >= 3 && await p6.locator("#nw-body .callout.nw-up").count() === 1, "News opens on the Live tape; in a browser it says wires and SEC need the desktop app");
+  await p6.locator('#nw-body [data-nwtab="all"]').click(); await adv(300, 100);
   check(await p6.locator("#nw-body .nw").count() === 3 && /Market test headline/.test(await p6.locator("#nw-body .nw").first().innerText()), "the newest three headlines show first, market news included");
   await p6.locator('#nw-body [data-nw="more"]').click(); await adv(300, 100);
   const allN = await p6.locator("#nw-body .nw").count();
@@ -665,9 +676,9 @@ console.log("Per-share dollars and the 6.0 screen (6.0)");
   await p7.goto(BASE); await adv(30000);
   // what's new: once, after the update
   const wn = await p7.locator("#whatsnew").innerText();
-  check(await p7.locator("#whatsnew.show").count() === 1 && /New in MW Beta 6\.1/.test(wn) && /market map/.test(wn), "after the update, one card says what is new in 6.1");
+  check(await p7.locator("#whatsnew.show").count() === 1 && /New in MW Beta 6\.2/.test(wn) && /live news/.test(wn), "after the update, one card says what is new in 6.2");
   await p7.locator('#whatsnew .btn[data-wn="ok"]').click(); await adv(300, 100);
-  check(await p7.locator("#whatsnew.show").count() === 0 && await p7.evaluate(() => { renderWhatsNew(); return JSON.parse(localStorage.getItem("mwlab_seenVer")) === "6.1.0" && !document.getElementById("whatsnew").classList.contains("show"); }), "Got it puts the card away for good");
+  check(await p7.locator("#whatsnew.show").count() === 0 && await p7.evaluate(() => { renderWhatsNew(); return JSON.parse(localStorage.getItem("mwlab_seenVer")) === "6.2.0" && !document.getElementById("whatsnew").classList.contains("show"); }), "Got it puts the card away for good");
   await adv(9 * 60e3, 5000);   // price history loads at 8 a minute
   // dollars for one share, next to the percent
   check(await pill(hA + " .ps") === pair("AAA") && await p7.locator(hA + " .ps .dchg.up").count() === 1, "a holding shows the day's change for one share in dollars, then in percent (" + await pill(hA + " .ps") + ")");
@@ -815,6 +826,7 @@ console.log("Market map (6.1)");
     if (u.pathname.endsWith("bars")) { calls.bars++; return route.fulfill({json:{bars:Object.fromEntries(syms.map(s => [s, dailyBars(s, day).slice(0, 300).reverse().map(b => ({t:b.datetime + "T05:00:00Z", c:+b.close}))])), next_page_token:null}}); }
     return route.fulfill({json:{}});
   });
+  await p8.route(/https:\/\/data\.alpaca\.markets\/v1beta1\/news.*/, route => route.fulfill({json:{news:[]}}));
   await p8.addInitScript(() => { if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
     localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", alpKey:"test-key-id", alpSec:"test-secret", refresh:60})); localStorage.setItem("mwlab_seenVer", JSON.stringify("99.0.0"));
     localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[], fixed:[], watch:[{sym:"AAA", levels:[], dayDrop:3, near:0}]})); });
@@ -874,6 +886,88 @@ console.log("Market map (6.1)");
   await p8.locator('[data-mpp="bonds"]').check(); await p8.keyboard.press("m"); await adv(300, 100);
   check(errs8.length === 0, "no page errors in the map checks" + (errs8.length ? ": " + [...new Set(errs8)].slice(0, 4).join(" | ") : ""));
   await ctx8.close();
+}
+
+/* ---------- 6.2: the live wire inside the desktop app (a fake Tauri bridge; every feed, ticker and company is made up) ---------- */
+console.log("Live wire (6.2)");
+for (const OLD of [false, true]) {
+  const ctx9 = await browser.newContext({viewport:{width:420, height:900}, timezoneId:"America/Chicago"});
+  const p9 = await ctx9.newPage(); await mock(p9);
+  const errs9 = []; p9.on("pageerror", e => errs9.push(e.message)); p9.on("console", m => { if (m.type() === "error" && !/Failed to load resource|sentry/i.test(m.text())) errs9.push(m.text()); });
+  let t9 = Date.parse("2026-11-23T15:00:00Z");   // 10:00 New York, a Monday
+  await p9.addInitScript(OLD => {
+    if (!sessionStorage.getItem("seeded")){ sessionStorage.setItem("seeded", "1"); localStorage.clear();
+      localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", refresh:60, sound:"off"})); localStorage.setItem("mwlab_seenVer", JSON.stringify("99.0.0"));
+      localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"AAA", shares:10, acct:"Taxable"}], fixed:[], watch:[{sym:"AAA"}, {sym:"CCC"}]})); }
+    const W = window.__wire = {calls:[], notes:[], extra:false};
+    const rss = items => `<?xml version="1.0"?><rss version="2.0"><channel>${items.map(i => `<item><title>${i.h}</title><link>${i.u}</link>${(i.c || []).map(c => `<category domain="https://www.globenewswire.com/rss/stock">${c}</category>`).join("")}<description><![CDATA[<p>${i.d || ""}</p>]]></description><pubDate>${new Date(i.t).toUTCString()}</pubDate></item>`).join("")}</channel></rss>`;
+    const tickers = {}; for (let i = 0; i < 1200; i++) tickers[i] = {cik_str:100000 + i, ticker:"T" + i, title:"Test " + i}; tickers[2000] = {cik_str:111, ticker:"AAA", title:"Alpha Test"}; tickers[2001] = {cik_str:333, ticker:"CCC", title:"Gamma Test"};
+    const feed = url => {
+      const now = Date.now(), m = 60e3;
+      if (/company_tickers/.test(url)) return {status:200, body:JSON.stringify(tickers)};
+      if (/globenewswire/.test(url)) return {status:200, body:rss([
+        ...(W.extra ? [{h:"Alpha Test Inc. announces a made-up buyback", u:"https://www.globenewswire.com/news-release/x/3.html", c:["Nasdaq:AAA"], d:"Alpha Test Inc. (NASDAQ: AAA) today...", t:now - 20e3}] : []),
+        {h:"Zeta Test Corp reports third quarter results", u:"https://www.globenewswire.com/news-release/x/1.html", c:["NYSE:ZZT"], t:now - 9 * m},
+        {h:"Alpha Test Inc. to present at a test conference", u:"https://www.globenewswire.com/news-release/x/2.html", c:["Nasdaq:AAA"], t:now - 40 * m}])};
+      if (/prnewswire/.test(url)) return {status:200, body:rss([{h:"Beta Test Co (NYSE: BBT) names a new CEO", u:"https://www.prnewswire.com/news-releases/x-1.html", t:now - 5 * m}])};
+      if (/getcurrent/.test(url)) return {status:200, body:`<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry><title>8-K - GAMMA TEST CORP (0000000333) (Filer)</title><link rel="alternate" type="text/html" href="https://www.sec.gov/Archives/edgar/data/333/x-index.htm"/><summary type="html">&lt;b&gt;Filed:&lt;/b&gt; 2026-11-23 Item 5.02: Departure of Directors&lt;br&gt;Item 9.01: Exhibits</summary><updated>${new Date(now - 3 * m).toISOString()}</updated><category term="8-K"/></entry></feed>`};
+      if (/getcompany/.test(url)) return {status:200, body:`<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry><title>4 - Statement of changes in beneficial ownership of securities</title><link rel="alternate" href="https://www.sec.gov/Archives/edgar/data/111/y-index.htm"/><updated>${new Date(now - 30 * m).toISOString()}</updated><category term="4"/></entry></feed>`};
+      if (/federalreserve/.test(url)) return {status:200, body:rss([{h:"Federal Reserve test statement", u:"https://www.federalreserve.gov/newsevents/pressreleases/test.htm", t:now - 50 * m}])};
+      if (/businesswire/.test(url)) return {status:403, body:""};
+      return {status:304, body:""};
+    };
+    window.__TAURI__ = {
+      core:{invoke: async (cmd, args) => {
+        if (cmd === "shell_fetch"){ W.calls.push(args.url); if (OLD) throw "Command shell_fetch not found"; const r = feed(args.url); return Object.assign({etag:"", modified:"", ms:120}, r); }
+        if (cmd === "shell_notify"){ W.notes.push(args); return null; }
+        if (cmd === "shell_state") return {version:"1.3.0", on_top:false, autostart:true, start_hidden:false, hotkey:true, hotkey_ok:true, hotkey_label:"Ctrl+Alt+M"};
+        if (cmd === "shell_logs") return "";
+        return null; }},
+      event:{listen: async () => () => {}},
+      window:{getCurrentWindow: () => ({minimize: async () => {}, startDragging: async () => {}, setAlwaysOnTop: async () => {}, isAlwaysOnTop: async () => false, hide: async () => {}, show: async () => {}, setFocus: async () => {}})},
+      opener:{openUrl: async () => {}}
+    };
+  }, OLD);
+  await p9.clock.install({time:t9});
+  const adv = async (ms, step = 1000) => { for (let t = 0; t < ms; t += step) { t9 += step; simNow = t9; await p9.clock.runFor(step); await p9.waitForTimeout(25); } };
+  simNow = t9; Object.keys(px).forEach(k => delete px[k]);
+  await p9.goto(BASE); await adv(45000, 1000);
+  if (OLD){
+    check(await p9.locator("#nw-body .callout.nw-up", {hasText:"Update the desktop app"}).count() === 1, "an older desktop app (no feed reader) is told to update for wires and SEC, and nothing breaks");
+    check(errs9.length === 0, "no page errors with an older desktop app" + (errs9.length ? ": " + [...new Set(errs9)].slice(0, 4).join(" | ") : ""));
+    await ctx9.close(); continue;
+  }
+  const W = () => p9.evaluate(() => window.__wire);
+  const w0 = await W();
+  check(w0.calls.some(u => /globenewswire/.test(u)) && w0.calls.some(u => /prnewswire/.test(u)) && w0.calls.some(u => /getcurrent/.test(u)) && w0.calls.some(u => /federalreserve/.test(u)), "the desktop app reads GlobeNewswire, PR Newswire, SEC and the Fed through the shell");
+  check(w0.calls.every(u => /^https:\/\/(www\.globenewswire\.com|www\.prnewswire\.com|feed\.businesswire\.com|feeds\.newsfilecorp\.com|www\.sec\.gov|www\.federalreserve\.gov|www\.bls\.gov)\//.test(u)), "it only asks for public news feeds");
+  const tape = await p9.locator("#nw-body .nw.lv").allInnerTexts();
+  check(tape.length >= 6 && /Beta Test Co/.test(tape.join("|")) && /Gamma Test filed 8-K: exec\/board change/.test(tape.join("|")) && /(AAA|CCC) filed 4: insider trade/.test(tape.join("|")), "Live shows wires, an 8-K in plain words and an insider filing for a watched ticker (" + tape.length + " lines)");
+  check(await p9.locator('#nw-body .nw.lv .nw-b.b-filing').count() >= 2 && await p9.locator('#nw-body .nw.lv .nw-b.b-macro', {hasText:"FED"}).count() === 1 && await p9.locator('#nw-body .nw.lv .nw-b.b-wire', {hasText:"GNW"}).count() >= 2, "each line carries its source badge (wire, filing, Fed)");
+  check(await p9.locator('#nw-body .nw.lv', {hasText:"Gamma Test filed"}).locator('.nw-tk', {hasText:"CCC"}).count() === 1, "an 8-K is tagged with its ticker from SEC's CIK list");
+  check(w0.notes.length === 0, "the first read of each feed is backlog: no pop-ups");
+  check(await p9.locator('#nw-body .nw-hl .hl-bad', {hasText:"BW"}).count() === 1 && await p9.locator('#nw-body .nw-hl .hl-ok').count() >= 4, "the health strip shows which feeds are fine and which one is refusing");
+  await p9.evaluate(() => { window.__wire.extra = true; }); await adv(25000, 1000);
+  const w1 = await W();
+  check(w1.notes.length === 1 && /AAA news/.test(w1.notes[0].title) && /buyback/.test(w1.notes[0].body), "a new release about a held ticker pops up once (" + JSON.stringify(w1.notes.map(n => n.title)) + ")");
+  const hot = p9.locator("#nw-body .nw.lv.hot").first();
+  check(/buyback/.test(await hot.innerText()) && /\+\d+s/.test(await hot.locator(".nw-lag").innerText().catch(() => "")), "it leads the tape, marked, with how many seconds after release MW had it");
+  check(await p9.locator("#nw-body .nw.lv").first().evaluate(e => e.classList.contains("hot")), "newest first");
+  await adv(25000, 1000);
+  check((await W()).notes.length === 1, "the same story never pops up twice");
+  await p9.locator('#nw-body [data-livef="filing"]').click(); await adv(200, 100);
+  check((await p9.locator("#nw-body .nw.lv").allInnerTexts()).every(t => /filed/.test(t)), "Filings shows only SEC filings");
+  await p9.locator('#nw-body [data-livef="all"]').click(); await adv(200, 100);
+  if (SHOTS) await p9.screenshot({path:path.join(SHOTS, "15-live-wire.png"), fullPage:true});
+  await p9.locator('#nw-body [data-tab-open="news"]').click(); await adv(500, 100);
+  const st = await p9.locator("#shBody").innerText();
+  check(/GlobeNewswire/.test(st) && /refused \(403\)/.test(st) && /SEC contact/.test(st) && /Bloomberg/.test(st), "Settings → News lists every source with its health, the SEC contact box and what isn't free");
+  if (SHOTS) await p9.screenshot({path:path.join(SHOTS, "16-news-settings.png"), fullPage:true});
+  await p9.locator('#shBody [data-wsrc="prn"]').uncheck(); await adv(300, 100);
+  const nP = (await W()).calls.filter(u => /prnewswire/.test(u)).length; await adv(40000, 2000);
+  check((await W()).calls.filter(u => /prnewswire/.test(u)).length === nP, "a source switched off is not read again");
+  check(errs9.length === 0, "no page errors in the live wire checks" + (errs9.length ? ": " + [...new Set(errs9)].slice(0, 4).join(" | ") : ""));
+  await ctx9.close();
 }
 
 await browser.close(); server.close();

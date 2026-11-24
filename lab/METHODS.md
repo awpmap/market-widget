@@ -13,6 +13,7 @@ MW Beta is the beta version of Market Widget: turn it on in MW under Settings â†
 | Earnings dates | Finnhub calendar | |
 | Mutual fund prices | Twelve Data `/quote` (free key); Finnhub is asked once a day in case it has the fund | One price a day (the NAV). The free feed posts it overnight, so the latest price is often one session behind. See "Mutual funds" below. |
 | Headlines | Finnhub `/company-news` for your tickers (up to 24) and `/news?category=general` | Every 15 minutes, low priority. Kept on this PC. See "News" below. |
+| Live wire (6.2) | Press-wire RSS (GlobeNewswire, PR Newswire, Business Wire, Newsfile), SEC EDGAR Atom (8-K and your tickers), Fed/BLS/SEC press RSS via the desktop app; Alpaca `/v1beta1/news`; Finnhub general news | 15 s to 2 min per source, with ETag/If-Modified-Since; backs off on errors (up to 32x). See "Live wire" below. |
 | Fund holdings (look-through) | Pasted by you from the fund issuer's site | Twelve Data's fund composition is a paid feature, so MW Beta doesn't fetch it. |
 
 Every price row has a tooltip naming its source and how old the last trade is.
@@ -100,6 +101,17 @@ A five-letter ticker ending in X in the Holdings table is treated as a mutual fu
 ## News
 
 One list for every headline: Finnhub company news for your holdings and watchlist (the last 3 days, up to 8 per ticker) plus general market news (the newest 20). The same story reported under several of your tickers is one line listing them (`E.newsMerge`, matched on the headline's words); the list holds up to 80 headlines from the last 4 days, newest first. A headline is "new" until you open it, for 24 hours. Read marks are kept on this PC. The ticker tags on a headline show that ticker's change for the day.
+
+## Live wire (6.2)
+
+Feeds are read with a small regex reader (`E.feedParse`: RSS `<item>` or Atom `<entry>`, title, link or `href`,
+pubDate/updated, description/summary, categories) so it also runs in the tests. Tickers come from GlobeNewswire's
+`rss/stock` categories ("Nasdaq:XXXX") and from "(NASDAQ: XXXX)" / "(NYSE: XXX)" in the title and summary
+(`E.wireTickers`, US venues only, so "TSX: ABC" doesn't collide with a US symbol). SEC lines map the filer's CIK to a
+ticker with sec.gov's `company_tickers.json` (refreshed weekly) and 8-K items to plain words (`E.SEC_ITEMS`).
+`E.wireMerge` keeps one line per story (same link host+path, or same headline words), the earliest publish time, the
+first time MW saw it, and the union of tickers; up to 300 lines from the last 2 days. A source's lag is the median of
+(first seen - published) over its last 30 new lines, skipping the first read after start (`E.wireLag`).
 
 ## Portfolio
 

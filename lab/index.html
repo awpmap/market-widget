@@ -628,6 +628,46 @@ body.compact #nw-sec .sec-h{padding-top:8px;padding-bottom:8px}
 .news a.new span{font-weight:600}
 .news a:not(.new) span{color:var(--fg-2)}
 .news .rbtn{margin:4px 0 0 -6px}
+/* ============ 6.2: live wire ============ */
+.nw.lv{padding:5px 12px 5px 14px}
+.nw.lv .nw-h{-webkit-line-clamp:2;font-size:12px}
+.nw.lv .nw-top{gap:6px;align-items:baseline}
+.nw-clk{flex:none;width:34px;font:600 10.5px var(--font);font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}
+.nw.new .nw-clk{color:var(--fg)}
+.nw-b{flex:none;font:700 9px var(--font);letter-spacing:.3px;padding:1px 4px;border-radius:4px;color:var(--fg-2);background:var(--surface-2);text-transform:uppercase;min-width:26px;text-align:center}
+.nw-b.b-wire{color:#7fb2ff;background:color-mix(in srgb,#5b9dff 16%,transparent)}
+.nw-b.b-filing{color:#e0a64a;background:color-mix(in srgb,#f5b43c 16%,transparent)}
+.nw-b.b-macro{color:#c58cff;background:color-mix(in srgb,#a463ff 16%,transparent)}
+:root[data-theme="light"] .nw-b.b-wire{color:#1a5fd6}
+:root[data-theme="light"] .nw-b.b-filing{color:#8a5200}
+:root[data-theme="light"] .nw-b.b-macro{color:#6c2bd9}
+.nw.lv .nw-m{margin:2px 0 0 40px}
+.nw.lv .nw-m:empty{display:none}
+.nw.lv .nw-x{margin-left:40px}
+.nw.hot{box-shadow:inset 3px 0 0 var(--warn)}
+.nw.hot .nw-h{color:var(--fg);font-weight:700}
+.nw-lag{font-style:normal;color:var(--up);font-weight:600;margin-left:3px}
+.nw-lf{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0 4px}
+.nw-lf button{font:500 11px var(--font);color:var(--fg-2);background:transparent;border:1px solid var(--line);border-radius:999px;padding:2px 9px;cursor:pointer}
+.nw-lf button:hover{color:var(--fg);border-color:var(--line-2)}
+.nw-lf button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.callout.nw-up{margin:4px 0 6px;font-size:11.5px}
+.callout.nw-up b{display:block;margin-bottom:2px}
+.nw-hl{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding-top:6px;margin-top:4px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);font:600 9.5px var(--font);color:var(--muted)}
+.nw-hl span{padding:1px 5px;border-radius:4px;background:var(--surface-2)}
+.nw-hl span::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:4px;vertical-align:1px;background:var(--muted)}
+.nw-hl .hl-ok::before{background:var(--up)}
+.nw-hl .hl-bad::before{background:var(--down)}
+.nw-hl .hl-wait::before{background:var(--warn)}
+.nw-hl .rbtn{margin-left:auto;font-size:10.5px}
+.ws-list{display:flex;flex-direction:column;gap:2px}
+.ws-row{display:flex !important;align-items:center;gap:8px;font-weight:400 !important;padding:5px 0;border-top:1px solid color-mix(in srgb,var(--line) 50%,transparent)}
+.ws-row:first-child{border-top:0}
+.ws-n{flex:1;min-width:0;font-size:12px}
+.ws-n small{display:block;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ws-n small.ws-ok{color:var(--up)}
+.ws-n small.ws-bad{color:var(--down)}
+.ws-e{flex:none;font-size:10.5px}
 /* ============ 5.0: mutual funds ============ */
 /* an estimate is dashed and an older day's change is faded, in the account header as in the rows */
 .cbox.est,.cbox.est.up,.cbox.est.down{background:transparent;border:1px dashed color-mix(in srgb,currentColor 45%,transparent);border-radius:6px;padding:1px 5px;font-weight:600}
@@ -970,6 +1010,7 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
     <button data-tab="general" class="on">General</button>
     <button data-tab="holdings">Holdings</button>
     <button data-tab="alerts">Watchlist</button>
+    <button data-tab="news">News</button>
     <button data-tab="funds">Fund overlap</button>
     <button data-tab="markets">Markets</button>
     <button data-tab="layout">Layout</button>

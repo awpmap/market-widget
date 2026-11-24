@@ -639,3 +639,65 @@ test("mapStats: leveraged and inverse funds stay out of the average and the best
   const s = E.mapStats([{pct:-2, lev:1, w:3, sym:"A"}, {pct:1, lev:1, w:1, sym:"B"}, {pct:9, lev:-3, w:5, sym:"C"}, {pct:null, lev:1, w:1, sym:"D"}]);
   assert.ok(Math.abs(s.avg - (-6 + 1) / 4) < 1e-9); assert.equal(s.up, 2); assert.equal(s.down, 1); assert.equal(s.best.sym, "B"); assert.equal(s.worst.sym, "A");
 });
+
+/* ---------------- live wire (6.2) ---------------- */
+const GNW = `<?xml version="1.0"?><rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>GlobeNewswire</title>
+<item><guid isPermaLink="false">1</guid><link>https://www.globenewswire.com/news-release/2026/11/23/1/0/en/example-corp-q3.html</link>
+<category domain="https://www.globenewswire.com/rss/stock">Nasdaq:EXMP</category><category domain="https://www.globenewswire.com/rss/stock">TSX:EXM</category>
+<title>Example Corp Reports Third Quarter &amp; Raises Outlook</title><description><![CDATA[<p>CITY, Nov. 23, 2026 (GLOBE NEWSWIRE) -- Example Corp (NASDAQ: EXMP) today&#8230;</p>]]></description>
+<pubDate>Mon, 23 Nov 2026 22:05 GMT</pubDate><dc:creator>Example Corp</dc:creator></item>
+<item><link>https://www.globenewswire.com/news-release/2026/11/23/2/0/en/other.html</link><title>Other Co (NYSE: OTHR; HKEX: 1234) names CFO</title><description>short</description><pubDate>Mon, 23 Nov 2026 21:00 GMT</pubDate></item>
+<item><title>No link here</title><pubDate>Mon, 23 Nov 2026 21:00 GMT</pubDate></item>
+</channel></rss>`;
+const SECA = `<?xml version="1.0" encoding="ISO-8859-1" ?><feed xmlns="http://www.w3.org/2005/Atom"><title>Latest Filings</title>
+<entry><title>8-K - EXAMPLE CORP (0001234567) (Filer)</title><link rel="alternate" type="text/html" href="https://www.sec.gov/Archives/edgar/data/1234567/000123456726000001/0001234567-26-000001-index.htm"/>
+<summary type="html"> &lt;b&gt;Filed:&lt;/b&gt; 2026-11-23 &lt;b&gt;AccNo:&lt;/b&gt; 0001234567-26-000001 &lt;b&gt;Size:&lt;/b&gt; 300 KB&lt;br&gt;Item 2.02: Results of Operations and Financial Condition&lt;br&gt;Item 9.01: Financial Statements and Exhibits</summary>
+<updated>2026-11-23T16:05:12-05:00</updated><category scheme="https://www.sec.gov/" label="form type" term="8-K"/><id>urn:tag:sec.gov,2008:accession-number=0001234567-26-000001</id></entry></feed>`;
+test("feedParse: RSS items with categories, entities and CDATA; Atom entries with href links", () => {
+  const L = E.feedParse(GNW);
+  assert.equal(L.length, 2, "an item with no link is dropped");
+  assert.equal(L[0].h, "Example Corp Reports Third Quarter & Raises Outlook");
+  assert.equal(L[0].t, Date.UTC(2026, 10, 23, 22, 5));
+  assert.deepEqual(L[0].cats, ["Nasdaq:EXMP", "TSX:EXM"]);
+  assert.match(L[0].sum, /Example Corp \(NASDAQ: EXMP\) today…/);
+  assert.equal(L[0].who, "Example Corp");
+  const A = E.feedParse(SECA);
+  assert.equal(A.length, 1); assert.match(A[0].url, /0001234567-26-000001-index\.htm$/);
+  assert.equal(A[0].t, Date.parse("2026-11-23T21:05:12Z")); assert.deepEqual(A[0].cats, ["8-K"]);
+  assert.deepEqual(E.secTitle(A[0].h), {form:"8-K", name:"EXAMPLE CORP", cik:"1234567", role:"Filer"});
+  assert.deepEqual(E.secItems(A[0].sum), ["results"], "9.01 exhibits are left out");
+  assert.deepEqual(E.feedParse(""), []); assert.deepEqual(E.feedParse("<html>not a feed</html>"), []);
+});
+test("wireTickers: US venues only, deduped, share classes kept", () => {
+  assert.deepEqual(E.wireTickers(["Nasdaq:EXMP", "TSX:EXM"], "Example (NASDAQ: EXMP) and Other (NYSE:OTHR, TSXV: OTH)", "Class B (NYSE: ABC.B) and (NYSE American: XYZ) and BRK-B"), ["EXMP", "OTHR", "ABC.B", "XYZ"]);
+  assert.deepEqual(E.wireTickers("Nasdaq Global Select Market: QQQX"), ["QQQX"]);
+  assert.deepEqual(E.wireTickers("no tickers in this one", null), []);
+});
+test("feedTime: RFC 822 with and without seconds, offsets, ISO, US zone names", () => {
+  assert.equal(E.feedTime("Tue, 24 Nov 2026 00:45:00 +0000"), Date.UTC(2026, 10, 24, 0, 45));
+  assert.equal(E.feedTime("Mon, 23 Nov 2026 14:06:00 -0500"), Date.UTC(2026, 10, 23, 19, 6));
+  assert.equal(E.feedTime("Mon, 23 Nov 2026 09:30:00 EST"), Date.UTC(2026, 10, 23, 14, 30));
+  assert.equal(E.feedTime("garbage"), 0);
+});
+test("wireMerge: same link or same headline is one line; earliest time, sources and tickers kept", () => {
+  const now = Date.UTC(2026, 10, 23, 15), m = 60e3;
+  let r = E.wireMerge([], [{h:"Example Corp Raises Outlook", url:"https://www.globenewswire.com/a/1/", t:now - 2 * m, src:"GlobeNewswire", w:"gnw", syms:["EXMP"], kind:"wire"}], now);
+  assert.equal(r.added.length, 1); assert.equal(r.list[0].w, "gnw"); assert.equal(r.list[0].seen, now);
+  r = E.wireMerge(r.list, [
+    {h:"Example Corp raises its outlook for the year", url:"https://globenewswire.com/a/1", t:now - 3 * m, src:"Alpaca", syms:["EXMP", "EXMP2"]},
+    {h:"Example Corp Raises Outlook!", url:"https://other.example/x", t:now, src:"Finnhub"},
+    {h:"Too old", url:"https://x.example/old", t:now - 3 * 864e5},
+    {h:"Bad link", url:"ftp://x", t:now}], now + 5e3);
+  assert.equal(r.added.length, 0); assert.equal(r.list.length, 1);
+  assert.deepEqual(r.list[0].syms, ["EXMP", "EXMP2"]); assert.deepEqual(r.list[0].also, ["Alpaca", "Finnhub"]); assert.equal(r.list[0].t, now - 3 * m);
+  assert.equal(E.wireMerge(null, Array.from({length:400}, (_, i) => ({h:"Line " + i, url:"https://x.example/" + i, t:now - i * 1e3})), now).list.length, 300);
+  assert.equal(E.wireMerge([], [{h:"From the future", url:"https://x.example/f", t:now + 3600e3}], now).list[0].t, now + 60e3, "a clock running ahead is clamped");
+});
+test("wireLag and lagShort", () => {
+  assert.equal(E.wireLag([30, 10, 20, -5, NaN]), 20); assert.equal(E.wireLag([]), null);
+  assert.equal(E.lagShort(14.2), "14s"); assert.equal(E.lagShort(150), "3m"); assert.equal(E.lagShort(7200), "2h"); assert.equal(E.lagShort(null), "");
+});
+test("secName and SEC_FORMS", () => {
+  assert.equal(E.secName("GAMMA TEST CORP /DE/"), "Gamma Test Corp"); assert.equal(E.secName("ABC HOLDINGS INC"), "ABC Holdings INC".replace("INC", "INC"));
+  assert.equal(E.SEC_FORMS["4"], "insider trade");
+});

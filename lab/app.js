@@ -198,7 +198,8 @@ function saveCfg(why){ cfg.v = E.CFG_V; store.set("cfg", cfg); snapCfg(why || "e
   if (location.hash) try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
 })();
 
-let settings = Object.assign({key:"", tdKey:"", ntfy:"", ntfyFull:false, hcUrl:"", sound:"on", theme:"auto", refresh:60, compact:false, collapsed:{}, allOff:false, period:"1D", sort:"value", grpCollapsed:{}, heatOrder:"fixed", focus:"", bench:"SMH", pauseUntil:0, snooze:{}, layout:null, hideSec:{}, sentryDsn:"", tz:"auto", overnight:false, sizing:false, refVol:2, concCap:25, record:false, showZeroCash:false, alpKey:"", alpSec:"", fast:true, cvd:false, fundEst:true, newsTab:"all", newsAll:false, hideAmt:false, hdTab:"position", riskHide:false}, store.get("settings", {}));
+let settings = Object.assign({key:"", tdKey:"", ntfy:"", ntfyFull:false, hcUrl:"", sound:"on", theme:"auto", refresh:60, compact:false, collapsed:{}, allOff:false, period:"1D", sort:"value", grpCollapsed:{}, heatOrder:"fixed", focus:"", bench:"SMH", pauseUntil:0, snooze:{}, layout:null, hideSec:{}, sentryDsn:"", tz:"auto", overnight:false, sizing:false, refVol:2, concCap:25, record:false, showZeroCash:false, alpKey:"", alpSec:"", fast:true, cvd:false, fundEst:true, newsTab:"live", liveF:"all", newsPing:"mine", newsBeep:true, wireOff:{}, secUa:"", newsAll:false, hideAmt:false, hdTab:"position", riskHide:false}, store.get("settings", {}));
+if (!settings.live62){ settings.newsTab = "live"; settings.live62 = 1; }   // 6.2: the News section opens on the live feed once
 const DEFAULT_LAYOUT = ["news","portfolio","markets","watch","log"];
 const SEC_NAMES = {news:"News", portfolio:"Portfolio", markets:"Markets", watch:"Watchlist", log:"Today's alerts"};
 /* a section this layout was saved without (News, new in 5.0) goes first, where the headline strip used to be */
@@ -1365,7 +1366,7 @@ function tapeAdd(src, what, data){
    Left behind on purpose: the recording switch and what only this screen remembers (the open tile, the last tab). */
 const LIVE_SETTINGS = ["key","tdKey","alpKey","alpSec","fast","refresh","overnight","ntfy","ntfyFull","hcUrl","sound","allOff","pauseUntil","snooze",
   "theme","cvd","compact","layout","hideSec","collapsed","grpCollapsed","secHide","erHide","heatOrder","splash","map",
-  "period","sort","bench","tz","newsTab","newsAll","chRange","chOv","fundEst","showZeroCash","sentryDsn"];
+  "period","sort","bench","tz","newsTab","newsAll","liveF","newsPing","newsBeep","wireOff","secUa","chRange","chOv","fundEst","showZeroCash","sentryDsn"];
 function liveSetup(){
   if (!BETA) return null;
   const c = liveStore.get("cfg"), s = liveStore.get("settings");
@@ -2055,6 +2056,7 @@ function renderStatus(){
     ${(()=>{ const fs = fundSyms().map(x => navs[x]).filter(n => n && n.nav > 0); if (!fs.length) return "";
       const d = fs.map(n => n.date).sort()[0], behind = d < E.navDueDate(now), at = Math.max(...fs.map(n => n.at || 0));
       return kv("Fund prices", `${fs.length} fund${fs.length > 1 ? "s" : ""}, priced ${esc(navDayLabel(d))}` + (behind ? ` · ${esc(navDayLabel(E.navDueDate(now)))} not posted yet` : "") + (at ? ` · checked ${timeStr(at)}` : "")); })()}
+    ${kv("Live wire", WIRE_SRC.filter(x => wireOn(x.k) && wireAvail(x)).map(x => esc(x.b) + ": " + esc(wireHealth(x).t)).join(" · ") || (NATIVE ? "desktop app 1.3 needed" : "Alpaca/Finnhub keys needed"))}
     ${news.at ? kv("News", `${newsItems().length} headline${newsItems().length === 1 ? "" : "s"} · updated ${timeStr(news.at)}` + (news.err ? ` · ⚠ ${esc(news.err)}` : "")) : ""}
     ${settings.tdKey ? kv("Twelve Data today", budgetHtml(L, ses)) : kv("Twelve Data", "no key")}
     ${(()=>{ const M = E.nextMacro(now, 3); return M.expired ? kv("Coming up", "Fed and inflation dates ended " + E.MACRO_VALID_TO) : M.list.length ? kv("Coming up", M.list.map(x => `${esc(x.name)} ${esc(macroWhen(x.t))}`).join("<br>")) : ""; })()}
@@ -2539,6 +2541,25 @@ function showTab(tab){
       if (e.target.id==="bench"){ settings.bench = e.target.value; saveSettings(); schedule(true); showTab("markets"); return; }
       const s = e.target.dataset.mk; if (!s) return; cfg.hiddenMk = cfg.hiddenMk.filter(x=>x!==s); if (!e.target.checked) cfg.hiddenMk.push(s); saveCfg(); renderAll(); if (e.target.checked) schedule(true); };
   }
+  else if (tab==="news"){
+    const row = x => { const h = wireHealth(x); return `<label class="ws-row"><input type="checkbox" data-wsrc="${x.k}" ${wireOn(x.k) ? "checked" : ""}><span class="nw-b b-${x.kind}">${esc(x.b)}</span><span class="ws-n">${esc(x.n)}<small class="ws-${h.c}">${esc(h.t)}</small></span><span class="muted ws-e">${x.k === "secco" ? "1 ticker / " + x.every + " s" : "every " + (x.every < 60 ? x.every + " s" : x.every / 60 + " min")}</span></label>`; };
+    B.innerHTML = `<p class="muted" style="margin-top:0;font-size:12px">The News section's <b>Live</b> tab is one tape of everything below, newest first, the same story merged into one line. ${NATIVE ? (wireNative === false ? "This desktop app is older than 1.3, so the press wires and SEC are off until you update it." : "This desktop app reads the press wires and SEC itself, straight from the source.") : "Press wires and SEC filings need the MW desktop app: browsers can't read those sites."}</p>
+      <div class="field"><label for="nwPing">Pop-up for breaking news about</label><select id="nwPing"><option value="mine" ${settings.newsPing === "mine" ? "selected" : ""}>Holdings and watchlist</option><option value="hold" ${settings.newsPing === "hold" ? "selected" : ""}>Holdings only</option><option value="off" ${settings.newsPing === "off" ? "selected" : ""}>Off</option></select>
+        <label style="display:flex;gap:7px;align-items:center;font-weight:400;margin-top:6px"><input type="checkbox" id="nwBeep" ${settings.newsBeep !== false ? "checked" : ""}> Soft beep with it (when sound is on)</label>
+        <p>A press release, filing or headline tagged with one of your tickers, less than 15 minutes old: one Windows pop-up per ticker per 5 minutes. Snoozed tickers and paused alerts stay quiet.</p></div>
+      <div class="field"><label>Sources</label><div class="ws-list">${WIRE_SRC.map(row).join("")}</div>
+        <p>"Stories arrive ~Xs after release" is how long after a story's own publish time MW saw it. GlobeNewswire stamps the minute only, so its figure is rough. Alpaca's free news posts in batches about every 30 minutes, so it is broad but slow.</p></div>
+      <div class="field"><label for="nwSec">SEC contact (optional)</label><input id="nwSec" value="${esc(settings.secUa || "")}" placeholder="Name or email, only if SEC says 403" autocomplete="off" spellcheck="false" maxlength="80">
+        <p>The SEC asks automated readers to name themselves. If SEC filings show "the site refused (403)", put a contact here. It goes only to sec.gov, inside the request, and stays on this PC.</p></div>
+      <p class="note">Not free, so not here: Bloomberg Terminal (about $30,000 a year), paid audio squawks, and the X/Telegram-only headline accounts, which have no free feed to read. Press wires and SEC filings are where most company news starts.</p>`;
+    B.onchange = e => {
+      const k = e.target.dataset.wsrc;
+      if (k){ settings.wireOff = Object.assign({}, settings.wireOff); if (e.target.checked) delete settings.wireOff[k]; else settings.wireOff[k] = 1; saveSettings(); if (wireSt[k]) wireSt[k].next = 0; wireTick(); safe("news", renderNews); return; }
+      if (e.target.id === "nwPing"){ settings.newsPing = e.target.value; saveSettings(); return; }
+      if (e.target.id === "nwBeep"){ settings.newsBeep = e.target.checked; saveSettings(); return; }
+      if (e.target.id === "nwSec"){ settings.secUa = e.target.value.trim().slice(0, 80); saveSettings(); ["sec", "secco", "secpr"].forEach(x => { if (wireSt[x]) wireSt[x].next = 0; }); toast("Saved"); return; }
+    };
+  }
   else if (tab==="layout"){
     const L = layoutOrder();
     B.innerHTML = `<div class="field"><label>Section order</label><p>Drag the rows, or use the arrows. Turn a section off to hide it. Keys 1 to 5 jump to the sections in this order.</p></div>
@@ -2771,8 +2792,17 @@ let news = store.get("news", {at:0, items:[]});
 let newsRead = store.get("newsRead", {});   // id -> 1, pruned to the headlines still listed
 try{ localStorage.removeItem(NS + "heads"); }catch(e){}   // the old headline strip's cache (before 5.0)
 let nwOpen = null, nwBusy = false;
-const NW_PEEK = 3, NW_MAX = 40, NW_NEW_MS = 24*3600e3;
-const newsItems = () => (news.items || []).filter(n => n && Array.isArray(n.syms));
+const NW_PEEK = 3, NW_MAX = 40, NW_NEW_MS = 24*3600e3, NW_LIVE_PEEK = 8, NW_LIVE_MAX = 150;
+let nwMemo = {k:"", L:[]};
+/* Finnhub's company news plus the live wire's lines about your tickers (and the Fed/BLS/SEC macro lines) */
+const newsItems = () => {
+  const k = news.at + ":" + wireV + ":" + (news.items || []).length + ":" + cfg.holdings.length + ":" + cfg.watch.length;
+  if (nwMemo.k === k) return nwMemo.L;
+  const base = (news.items || []).filter(n => n && Array.isArray(n.syms)), mine = wireMine();
+  const w = wireItems().filter(n => n.kind === "macro" || n.syms.some(x => mine.has(x))).map(n => Object.assign({}, n, {cat: n.kind === "macro" ? "market" : "company"}));
+  const L = w.length ? E.wireMerge(base, w, Date.now(), {max:200, maxAgeMs:4*864e5}).list : base;
+  nwMemo = {k, L}; return L;
+};
 const nwIsNew = n => !newsRead[n.id] && Date.now() - n.t < NW_NEW_MS;
 function nwList(tab, sym){
   let L = newsItems();
@@ -2801,13 +2831,16 @@ async function loadHeadlines(force){
 }
 function nwMark(ids){ let n = 0; ids.forEach(id => { if (!newsRead[id]){ newsRead[id] = 1; n++; } }); if (n) store.set("newsRead", newsRead); return n; }
 const NW_GO = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5H3.5v9h9V10M9 3.5h3.5V7M12.5 3.5L7.5 8.5"/></svg>`;
-function nwRow(n){
-  const open = nwOpen === n.id, isNew = nwIsNew(n), now = Date.now();
+function nwRow(n, live){
+  const open = nwOpen === n.id, now = Date.now(), isNew = live ? !newsRead[n.id] && (n.hot || (!n.old && n.seen && now - n.seen < 3*60e3)) : nwIsNew(n);
   const tags = n.syms.length ? n.syms.slice(0, 2).map(x => { const q = quotes[x]; return `<button class="nw-tk" data-nwsym="${esc(x)}" tabindex="-1" title="Show only ${esc(x)} headlines${q && q.dp != null ? ". " + esc(x) + " is " + chgTxt(chgOf(q), q.dp, 2, q.c) + " a share " + dayWord() : ""}">${esc(x)}${q && q.dp != null ? `<i class="${cls0(+q.dp.toFixed(1) || chgOf(q))}">${chgTxt(chgOf(q), q.dp, 1, q.c)}</i>` : ""}</button>`; }).join("") + (n.syms.length > 2 ? `<span class="nw-tk" title="${esc(n.syms.slice(2).join(", "))}">+${n.syms.length - 2}</span>` : "") : `<span class="nw-tk mk" title="General market news, not about one of your tickers">Market</span>`;
   const sum = n.sum && E.newsKey(n.sum) !== E.newsKey(n.h) ? n.sum : "";
-  return `<div class="nw${isNew ? " new" : ""}${open ? " open" : ""}" data-row="n:${esc(n.id)}" role="button" tabindex="0" aria-expanded="${open}">
-    <div class="nw-top"><div class="nw-h">${esc(n.h)}</div><a class="nw-go" href="${esc(n.url)}" target="_blank" rel="noopener" tabindex="-1" data-nwgo="${esc(n.id)}" title="Open the article in your browser (O)" aria-label="Open the article">${NW_GO}</a></div>
-    <div class="nw-m">${tags}<span class="nw-src">${esc(n.src)}</span><time title="${esc(dateTime(n.t) + " " + tzAbbr(n.t))}">${n.src ? "· " : ""}${E.agoShort(n.t, now)}</time></div>
+  const S = WSRC[n.w], lag = n.seen && !n.old && n.t ? (n.seen - n.t) / 1000 : null;
+  const badge = S ? `<span class="nw-b b-${S.kind}" title="${esc(S.n)}${(n.also || []).length ? " (also on " + esc(n.also.join(", ")) + ")" : ""}">${esc(n.form && S.kind === "filing" ? n.form : S.b)}</span>` : n.w === "fhc" || !n.w ? `<span class="nw-b b-news" title="${esc(n.src || "Finnhub")}">FH</span>` : "";
+  const lead = live ? `<time class="nw-clk" title="${esc(dateTime(n.t) + " " + tzAbbr(n.t))}${lag != null && lag >= 0 ? ". MW had it " + E.lagShort(lag) + " after it was published" : ""}">${new Date(n.t).toLocaleTimeString("en-US", {hour:"numeric", minute:"2-digit", timeZone:tzName()}).replace(/\s?[AP]M$/, "")}</time>${badge}` : "";
+  return `<div class="nw${isNew ? " new" : ""}${open ? " open" : ""}${live ? " lv" : ""}${n.hot ? " hot" : ""}" data-row="n:${esc(n.id)}" role="button" tabindex="0" aria-expanded="${open}">
+    <div class="nw-top">${lead}<div class="nw-h">${esc(n.h)}</div><a class="nw-go" href="${esc(n.url)}" target="_blank" rel="noopener" tabindex="-1" data-nwgo="${esc(n.id)}" title="Open the article in your browser (O)" aria-label="Open the article">${NW_GO}</a></div>
+    <div class="nw-m">${live && !n.syms.length ? "" : tags}<span class="nw-src">${esc(n.src)}</span><time title="${esc(dateTime(n.t) + " " + tzAbbr(n.t))}">${n.src ? "· " : ""}${E.agoShort(n.t, now)}${live && lag != null && lag >= 0 && lag < 6*3600 ? ` <i class="nw-lag" title="How long after publishing MW saw it">+${E.lagShort(lag)}</i>` : ""}</time></div>
     ${open ? `<div class="nw-x"><p${sum ? "" : ` class="muted"`}>${sum ? esc(sum) : "No summary came with this headline."}</p>
       <div class="nw-acts"><a class="btn primary" href="${esc(n.url)}" target="_blank" rel="noopener" data-nwgo="${esc(n.id)}">Open article ${NW_GO}</a><button class="rbtn" data-nwcopy="${esc(n.id)}">Copy link</button>${n.syms.slice(0, 2).map(x => `<button class="rbtn" data-chart="${esc(x)}" title="Open ${esc(x)}'s chart">${esc(x)} chart</button>`).join("")}<button class="rbtn nw-cl" data-nwclose="1" title="Close the summary (Esc)">Close</button></div></div>` : ""}
   </div>`;
@@ -2826,30 +2859,205 @@ function renderNews(){
   const shut = !!settings.collapsed.news || !!settings.compact;
   sum.innerHTML = (nNew ? `<span class="nw-new" title="Headlines from the last 24 hours you haven't opened yet">${nNew} new</span>` : "")
     + (shut && top ? `<span class="nw-latest" title="${esc(top.h)}">${top.syms[0] ? `<b>${esc(top.syms[0])}</b> ` : ""}${esc(top.h)}</span>` : nwBusy ? `<span class="muted">updating…</span>` : news.at ? `<span class="muted" title="Headlines refresh every 15 minutes">updated ${timeStr(news.at)}</span>` : "");
-  if (!settings.key){ body.innerHTML = `<div class="empty" style="padding:6px 4px 2px">Headlines appear once your Finnhub key is in Settings.</div>`; return; }
-  if (!items.length){ body.innerHTML = `<div class="empty" style="padding:6px 4px 2px">${nwBusy || !news.at ? "Loading headlines…" : news.err ? "Headlines didn't load (" + esc(news.err) + "). " : "No headlines in the last 3 days for your tickers. "}${nwBusy || !news.at ? "" : `<button data-nw="ref">Try again</button>`}</div>`; return; }
-  const TABS = [["all","All"],["mine","Holdings"],["watch","Watchlist"],["market","Market"]].map(([k, n]) => ({k, n, L:nwList(k)})).filter(t => t.k === "all" || t.L.length);
-  const tab = TABS.some(t => t.k === settings.newsTab) ? settings.newsTab : "all", inTab = TABS.find(t => t.k === tab).L;
+  const anyWire = WIRE_SRC.some(x => wireOn(x.k) && wireAvail(x));
+  if (!settings.key && !anyWire){ body.innerHTML = `<div class="empty" style="padding:6px 4px 2px">Headlines appear once your Finnhub key is in Settings.</div>`; return; }
+  if (!items.length && !wireItems().length){ body.innerHTML = (NATIVE && wireNative === false ? wireCallout() : "") + `<div class="empty" style="padding:6px 4px 2px">${nwBusy || !news.at ? "Loading headlines…" : news.err ? "Headlines didn't load (" + esc(news.err) + "). " : "No headlines in the last 3 days for your tickers. "}${nwBusy || !news.at ? "" : `<button data-nw="ref">Try again</button>`}</div>`; return; }
+  const TABS = [["live","Live"],["all","All"],["mine","Holdings"],["watch","Watchlist"],["market","Market"]].map(([k, n]) => ({k, n, L: k === "live" ? liveList(settings.liveF) : nwList(k)})).filter(t => t.k === "all" || t.k === "live" || t.L.length);
+  const tab = TABS.some(t => t.k === settings.newsTab) ? settings.newsTab : "live", inTab = TABS.find(t => t.k === tab).L, live = tab === "live";
   // ticker chips: who the headlines in this tab are about, most headlines first
   const cnt = {}; inTab.forEach(n => n.syms.forEach(x => { const c = cnt[x] || (cnt[x] = {n:0, nw:0}); c.n++; if (nwIsNew(n)) c.nw++; }));
   const chipSyms = Object.keys(cnt).sort((a, b) => cnt[b].n - cnt[a].n || a.localeCompare(b));
   const sym = chipSyms.includes(nwSym) ? nwSym : ""; if (!sym) nwSym = "";
   const L = sym ? inTab.filter(n => n.syms.includes(sym)) : inTab, all = !!settings.newsAll || !!sym;
-  const shown = L.slice(0, all ? NW_MAX : NW_PEEK);
+  const shown = L.slice(0, all ? (live ? NW_LIVE_MAX : NW_MAX) : (live ? NW_LIVE_PEEK : NW_PEEK));
   if (nwOpen && !shown.some(n => n.id === nwOpen)){ const o = L.find(n => n.id === nwOpen); if (o) shown.push(o); else nwOpen = null; }
   let day = "";
   const dayHdr = n => { if (!all) return ""; const d = dayOf(n.t); if (d === day) return ""; day = d;
     const lbl = d === dayOf(Date.now()) ? "Today" : d === dayOf(Date.now() - 864e5) ? "Yesterday" : new Date(n.t).toLocaleDateString("en-US", {weekday:"long", month:"short", day:"numeric", timeZone:tzName()});
     return `<div class="nw-day">${lbl}</div>`; };
-  body.innerHTML = `<div class="nw-bar"><div class="seg" role="tablist">${TABS.map(t => { const nw = t.L.filter(nwIsNew).length; return `<button role="tab" data-nwtab="${t.k}" aria-selected="${t.k === tab}" class="${t.k === tab ? "on" : ""}" title="${t.L.length} headline${t.L.length === 1 ? "" : "s"}${nw ? ", " + nw + " new" : ""}">${t.n}${nw && t.k !== "all" ? `<i>${nw}</i>` : ""}</button>`; }).join("")}</div>
+  body.innerHTML = `<div class="nw-bar"><div class="seg" role="tablist">${TABS.map(t => { const nw = t.k === "live" ? 0 : t.L.filter(nwIsNew).length; return `<button role="tab" data-nwtab="${t.k}" aria-selected="${t.k === tab}" class="${t.k === tab ? "on" : ""}" title="${t.L.length} headline${t.L.length === 1 ? "" : "s"}${nw ? ", " + nw + " new" : ""}">${t.n}${nw && t.k !== "all" ? `<i>${nw}</i>` : ""}</button>`; }).join("")}</div>
       <button class="rbtn" data-nw="read" title="Mark every headline as read" aria-label="Mark every headline as read" ${nNew ? "" : "disabled"}>✓<span> Read</span></button><button class="rbtn" data-nw="ref" title="Check for new headlines now" aria-label="Refresh headlines" ${nwBusy ? "disabled" : ""}>${nwBusy ? "…" : "↻"}</button></div>
-    ${chipSyms.length > 1 ? `<div class="nw-chips">${chipSyms.slice(0, 14).map(x => `<button data-nwsym="${esc(x)}" class="${x === sym ? "on" : ""}" title="${x === sym ? "Show every ticker again" : "Show only " + esc(x) + " headlines"}">${esc(x)}<span>${cnt[x].n}</span>${cnt[x].nw ? `<i></i>` : ""}${x === sym ? ` ✕` : ""}</button>`).join("")}</div>` : ""}
-    <div class="nw-list">${shown.map(n => dayHdr(n) + nwRow(n)).join("") || `<div class="empty" style="padding:8px 4px">Nothing here right now.</div>`}</div>
+    ${live ? liveBar() : ""}
+    ${chipSyms.length > 1 && !live ? `<div class="nw-chips">${chipSyms.slice(0, 14).map(x => `<button data-nwsym="${esc(x)}" class="${x === sym ? "on" : ""}" title="${x === sym ? "Show every ticker again" : "Show only " + esc(x) + " headlines"}">${esc(x)}<span>${cnt[x].n}</span>${cnt[x].nw ? `<i></i>` : ""}${x === sym ? ` ✕` : ""}</button>`).join("")}</div>` : ""}
+    <div class="nw-list${live ? " live" : ""}">${shown.map(n => dayHdr(n) + nwRow(n, live)).join("") || `<div class="empty" style="padding:8px 4px">Nothing here right now.</div>`}</div>
     ${sym ? `<div class="nw-foot"><span class="muted">${L.length} headline${L.length === 1 ? "" : "s"} on ${esc(sym)}</span><button class="rbtn" data-nwsym="${esc(sym)}">Show every ticker</button></div>`
-      : L.length > NW_PEEK ? `<div class="nw-foot"><button class="rbtn" data-nw="more">${all ? "Show fewer" : `Show all ${Math.min(L.length, NW_MAX)} headlines`}</button></div>` : ""}`;
+      : L.length > (live ? NW_LIVE_PEEK : NW_PEEK) ? `<div class="nw-foot"><button class="rbtn" data-nw="more">${all ? "Show fewer" : `Show all ${Math.min(L.length, live ? NW_LIVE_MAX : NW_MAX)} headlines`}</button></div>` : ""}
+    ${live ? liveFoot() : ""}`;
   nwFit(); refocus(fk);
 }
 let nwSym = "";
+
+/* ---------- Live wire (6.2): press wires, SEC filings and the Fed as they publish ----------
+   The desktop app reads the wires' own RSS/Atom feeds every 15-30 seconds (browsers can't: those sites send no CORS
+   headers), so a release shows here within seconds to a minute of going out. Alpaca and Finnhub news work everywhere,
+   with their own delay (Alpaca's free news posts in batches about every 30 minutes). Every source keeps a health
+   line: when it was last checked, how late its stories arrive (first seen minus published), and its last error. */
+const WIRE_SRC = [
+  {k:"gnw", n:"GlobeNewswire", b:"GNW", kind:"wire", every:15, nat:1, url:"https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20about%20Public%20Companies"},
+  {k:"prn", n:"PR Newswire", b:"PRN", kind:"wire", every:15, nat:1, url:"https://www.prnewswire.com/rss/news-releases-list.rss"},
+  {k:"bw", n:"Business Wire", b:"BW", kind:"wire", every:15, nat:1, url:"https://feed.businesswire.com/rss/home/?rss=G1QFDERJXkJeEFtRWA=="},
+  {k:"nf", n:"Newsfile", b:"NF", kind:"wire", every:30, nat:1, url:"https://feeds.newsfilecorp.com/global/Last25Stories"},
+  {k:"sec", n:"SEC 8-K filings", b:"8-K", kind:"filing", every:20, nat:1, url:"https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&company=&dateb=&owner=include&start=0&count=40&output=atom"},
+  {k:"secco", n:"SEC filings for your tickers", b:"SEC", kind:"filing", every:10, nat:1},
+  {k:"fed", n:"Federal Reserve", b:"FED", kind:"macro", every:60, nat:1, url:"https://www.federalreserve.gov/feeds/press_all.xml"},
+  {k:"bls", n:"BLS data releases", b:"BLS", kind:"macro", every:120, nat:1, url:"https://www.bls.gov/feed/bls_latest.rss"},
+  {k:"secpr", n:"SEC press releases", b:"SEC", kind:"macro", every:120, nat:1, url:"https://www.sec.gov/news/pressreleases.rss"},
+  {k:"alp", n:"Alpaca news", b:"ALP", kind:"news", every:60},
+  {k:"fh", n:"Finnhub market news", b:"FH", kind:"news", every:120},
+];
+const WSRC = Object.fromEntries(WIRE_SRC.map(s => [s.k, s]));
+let wire = store.get("wire", {items:[]}); if (!Array.isArray(wire.items)) wire = {items:[]};
+const wireSt = {};   // k -> {at, next, ok, err, errs, etag, mod, lags:[], primed, got, ms, inFlight}
+let wireNative = NATIVE ? null : false;   // null = not known yet; false = this desktop app is older than 1.3 (no feed reader)
+let wireV = 0;   // bumps whenever the list changes (memo key)
+const WIRE_PINGED = {};
+function wireOn(k){ return !(settings.wireOff || {})[k]; }
+function wireAvail(s){ return s.nat ? NATIVE && wireNative !== false : s.k === "alp" ? !!(settings.alpKey && settings.alpSec) : !!settings.key; }
+function wireSave(){ clearTimeout(wireSave._t); wireSave._t = setTimeout(() => store.set("wire", {items:wire.items.slice(0, 300)}), 1500); }
+/* SEC CIK -> ticker map (sec.gov company_tickers.json, through the app, refreshed weekly) */
+let secTk = store.get("secTk", {at:0, m:{}});
+async function secMap(){
+  if (Date.now() - secTk.at < 7*864e5 && Object.keys(secTk.m || {}).length > 1000) return secTk.m;
+  if (secMap.p) return secMap.p;
+  return (secMap.p = secMapLoad().finally(() => { secMap.p = null; }));
+}
+async function secMapLoad(){
+  try{ const r = await wireGet("https://www.sec.gov/files/company_tickers.json", {}, true);
+    if (r.status === 200){ const j = JSON.parse(r.body), m = {}; Object.values(j).forEach(x => { const c = String(+x.cik_str); if (!m[c]) m[c] = String(x.ticker).toUpperCase(); }); secTk = {at:Date.now(), m}; store.set("secTk", secTk); }
+  }catch(e){ mwLog("warn", "SEC ticker list didn't load: " + (e && e.message || e)); }
+  return secTk.m || {};
+}
+function cikOf(sym){ const m = secTk.m || {}; for (const c in m) if (m[c] === sym) return c; return ""; }
+async function wireGet(url, st, sec){
+  const r = await nat.invoke("shell_fetch", {url, etag:st.etag || "", modified:st.mod || "", contact: sec ? (settings.secUa || "") : ""});
+  wireNative = true; return r;
+}
+function wireMine(){ return new Set([...cfg.holdings.map(h => (h.sym||"").toUpperCase()), ...cfg.watch.map(w => (w.sym||"").toUpperCase())].filter(Boolean)); }
+/* turn one source's answer into lines */
+function wireLines(s, body){
+  const now = Date.now();
+  if (s.k === "alp"){ const j = JSON.parse(body || "{}"); return (j.news || []).filter(n => n.url).map(n => ({id:"alp:" + n.id, h:n.headline, url:n.url, t:Date.parse(n.created_at) || now, sum:n.summary || "", syms:(n.symbols || []).slice(0, 6), src:"Alpaca", w:"alp", kind:"news"})); }
+  if (s.k === "fh"){ const j = JSON.parse(body || "[]"); return (Array.isArray(j) ? j : []).slice(0, 40).map(n => ({id:"fh:" + n.id, h:n.headline, url:n.url, t:+n.datetime * 1000, sum:n.summary || "", syms:String(n.related || "").split(",").map(x => x.trim().toUpperCase()).filter(x => /^[A-Z.]{1,6}$/.test(x)).slice(0, 4), src:n.source || "Finnhub", w:"fh", kind:"news"})); }
+  const L = E.feedParse(body), m = secTk.m || {};
+  if (s.k === "sec" || s.k === "secco") return L.map(n => {
+    const p = E.secTitle(n.h), parts = n.h.split(/\s+-\s+/), form = p ? p.form : (n.cats[0] || (parts.length > 1 ? parts[0].trim() : "")), sym = s.sym || (p && m[p.cik]) || "", items = E.secItems(n.sum);
+    const who = p ? E.secName(p.name).replace(/\b(INC|CORP|CORPORATION|CO|LTD|PLC|HOLDINGS|N\.?V|S\.?A|LLC|L\.?P)\b\.?/gi, "").replace(/[\s,\/]+$/, "").trim() : (s.sym || "");
+    const what = s.k === "secco" && !items.length ? (E.SEC_FORMS[form] || (parts.length > 1 ? parts.slice(1).join(" - ").trim() : "")) : "";
+    return {h:`${who || sym} filed ${form}${items.length ? ": " + items.join(", ") : what ? ": " + what : ""}`, url:n.url, t:n.t, sum:n.sum, syms:sym ? [sym] : [], src:"SEC EDGAR", w:s.k, kind:"filing", form};
+  });
+  return L.map(n => ({h:n.h, url:n.url, t:n.t, sum:n.sum, syms:E.wireTickers(n.cats, n.h, n.sum), src:s.n, w:s.k, kind:s.kind}));
+}
+async function wirePoll(s){
+  const st = wireSt[s.k] || (wireSt[s.k] = {lags:[], errs:0});
+  st.inFlight = true; const t0 = Date.now();
+  try{
+    let body = "", status = 200, url = s.url;
+    if (s.k === "secco"){
+      const mine = [...wireMine()].filter(x => !isFund(x)); await secMap();
+      const withCik = mine.map(x => ({x, c:cikOf(x)})).filter(o => o.c); if (!withCik.length){ st.ok = true; st.at = Date.now(); st.note = "none of your tickers file with the SEC"; return; }
+      st.rr = ((st.rr || 0) + 1) % withCik.length; const o = withCik[st.rr]; s = Object.assign({}, s, {sym:o.x});
+      url = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${o.c}&type=&dateb=&owner=include&count=10&output=atom`;
+      const sub = st.sub || (st.sub = {}), cs = sub[o.x] || (sub[o.x] = {});
+      const r = await wireGet(url, cs, true); status = r.status; body = r.body; st.ms = r.ms;
+      if (status === 200){ cs.etag = r.etag; cs.mod = r.modified; } st.primedFor = st.primedFor || {};
+    } else if (s.nat){
+      if (s.k === "sec") await secMap();
+      const r = await wireGet(url, st, /sec\.gov$/.test(new URL(url).hostname)); status = r.status; body = r.body; st.ms = r.ms;
+      if (status === 200){ st.etag = r.etag; st.mod = r.modified; }
+    } else if (s.k === "alp"){
+      const r = await fetchT("https://data.alpaca.markets/v1beta1/news?limit=50&sort=desc&include_content=false", {headers:{"APCA-API-KEY-ID":settings.alpKey, "APCA-API-SECRET-KEY":settings.alpSec}, cache:"no-store"}, 10000);
+      status = r.status; body = r.ok ? await r.text() : ""; st.ms = Date.now() - t0;
+    } else if (s.k === "fh"){
+      const j = await limited(() => api("news?category=general"), true); body = JSON.stringify(j); st.ms = Date.now() - t0;
+    }
+    if (status === 304){ st.ok = true; st.err = ""; st.errs = 0; st.at = Date.now(); return; }
+    if (status !== 200) throw new Error(status === 403 ? "the site refused (403)" : status === 429 ? "too many requests (429)" : "HTTP " + status);
+    const lines = wireLines(s, body), now = Date.now();
+    const primed = s.k === "secco" ? !!st.primedFor[s.sym] : st.primed;
+    lines.forEach(n => { n.seen = now; });
+    const r = E.wireMerge(wire.items, lines, now);
+    wire.items = r.list; st.got = lines.length;
+    if (r.added.length){ wireV++; wireSave(); }
+    if (primed){
+      r.added.forEach(n => { if (n.t > 0 && now - n.t < 6*3600e3) st.lags = st.lags.concat((now - n.t) / 1000).slice(-30); });
+      wirePing(r.added);
+    } else r.added.forEach(n => { n.old = 1; });   // the first read of a source is backlog, not breaking
+    if (s.k === "secco") st.primedFor[s.sym] = 1; else st.primed = true;
+    st.ok = true; st.err = ""; st.errs = 0; st.note = ""; st.at = now; st.newest = lines.reduce((a, n) => Math.max(a, n.t || 0), st.newest || 0);
+    if (r.added.length) safe("news", renderNews);
+  }catch(e){
+    const msg = String(e && e.message || e);
+    if (NATIVE && s.nat && /not (found|allowed)|unknown command|shell_fetch/i.test(msg)){ wireNative = false; mwLog("info", "this desktop app has no feed reader (needs 1.3+)"); safe("news", renderNews); return; }
+    st.ok = false; st.err = msg.slice(0, 120); st.errs = (st.errs || 0) + 1; st.at = Date.now();
+    if (st.errs === 3) mwLog("warn", `news feed ${s.n} failing: ${st.err}`);
+  } finally {
+    st.inFlight = false;
+    const base = s.k === "secco" ? WSRC.secco.every : s.every;
+    st.next = Date.now() + base * 1000 * Math.min(32, 2 ** Math.max(0, (st.errs || 0) - 1)) + Math.random() * 1500;
+  }
+}
+/* a breaking line about a ticker you hold or watch: Windows pop-up (and a soft beep), once per ticker per 5 minutes */
+function wirePing(added){
+  if (settings.newsPing === "off" || pausedNow()) return;
+  const own = new Set(cfg.holdings.map(h => (h.sym||"").toUpperCase())), mine = settings.newsPing === "hold" ? own : wireMine(), now = Date.now();
+  const hits = added.filter(n => now - n.t < 15*60e3 && n.syms.some(x => mine.has(x) && !snoozed(x)));
+  if (!hits.length) return;
+  hits.forEach(n => n.hot = 1);
+  const fresh = hits.filter(n => { const x = n.syms.find(y => mine.has(y)); if (WIRE_PINGED[x] && now - WIRE_PINGED[x] < 5*60e3) return false; WIRE_PINGED[x] = now; return true; });
+  if (!fresh.length) return;
+  const n = fresh[0], x = n.syms.find(y => mine.has(y));
+  showToast(`${x} news · ${WSRC[n.w] ? WSRC[n.w].b : n.src}`, n.h + (fresh.length > 1 ? `\n+${fresh.length - 1} more in MW` : ""), "wire:" + n.id, false);
+  if (settings.sound === "on" && settings.newsBeep !== false) beep(1);
+  mwLog("info", `breaking news ping: ${x} (${n.w})`);
+}
+function wireTick(){
+  const now = Date.now(); let busy = WIRE_SRC.filter(s => (wireSt[s.k] || {}).inFlight).length;
+  for (const s of WIRE_SRC){
+    if (busy >= 3) break;
+    if (!wireOn(s.k) || !wireAvail(s)) continue;
+    const st = wireSt[s.k] || (wireSt[s.k] = {lags:[], errs:0});
+    if (st.inFlight || (st.next && now < st.next)) continue;
+    if (!NATIVE && document.hidden && s.k === "fh") continue;   // a browser tab out of sight skips the slow one
+    busy++; wirePoll(s);
+  }
+}
+setTimeout(() => { wireTick(); setInterval(wireTick, 2000); }, 2500);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) wireTick(); });
+const wireItems = () => wire.items.filter(n => n && n.h && Array.isArray(n.syms));
+/* the source's health in one short line */
+function wireHealth(s){
+  const st = wireSt[s.k];
+  if (!wireOn(s.k)) return {c:"off", t:"off"};
+  if (!wireAvail(s)) return {c:"off", t: s.nat ? (NATIVE ? "needs desktop app 1.3" : "desktop app only") : s.k === "alp" ? "needs Alpaca keys" : "needs Finnhub key"};
+  if (!st || !st.at) return {c:"wait", t:"starting…"};
+  if (!st.ok) return {c:"bad", t:`⚠ ${st.err}${st.errs > 1 ? " (" + st.errs + "×)" : ""}`};
+  const lag = E.wireLag(st.lags);
+  return {c:"ok", t:`checked ${E.agoShort(st.at, Date.now()) === "now" ? Math.max(0, Math.round((Date.now() - st.at) / 1000)) + "s" : E.agoShort(st.at, Date.now())} ago${lag != null ? " · stories arrive ~" + E.lagShort(lag) + " after release" : ""}${st.note ? " · " + st.note : ""}`};
+}
+function liveList(f){
+  const mine = wireMine();
+  const fin = (news.items || []).filter(n => n && Array.isArray(n.syms)).map(n => Object.assign({}, n, {w:n.w || "fhc", kind:"news", old:1}));
+  let L = E.wireMerge(wireItems(), fin, Date.now(), {max:400, maxAgeMs:2*864e5}).list;
+  if (f === "mine") L = L.filter(n => n.syms.some(x => mine.has(x)));
+  else if (f === "filing") L = L.filter(n => n.kind === "filing");
+  else if (f === "macro") L = L.filter(n => n.kind === "macro");
+  else if (f === "wire") L = L.filter(n => n.kind === "wire");
+  return L;
+}
+/* Live tab: a filter row (Everything, Your tickers, Wires, Filings, Macro) and the sources' health underneath */
+function liveBar(){
+  const F = [["all","Everything"],["mine","Your tickers"],["wire","Wires"],["filing","Filings"],["macro","Fed & data"]], f = F.some(x => x[0] === settings.liveF) ? settings.liveF : "all";
+  return `<div class="nw-lf" role="group" aria-label="Filter the live feed">${F.map(([k, n]) => `<button data-livef="${k}" class="${k === f ? "on" : ""}" aria-pressed="${k === f}">${n}</button>`).join("")}</div>` + wireCallout();
+}
+function wireCallout(){
+  return (NATIVE && wireNative === false ? `<div class="callout nw-up"><b>Update the desktop app for press wires and SEC filings</b>MW app 1.3 reads GlobeNewswire, PR Newswire, Business Wire, SEC EDGAR and the Fed directly, within seconds of release. Download it from the update banner or ⋯ → About.</div>`
+      : !NATIVE ? `<div class="callout nw-up"><b>Press wires and SEC filings stream in the MW desktop app</b>Browsers can't read those sites directly (they block other pages). Here you get Alpaca and Finnhub news.</div>` : "");
+}
+function liveFoot(){
+  const S = WIRE_SRC.filter(s => wireOn(s.k) && wireAvail(s));
+  if (!S.length) return "";
+  return `<div class="nw-hl" title="Feed health. Open Settings → News for details.">${S.map(s => { const h = wireHealth(s); return `<span class="hl-${h.c}" title="${esc(s.n + ": " + h.t)}">${esc(s.b === "SEC" && s.k === "secco" ? "SEC+" : s.b)}</span>`; }).join("")}<button class="rbtn" data-tab-open="news" title="News sources and alerts">Sources</button></div>`;
+}
 /* open the News section on one ticker (from a row's details, or Ctrl+K) */
 function newsJump(sym){
   settings.compact = false; settings.collapsed.news = false; (settings.hideSec || {}).news = false; settings.newsTab = "all"; nwSym = sym || ""; saveSettings(); renderAll();
@@ -2862,6 +3070,8 @@ function newsClick(e){
   const jump = e.target.closest("[data-nwjump]"); if (jump){ e.stopPropagation(); newsJump(jump.dataset.nwjump); return true; }
   if (!e.target.closest("#nw-sec")) return false;
   const tk = e.target.closest("[data-nwsym]"); if (tk){ nwSym = nwSym === tk.dataset.nwsym ? "" : tk.dataset.nwsym; nwOpen = null; renderNews(); return true; }
+  const lf = e.target.closest("[data-livef]"); if (lf){ settings.liveF = lf.dataset.livef; nwSym = ""; nwOpen = null; saveSettings(); renderNews(); return true; }
+  const so = e.target.closest("[data-tab-open]"); if (so){ openSheet(so.dataset.tabOpen); return true; }
   const tb = e.target.closest("[data-nwtab]"); if (tb){ settings.newsTab = tb.dataset.nwtab; nwSym = ""; nwOpen = null; saveSettings(); renderNews(); const f = document.querySelector(`[data-nwtab="${tb.dataset.nwtab}"]`); if (f) f.focus({preventScroll:true}); return true; }
   const act = e.target.closest("[data-nw]");
   if (act){ const k = act.dataset.nw;
@@ -3202,11 +3412,12 @@ if (NATIVE){
   main.addEventListener("scroll", () => { if (!raf) raf = requestAnimationFrame(upd); }, {passive:true});
 })();
 /* ---------- what's new (6.0): one card, once, after an update that changes how the screen reads ---------- */
-const WHATS_NEW = {ver:"6.1.0", url:"https://github.com/awpmap/market-widget/blob/main/lab/CHANGES-6.1.0.md", title:"New in MW Beta 6.1: the market map", items:[
-  "<b>About 200 funds on one screen.</b> US indexes, inverse and leveraged funds, dividends, every sector, large, mid and small caps, international, global themes like chips and gold miners, bonds, commodities, crypto and strategies.",
-  "<b>Big tiles for big funds.</b> Tile size follows the fund's size (or today's volume), color follows the move. Pick 1D to 1Y, or Since close for pre-market and after hours.",
-  "<b>Click any tile</b> for its price, the change for one share, its time frames, the day's range and how it ranks in its group, with Chart and + Watchlist.",
-  "<b>Open it</b> with Map in Markets, the ⋯ menu, or press M. Make the window wide for the full picture."]};
+const WHATS_NEW = {ver:"6.2.0", url:"https://github.com/awpmap/market-widget/blob/main/lab/CHANGES-6.2.0.md", title:"New in MW Beta 6.2: live news", items:[
+  "<b>A Live tab in News.</b> One tape, newest first: GlobeNewswire, PR Newswire, Business Wire, Newsfile, SEC 8-K filings, the Fed, BLS, Alpaca and Finnhub, the same story merged into one line.",
+  "<b>Straight from the source.</b> The desktop app (1.3) reads the press wires and SEC itself every 15 to 30 seconds, so a release lands seconds after it goes out. Each line shows how late it arrived.",
+  "<b>Your tickers first.</b> A release or filing about something you hold or watch pops up on Windows once, and stays marked at the top. Filters: Your tickers, Wires, Filings, Fed & data.",
+  "<b>Filings in plain words.</b> \"Filed 8-K: results\", \"exec/board change\", insider trades (Form 4) for your own tickers.",
+  "<b>Settings → News</b> shows every source's health and lets you switch any of them off."]};
 function renderWhatsNew(){
   const el = $("whatsnew"); if (!el) return;
   const seen = store.get("seenVer", "");

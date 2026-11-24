@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-shell-fetch"
+description = "Enables the shell_fetch command without any pre-configured scope."
+commands.allow = ["shell_fetch"]
+
+[[permission]]
+identifier = "deny-shell-fetch"
+description = "Denies the shell_fetch command without any pre-configured scope."
+commands.deny = ["shell_fetch"]
