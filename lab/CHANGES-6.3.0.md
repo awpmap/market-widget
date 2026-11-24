@@ -14,3 +14,6 @@ Data stays free: Alpaca IEX (your free key), Alpaca crypto (no key), Finnhub and
 
 ## 6.3.1
 - Fixed an update loop right after a release: "Reload now" could bring back the old version (the browser's 10-minute cache or GitHub's CDN answered first) and ask again. MW now re-downloads every file past the caches before reloading, retries at most three times a minute apart, and otherwise says GitHub is still publishing the update and finishes by itself.
+
+## 6.3.2
+- Section headers update their stuck-at-the-top state straight from the scroll, so it can never stay stale on a busy or background window.

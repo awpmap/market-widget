@@ -3687,9 +3687,10 @@ if (NATIVE){
   const main = $("main"); if (!main) return; let raf = 0;
   const upd = () => { raf = 0; const top = main.getBoundingClientRect().top;
     document.querySelectorAll(".sec").forEach(sec => { const r = sec.getBoundingClientRect(); sec.classList.toggle("stuck", !sec.classList.contains("collapsed") && r.top < top - 1 && r.bottom > top + 34); }); };
-  // one pass per frame while scrolling, plus a last one after the scroll settles (a frame can land mid-scroll on a busy PC)
+  // straight from the scroll event (eight rectangles, cheap): a frame-timed update could be skipped on a busy or
+  // background window and leave the state stale; a last pass after the scroll settles covers smooth scrolling
   let last = 0;
-  main.addEventListener("scroll", () => { if (!raf) raf = requestAnimationFrame(upd); clearTimeout(last); last = setTimeout(upd, 150); }, {passive:true});
+  main.addEventListener("scroll", () => { upd(); clearTimeout(last); last = setTimeout(upd, 150); }, {passive:true});
 })();
 /* ---------- what's new (6.0): one card, once, after an update that changes how the screen reads ---------- */
 const WHATS_NEW = {ver:"6.3.0", url:"https://github.com/awpmap/market-widget/blob/main/lab/CHANGES-6.3.0.md", title:"New in MW Beta 6.3: arrange your screen, three trader sections", items:[
