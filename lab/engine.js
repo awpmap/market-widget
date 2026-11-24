@@ -1166,6 +1166,179 @@ E.lagShort = function (sec) { return sec == null ? "" : sec < 60 ? Math.round(se
    ===== PULSE BEGIN: Market pulse (pulse.js). Only this builder edits between BEGIN and END. =====
    ===================================================================== */
 
+/* ---------- 6.3 board layout: where each section sits on the main screen ----------
+   order: every section key, in the one-column (narrow window) order. A wide window shows n columns (2 or 3); the
+   arrangement for each column count is kept on its own (settings.board = {"2":[[keys],[keys]], "3":[...]}) once you
+   move a section there. Until then, and for a column count you never arranged, it is worked out:
+   - nothing saved: the visible sections take turns across the columns in the one-column order (the 4.7 rule);
+   - another column count was arranged: 3 -> 2 puts the third column under the second; 2 -> 3 deals the reading order;
+   - a section that is in no column yet (new in a later version) goes at the end of the shortest column.
+   A hidden section keeps its place in its column, so turning it back on puts it where it was. */
+const boardOk = (c, n) => Array.isArray(c) && c.length === n && c.every(Array.isArray);
+E.boardDeal = function (order, n, hidden) {
+  hidden = hidden || {}; const cols = Array.from({length: n}, () => []), where = {};
+  order.filter(k => !hidden[k]).forEach((k, i) => { cols[i % n].push(k); where[k] = i % n; });
+  // a hidden section rides right after the visible one before it in the order (top of the first column if none)
+  order.forEach((k, i) => { if (!hidden[k]) return; let p = i - 1; while (p >= 0 && hidden[order[p]]) p--;
+    if (p < 0) { cols[0].unshift(k); where[k] = 0; return; }
+    const c = cols[where[order[p]]]; c.splice(c.indexOf(order[p]) + 1, 0, k); where[k] = where[order[p]]; });
+  return cols;
+};
+/* reading order of a board: across the top row first, then the next (the order keys 1 to 9 follow) */
+E.boardRead = function (cols, hidden) {
+  hidden = hidden || {}; const v = cols.map(c => c.filter(k => !hidden[k])), out = [];
+  for (let r = 0, m = Math.max(0, ...v.map(c => c.length)); r < m; r++) v.forEach(c => { if (c[r]) out.push(c[r]); });
+  return out;
+};
+E.boardCols = function (saved, order, n, hidden) {
+  hidden = hidden || {}; const known = new Set(order);
+  let src = saved && saved[n];
+  if (!boardOk(src, n)) {
+    const other = saved && typeof saved === "object" ? Object.keys(saved).map(Number).filter(m => m !== n && m >= 1 && m <= 4 && boardOk(saved[m], m)).sort((a, b) => Math.abs(a - n) - Math.abs(b - n))[0] : null;
+    if (other > n) { const S = saved[other]; src = S.slice(0, n).map((c, i) => i === n - 1 ? [].concat(...S.slice(n - 1)) : c.slice()); }
+    else if (other) src = E.boardDeal([...new Set(E.boardRead(saved[other], {}).concat(order))], n, hidden);
+    else src = E.boardDeal(order, n, hidden);
+  }
+  const seen = new Set();
+  const cols = src.map(c => c.filter(k => known.has(k) && !seen.has(k) && (seen.add(k), true)));
+  const visN = c => c.filter(x => !hidden[x]).length;
+  order.filter(k => !seen.has(k)).forEach(k => {
+    let best = 0; cols.forEach((c, i) => { if (visN(c) < visN(cols[best])) best = i; });
+    cols[best].push(k); seen.add(k);
+  });
+  return cols;
+};
+/* move key into column `to`, in front of `before` (null: the end of that column) */
+E.boardMove = function (cols, key, to, before) {
+  const out = cols.map(c => c.filter(k => k !== key)); if (!out[to]) return out;
+  const i = before ? out[to].indexOf(before) : -1;
+  if (i < 0) out[to].push(key); else out[to].splice(i, 0, key);
+  return out;
+};
+/* one step with the keyboard: "up", "down" (within the column), "left", "right" (the next column, same height).
+   Hidden sections are stepped over. Returns the new columns, or null when the section can't go that way. */
+E.boardStep = function (cols, key, dir, hidden) {
+  hidden = hidden || {}; const ci = cols.findIndex(c => c.includes(key)); if (ci < 0) return null;
+  const v = cols[ci].filter(k => k === key || !hidden[k]), vi = v.indexOf(key);
+  if (dir === "up") return vi > 0 ? E.boardMove(cols, key, ci, v[vi - 1]) : null;
+  if (dir === "down") return vi < v.length - 1 ? E.boardMove(cols, key, ci, v[vi + 2] || null) : null;
+  const tc = ci + (dir === "left" ? -1 : dir === "right" ? 1 : 0); if (tc === ci || tc < 0 || tc >= cols.length) return null;
+  const tv = cols[tc].filter(k => !hidden[k]);
+  return E.boardMove(cols, key, tc, tv[Math.min(vi, tv.length)] || null);
+};
+/* the keys of `want` to move so a list in the order `have` ends up as `want`: all but the longest run that is already
+   in order. Moving a section takes the focus out of it, so only these are moved. */
+E.minMoves = function (have, want) {
+  const pos = new Map(have.map((k, i) => [k, i])), seq = want.map(k => pos.has(k) ? pos.get(k) : -1);
+  const len = seq.map(() => 1), prev = seq.map(() => -1);
+  for (let i = 0; i < seq.length; i++) for (let j = 0; j < i; j++) if (seq[i] >= 0 && seq[j] >= 0 && seq[i] > seq[j] && len[j] + 1 > len[i]) { len[i] = len[j] + 1; prev[i] = j; }
+  let best = -1; seq.forEach((s, i) => { if (s >= 0 && (best < 0 || len[i] > len[best])) best = i; });
+  const keep = new Set(); for (let i = best; i >= 0; i = prev[i]) keep.add(want[i]);
+  return want.filter(k => !keep.has(k));
+};
+
+/* ---------- 6.3 Market pulse: risk appetite from relative strength, breadth and cross-asset moves ----------
+   An indicator, not advice. Every figure is a public ETF (or bitcoin); no personal data here.
+   Pairs: how fund A did against fund B, as the change in the ratio A/B: today, over 5 sessions (today counts as one,
+   the 5D rule used everywhere in MW) and over 20 sessions. s: the move (in percent) that counts as a full reading for
+   today, 5D and 20D; anything bigger counts the same as the scale. See CHANGES-6.3-pulse.md for the method. */
+E.PULSE = {
+  pairs: [
+    {k:"chips",    a:"SMH",  b:"SPY",  w:1,    s:[1.2, 3, 6],     subj:"chips"},
+    {k:"growth",   a:"QQQ",  b:"SPY",  w:0.75, s:[0.5, 1.5, 3],   subj:"the Nasdaq"},
+    {k:"small",    a:"IWM",  b:"SPY",  w:1,    s:[0.8, 2, 4],     subj:"small caps"},
+    {k:"beta",     a:"SPHB", b:"SPLV", w:1.25, s:[1.2, 3, 6],     subj:"high beta"},
+    {k:"consumer", a:"XLY",  b:"XLP",  w:1,    s:[0.8, 2, 4],     subj:"discretionary"},
+    {k:"credit",   a:"HYG",  b:"IEF",  w:1.25, s:[0.3, 0.8, 1.5], subj:"credit"}
+  ],
+  // dir: +1 when a rise means more appetite for risk, -1 when it means less, 0: shown for context, not scored
+  cross: [
+    {k:"vol",    sym:"VIXY",    w:1,   dir:-1, s:4,   subj:"volatility", up:"rising", dn:"easing"},
+    {k:"dollar", sym:"UUP",     w:0.5, dir:-1, s:0.4, subj:"the dollar", up:"firmer", dn:"softer"},
+    {k:"btc",    sym:"BTC/USD", w:0.5, dir:1,  s:3,   subj:"bitcoin",    up:"rising", dn:"falling"},
+    {k:"rates",  sym:"TLT",     w:0,   dir:0},
+    {k:"gold",   sym:"GLD",     w:0,   dir:0},
+    {k:"oil",    sym:"USO",     w:0,   dir:0}
+  ],
+  sectors: ["XLK","XLC","XLY","XLF","XLV","XLI","XLE","XLB","XLU","XLP","XLRE"],
+  wBreadth: 1, wTrend: 1,
+  parts: [0.5, 0.3, 0.2],   // how today, 5D and 20D mix inside one pair
+  minCover: 0.4             // below this share of the total weight there is no reading
+};
+/* every stock ticker the pulse needs (bitcoin comes from the crypto feed) */
+E.pulseSyms = function () {
+  const P = E.PULSE, s = new Set();
+  P.pairs.forEach(p => { s.add(p.a); s.add(p.b); }); P.cross.forEach(c => { if (!c.sym.includes("/")) s.add(c.sym); }); P.sectors.forEach(x => s.add(x));
+  return [...s];
+};
+const pClamp = x => Math.max(-1, Math.min(1, x));
+const pNum = x => x != null && isFinite(x);
+/* how A did against B, in percent, from their two percent changes */
+E.pulseRel = (pa, pb) => pNum(pa) && pNum(pb) ? ((1 + pa / 100) / (1 + pb / 100) - 1) * 100 : null;
+/* closes: [[date, close], ...] oldest first, completed sessions only. The change over n sessions with today counting
+   as one: the price now (px, or the last close) against closes[len - n]. */
+E.pulseBack = function (closes, px, n) {
+  if (!Array.isArray(closes) || closes.length < n) return null;
+  const ref = closes[closes.length - n][1], now = px > 0 ? px : closes[closes.length - 1][1];
+  return ref > 0 && now > 0 ? (now / ref - 1) * 100 : null;
+};
+/* the ratio A/B on the dates both have, then the ratio now: its 5D and 20D change, and up to 21 points to draw */
+E.pulseTrend = function (ca, cb, pxA, pxB) {
+  if (!Array.isArray(ca) || !Array.isArray(cb)) return {r5:null, r20:null, line:[]};
+  const mb = new Map(cb.map(x => [x[0], x[1]]));
+  const R = ca.filter(x => x[1] > 0 && mb.get(x[0]) > 0).map(x => [x[0], x[1] / mb.get(x[0])]);
+  const now = pxA > 0 && pxB > 0 ? pxA / pxB : null;
+  const line = R.slice(-20).map(x => x[1]); if (now && R.length) line.push(now);
+  return {r5: E.pulseBack(R, now, 5), r20: E.pulseBack(R, now, 20), line};
+};
+/* sectors: [{dp, px, closes}] -> how many are up and down today, and how many trade above their 20-day average
+   (the mean of the last 20 completed closes) */
+E.pulseBreadth = function (rows) {
+  let up = 0, down = 0, n = 0, above = 0, n20 = 0;
+  (rows || []).forEach(r => {
+    if (r && pNum(r.dp)) { n++; if (+r.dp.toFixed(2) > 0) up++; else if (+r.dp.toFixed(2) < 0) down++; }
+    const c = r && r.closes;
+    if (Array.isArray(c) && c.length >= 20) { const px = r.px > 0 ? r.px : c[c.length - 1][1], avg = c.slice(-20).reduce((a, x) => a + x[1], 0) / 20; if (px > 0 && avg > 0) { n20++; if (px > avg) above++; } }
+  });
+  return {up, down, n, above, n20};
+};
+const pJoin = a => a.length <= 1 ? (a[0] || "") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
+/* phrases that share a verb go together: [["chips","leading"],["small caps","leading"],["credit","leading"]] -> "chips, small caps and credit leading" */
+E.pulsePhrase = function (ph) {
+  const g = []; ph.forEach(([s, v]) => { const x = g.find(y => y.v === v); if (x) x.s.push(s); else g.push({v, s:[s]}); });
+  return g.map(x => pJoin(x.s) + " " + x.v).join(", ");
+};
+/* in: {pairs:{k:{today, r5, r20}}, cross:{k:{dp}}, breadth:{up, down, n, above, n20}}
+   out: {score -100..+100 (null when too little is known), label, verdict, cover 0..1, parts:[{k, c -1..1, w, ph}]} */
+E.pulseScore = function (inp) {
+  const P = E.PULSE, parts = []; inp = inp || {};
+  let wAll = 0;
+  P.pairs.forEach(p => {
+    wAll += p.w; const x = (inp.pairs || {})[p.k]; if (!x) return;
+    let s = 0, ww = 0;
+    [x.today, x.r5, x.r20].forEach((y, i) => { if (pNum(y)) { s += P.parts[i] * pClamp(y / p.s[i]); ww += P.parts[i]; } });
+    // a pair with only part of its readings (no history yet) counts for less
+    if (ww > 0) { const c = s / ww; parts.push({k:p.k, c, w:p.w * Math.min(1, ww / 0.5), ph:[p.subj, c >= 0 ? "leading" : "lagging"]}); }
+  });
+  P.cross.forEach(x => {
+    if (!x.w) return; wAll += x.w; const y = (inp.cross || {})[x.k];
+    if (y && pNum(y.dp)) parts.push({k:x.k, c:pClamp(x.dir * y.dp / x.s), w:x.w, ph:[x.subj, y.dp >= 0 ? x.up : x.dn]});
+  });
+  const b = inp.breadth || {}; wAll += P.wBreadth + P.wTrend;
+  if (b.n >= 6) { const c = (b.up - b.down) / b.n; parts.push({k:"breadth", c, w:P.wBreadth, ph:["most sectors", c >= 0 ? "up" : "down"]}); }
+  if (b.n20 >= 6) { const c = (2 * b.above - b.n20) / b.n20; parts.push({k:"trend", c, w:P.wTrend, ph:["most sectors", c >= 0 ? "above their 20-day average" : "below their 20-day average"]}); }
+  const wHave = parts.reduce((a, x) => a + x.w, 0), cover = wAll ? wHave / wAll : 0;
+  if (!parts.length || cover < P.minCover) return {score:null, label:"Not enough data", verdict:"", cover, parts};
+  const score = Math.round(100 * parts.reduce((a, x) => a + x.w * x.c, 0) / wHave) || 0;   // || 0: never "-0"
+  const label = score >= 40 ? "Strong risk-on" : score >= 15 ? "Risk-on" : score > -15 ? "Mixed" : score > -40 ? "Risk-off" : "Strong risk-off";
+  const pick = sign => { const seen = new Set(); return parts.filter(x => Math.sign(x.c) === sign && Math.abs(x.c) >= 0.15).sort((a, b) => Math.abs(b.w * b.c) - Math.abs(a.w * a.c))
+    .filter(x => !seen.has(x.ph[0]) && (seen.add(x.ph[0]), true)); };
+  let why;
+  if (label === "Mixed") { const a = pick(1)[0], d = pick(-1)[0]; why = a && d ? E.pulsePhrase([a.ph]) + ", but " + E.pulsePhrase([d.ph]) : a || d ? E.pulsePhrase([(a || d).ph]) : "no clear lead either way"; }
+  else { const top = pick(Math.sign(score)).slice(0, 3); why = top.length ? E.pulsePhrase(top.map(x => x.ph)) : "a broad, mild tilt"; }
+  return {score, label, verdict: label + ": " + why, cover, parts};
+};
+
 /* ===== PULSE END ===== */
 
 /* (spacer so the three regions merge cleanly) */

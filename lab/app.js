@@ -225,32 +225,57 @@ function registerSection(d){
   safe("layout", applyLayout); safe(d.key, () => d.render && d.render());
   return {el, body: el.querySelector(".sec-b"), sum: el.querySelector(".sec-sum")};
 }
-const secLive = k => !settings.compact && !settings.collapsed[k] && !(settings.hideSec||{})[k] && document.visibilityState !== "hidden" && DEFAULT_LAYOUT.includes(k);
+let arranging = false;   // 6.3: Arrange mode (every section down to its header, for moving them around); never saved
+const secLive = k => !settings.compact && !arranging && !settings.collapsed[k] && !(settings.hideSec||{})[k] && document.visibilityState !== "hidden" && DEFAULT_LAYOUT.includes(k);
 /* a section this layout was saved without (News, new in 5.0) goes first, where the headline strip used to be */
 function layoutOrder(){ const L = (Array.isArray(settings.layout) ? settings.layout : []).filter(k => DEFAULT_LAYOUT.includes(k)); DEFAULT_LAYOUT.forEach(k => { if (!L.includes(k)) k === "news" ? L.unshift(k) : L.push(k); }); return L; }
+/* ---------- 6.3: you place the sections yourself ----------
+   A narrow window (one column) follows settings.layout. A wide window (900 px and up: 2 columns, 3 from 1320 px) has
+   real columns: settings.board[n] says which section sits in which column, once you move one there (E.boardCols has
+   the rules for a board you never arranged, new sections and hidden ones). */
+const secHidden = () => settings.hideSec || {};
+const secEl = k => document.querySelector(`#main .sec[data-sec="${k}"]`);
+function wideCols(){ const w = document.body.clientWidth; return settings.wide !== false && !settings.compact && w >= 900 ? (w >= 1320 ? 3 : 2) : 0; }
+function boardOf(n){ return E.boardCols(settings.board, layoutOrder(), n, secHidden()); }
+/* the sections in the order you see them (keys 1 to 9 follow it): across the columns, top row first */
+function secOrder(){ const n = wideCols(), H = secHidden(); return n ? E.boardRead(boardOf(n), H) : layoutOrder().filter(k => !H[k]); }
+/* put these sections into parent in this order, in front of ref, moving as few as possible (a moved section loses the focus) */
+function secPlace(parent, keys, ref){
+  const els = keys.map(secEl), have = [...parent.children].filter(el => el.dataset && keys.includes(el.dataset.sec)).map(el => el.dataset.sec);
+  const move = new Set(E.minMoves(have, keys));
+  for (let i = keys.length - 1, next = ref || null; i >= 0; i--){ const el = els[i]; if (move.has(keys[i]) || el.parentElement !== parent) parent.insertBefore(el, next); next = el; }
+}
+/* the ⠿ grip on every section header: drag it to move the section (the header itself works with a mouse or pen too) */
+function secGrips(){
+  document.querySelectorAll("#main .sec > .sec-h").forEach(h => {
+    if (h.querySelector(".sec-grip")) return;
+    const g = document.createElement("span"); g.className = "sec-grip"; g.setAttribute("aria-hidden", "true"); g.textContent = "⠿";
+    g.dataset.tip = "Drag to move this section. With the keyboard: Alt + ↑ ↓ on its header, Alt + ← → between columns.";
+    h.prepend(g); h.setAttribute("aria-keyshortcuts", "Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight");
+  });
+}
 function applyLayout(){
   const main = $("main"), anchor = $("err"); if (!main || !anchor) return;
-  // on a wide window (900 px and up) the sections flow into side-by-side columns (Monitor layout)
-  const wide = settings.wide !== false && !settings.compact && document.body.clientWidth >= 900;
-  document.body.classList.toggle("wide", wide);
-  const want = layoutOrder().filter(k => document.querySelector(`.sec[data-sec="${k}"]`)), sec = k => document.querySelector(`.sec[data-sec="${k}"]`);
-  want.forEach(k => sec(k).classList.toggle("hide", !!(settings.hideSec||{})[k]));
-  if (wide){
-    // visible sections take turns across 2 columns (3 from 1320 px), in your section order
-    const n = document.body.clientWidth >= 1320 ? 3 : 2, vis = want.filter(k => !(settings.hideSec||{})[k]), sig = n + ":" + vis.join();
+  const n = wideCols(), H = secHidden();
+  document.body.classList.toggle("wide", !!n);
+  const all = layoutOrder().filter(k => secEl(k));
+  all.forEach(k => secEl(k).classList.toggle("hide", !!H[k]));
+  secGrips();
+  if (n){
+    // real columns: each section stays in the column you put it in
+    const B = boardOf(n).map(c => c.filter(k => secEl(k)));
     let cols = $("cols");
-    if (cols && cols.dataset.sig === sig) return;   // already laid out this way: leave it (moving a section steals the focus)
     if (!cols){ cols = document.createElement("div"); cols.id = "cols"; main.insertBefore(cols, anchor); }
-    const boxes = Array.from({length:n}, () => { const c = document.createElement("div"); c.className = "col"; return c; });
-    vis.forEach((k, i) => boxes[i % n].appendChild(sec(k)));
-    want.filter(k => !vis.includes(k)).forEach(k => boxes[n - 1].appendChild(sec(k)));
-    cols.replaceChildren(...boxes); cols.dataset.sig = sig; cols.style.setProperty("--n", n);
+    while (cols.children.length < n){ const c = document.createElement("div"); c.className = "col"; cols.appendChild(c); }
+    B.forEach((keys, i) => secPlace(cols.children[i], keys, null));
+    while (cols.children.length > n) cols.lastElementChild.remove();   // its sections were moved above
+    let nv = 0;
+    B.forEach((keys, i) => { const empty = !keys.some(k => !H[k]); cols.children[i].classList.toggle("empty", empty); cols.children[i].dataset.col = i; if (!empty) nv++; });
+    cols.style.setProperty("--n", n); cols.style.setProperty("--nv", Math.max(1, nv));
     return;
   }
-  // move sections only when the order changed: moving a section takes the focus away from a box inside it
-  const have = [...main.querySelectorAll(":scope > .sec[data-sec]")].map(el => el.dataset.sec);
-  const moved = want.join() !== have.filter(k => want.includes(k)).join() || want.some(k => sec(k).parentElement !== main);
-  if (moved) want.forEach(k => main.insertBefore(sec(k), anchor));
+  // one column: move sections only when the order changed (moving a section takes the focus away from a box inside it)
+  secPlace(main, all, anchor);
   if ($("cols")) $("cols").remove();
 }
 if (!PERIODS.some(p=>p.k===settings.period)) settings.period = settings.period==="MTD" ? "1M" : "1D";
@@ -1389,7 +1414,7 @@ function tapeAdd(src, what, data){
 /* what comes over besides holdings and watchlist: every key, alert setting and preference the regular MW has.
    Left behind on purpose: the recording switch and what only this screen remembers (the open tile, the last tab). */
 const LIVE_SETTINGS = ["key","tdKey","alpKey","alpSec","fast","refresh","overnight","ntfy","ntfyFull","hcUrl","sound","allOff","pauseUntil","snooze",
-  "theme","cvd","compact","layout","hideSec","collapsed","grpCollapsed","secHide","erHide","heatOrder","splash","map",
+  "theme","cvd","compact","layout","board","hideSec","collapsed","grpCollapsed","secHide","erHide","heatOrder","splash","map",
   "period","sort","bench","tz","newsTab","newsAll","liveF","newsPing","newsBeep","wireOff","secUa","chRange","chOv","fundEst","showZeroCash","sentryDsn"];
 function liveSetup(){
   if (!BETA) return null;
@@ -2189,6 +2214,188 @@ document.addEventListener("pointerdown", e => {
   });
 });
 
+/* ---------- 6.3: move sections on the main screen ----------
+   boardDrag: press, move 5 px, and a slim copy of the header follows the pointer while a blue line shows where the
+   section will land (the page itself doesn't shift under you). It scrolls near the top and bottom edges, Esc
+   cancels, and the release is never also a click (so a drag never collapses the section). Mouse, pen and touch
+   (on touch, from the ⠿ grip, so swiping the page still scrolls it). Settings → Layout uses it too.
+   o: {item, label, scroller, axis:"x"|"y" (how the container under the pointer is picked), containers() -> [el],
+   items(container) -> [el] (without the dragged one), keyOf(el), where({ci, before}) -> text, onDrop({ci, before})} */
+function boardDrag(e, o){
+  const id = e.pointerId, x0 = e.clientX, y0 = e.clientY, sc = o.scroller;
+  let started = false, raf = 0, X = x0, Y = y0, tgt = null, ghost = null, line = null, off = {x:0, y:0}, done = false, left0 = 0, one = false;
+  const start = () => {
+    started = true; dragSym = dragSym || "__section";   // live redraws wait until the drop
+    const r = o.item.getBoundingClientRect(), w = r.width;   // the copy is as wide as the header and stays where you grabbed it
+    off = {x:Math.max(8, Math.min(x0 - r.left, w - 8)), y:Math.max(6, Math.min(y0 - r.top, 30))}; left0 = r.left;
+    one = o.containers().length < 2;   // one column: the copy only moves up and down
+    ghost = document.createElement("div"); ghost.className = "bd-ghost"; ghost.style.width = w + "px";
+    ghost.innerHTML = `<span class="sec-grip">⠿</span><b></b><small></small>`; ghost.querySelector("b").textContent = o.label;
+    line = document.createElement("div"); line.className = "bd-line";
+    document.body.append(ghost, line);
+    (o.lift || o.item).classList.add("bd-lift"); document.body.classList.add("sorting", "secdrag");
+    try{ getSelection().removeAllRanges(); }catch(_){}
+    sc.style.scrollBehavior = "auto";
+    ghost.style.transform = `translate(${Math.round(one ? left0 : X - off.x)}px,${Math.round(Y - off.y)}px)`;
+  };
+  const find = () => {
+    const C = o.containers(); if (!C.length){ tgt = null; return; }
+    let ci = 0, bd = Infinity;
+    C.forEach((el, i) => { const r = el.getBoundingClientRect(), v = o.axis === "y" ? Y : X, lo = o.axis === "y" ? r.top : r.left, hi = o.axis === "y" ? r.bottom : r.right;
+      const d = v < lo ? lo - v : v > hi ? v - hi : 0; if (d < bd){ bd = d; ci = i; } });
+    const S = sc.getBoundingClientRect(), its = o.items(C[ci]), cr = C[ci].getBoundingClientRect();
+    let before = null, y;
+    for (let i = 0; i < its.length; i++){
+      const r = its[i].getBoundingClientRect(), top = Math.max(r.top, S.top), bot = Math.min(r.bottom, S.bottom);
+      const mid = bot > top ? (top + bot) / 2 : r.top + r.height / 2;   // the middle of the part you can see
+      if (Y < mid){ before = its[i]; const p = its[i - 1]; y = p ? (p.getBoundingClientRect().bottom + r.top) / 2 : r.top - 5; break; }
+    }
+    if (!before) y = its.length ? its[its.length - 1].getBoundingClientRect().bottom + 5 : cr.top + 14;
+    y = Math.max(S.top + 3, Math.min(S.bottom - 3, y));
+    tgt = {ci, before: before ? o.keyOf(before) : null};
+    const lr = its[0] ? its[0].getBoundingClientRect() : cr;   // as wide as the sections in that column
+    line.style.transform = `translate(${Math.round(lr.left)}px,${Math.round(y - 1.5)}px)`; line.style.width = Math.round(lr.width) + "px";
+    ghost.querySelector("small").textContent = o.where(tgt);
+  };
+  const frame = () => {
+    raf = 0; if (!started || done) return;
+    ghost.style.transform = `translate(${Math.round(one ? left0 : X - off.x)}px,${Math.round(Y - off.y)}px)`;
+    // near the top or bottom edge (or past it), scroll: faster the closer you get
+    const S = sc.getBoundingClientRect(), edge = 56, dy = Y < S.top + edge ? -Math.ceil((S.top + edge - Y) / 5) : Y > S.bottom - edge ? Math.ceil((Y - S.bottom + edge) / 5) : 0;
+    if (dy){ const before = sc.scrollTop; sc.scrollTop += Math.max(-24, Math.min(24, dy)); if (sc.scrollTop !== before) raf = requestAnimationFrame(frame); }
+    find();
+  };
+  const move = ev => { if (ev.pointerId !== id) return; X = ev.clientX; Y = ev.clientY;
+    if (!started && Math.hypot(X - x0, Y - y0) < 5) return;
+    if (!started) start();
+    ev.preventDefault();
+    if (!raf) raf = requestAnimationFrame(frame); };
+  const end = (drop) => {
+    if (done) return; done = true;
+    window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true); window.removeEventListener("pointercancel", cancel, true); window.removeEventListener("keydown", key, true);
+    cancelAnimationFrame(raf);
+    if (!started) return;
+    if (dragSym === "__section") dragSym = null;
+    ghost.remove(); line.remove(); (o.lift || o.item).classList.remove("bd-lift"); document.body.classList.remove("sorting", "secdrag"); sc.style.scrollBehavior = "";
+    window.__noClickUntil = Date.now() + 350;   // the release isn't also a click that collapses the section
+    if (drop && tgt) o.onDrop(tgt);
+    if (renderOwed) setTimeout(liveRender, 60);
+  };
+  const up = ev => { if (ev.pointerId === id) end(true); };
+  const cancel = ev => { if (ev.pointerId === id) end(false); };
+  const key = ev => { if (ev.key === "Escape" && started){ ev.preventDefault(); ev.stopPropagation(); end(false); toast("Move cancelled"); } };
+  window.addEventListener("pointermove", move, true); window.addEventListener("pointerup", up, true); window.addEventListener("pointercancel", cancel, true); window.addEventListener("keydown", key, true);
+}
+/* slide the sections from where they were to where they are now (skipped when you ask for less motion) */
+function secFlip(fn){
+  const els = [...document.querySelectorAll("#main .sec[data-sec]:not(.hide)")], was = new Map(els.map(el => [el, el.getBoundingClientRect()]));
+  fn();
+  if (!els[0] || !els[0].animate || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  els.forEach(el => { const a = was.get(el), b = el.getBoundingClientRect(), dx = a.left - b.left, dy = a.top - b.top;
+    if ((Math.abs(dx) >= 1 || Math.abs(dy) >= 1) && Math.abs(dy) < innerHeight * 1.5) el.animate([{transform:`translate(${dx}px,${dy}px)`}, {transform:"none"}], {duration:220, easing:"cubic-bezier(.2,.7,.2,1)"}); });
+}
+const COL_NAME = (i, n) => n === 2 ? ["the left column", "the right column"][i] : ["the left column", "the middle column", "the right column"][i] || "column " + (i + 1);
+const ordinal = i => ["1st","2nd","3rd"][i] || (i + 1) + "th";
+/* where a section is now, in words (for the screen reader and the toast) */
+function secWhere(key){
+  const n = wideCols(), H = secHidden();
+  if (n){ const B = boardOf(n), ci = B.findIndex(c => c.includes(key)), i = B[ci].filter(k => !H[k]).indexOf(key); return `${COL_NAME(ci, n)}, ${ordinal(i)} from the top`; }
+  const L = layoutOrder().filter(k => !H[k]); return `${ordinal(L.indexOf(key))} of ${L.length}`;
+}
+function secSay(msg){ let el = $("secLive"); if (!el){ el = document.createElement("div"); el.id = "secLive"; el.className = "sr-only"; el.setAttribute("aria-live", "polite"); document.body.appendChild(el); } el.textContent = ""; setTimeout(() => { el.textContent = msg; }, 30); }
+/* a section moved: save it for this window's shape, put it there, keep Settings → Layout in step */
+function secCommit(mutate){
+  secFlip(() => { mutate(); saveSettings(); safe("layout", applyLayout); });
+  if (!$("sheet").classList.contains("hide") && curTab === "layout") showTab("layout");
+  safe("arrange bar", arrBar);
+}
+function secMoveTo(key, ci, before){
+  const n = wideCols();
+  const was = JSON.stringify(n ? boardOf(n) : layoutOrder());
+  secCommit(() => { if (n) settings.board = Object.assign({}, settings.board, {[n]: E.boardMove(boardOf(n), key, ci, before)});
+    else settings.layout = E.boardMove([layoutOrder()], key, 0, before)[0]; });
+  if (JSON.stringify(n ? boardOf(n) : layoutOrder()) !== was){ secSay(SEC_NAMES[key] + " moved to " + secWhere(key)); mwLog("info", "layout: moved " + key); }
+}
+/* Alt + arrow keys on a focused section header */
+function secKeyMove(key, dir){
+  const n = wideCols(), H = secHidden();
+  if (!n && (dir === "left" || dir === "right")){ secSay("One column in this window: use Alt + up or down"); return; }
+  const next = n ? E.boardStep(boardOf(n), key, dir, H) : (E.boardStep([layoutOrder()], key, dir, H) || [null])[0];
+  if (!next){ secSay(SEC_NAMES[key] + " is already " + (dir === "up" ? "at the top" : dir === "down" ? "at the bottom" : "in " + COL_NAME(dir === "left" ? 0 : n - 1, n))); return; }
+  secCommit(() => { if (n) settings.board = Object.assign({}, settings.board, {[n]: next}); else settings.layout = next; });
+  const h = secEl(key) && secEl(key).querySelector(".sec-h");
+  if (h){ h.focus({preventScroll:true}); h.scrollIntoView({block:"nearest"}); }
+  const w = secWhere(key); secSay(SEC_NAMES[key] + ": " + w); toast(SEC_NAMES[key] + " · " + w);
+}
+document.addEventListener("pointerdown", e => {
+  const h = e.target.closest("#main .sec > .sec-h"); if (!h || (e.pointerType === "mouse" && e.button !== 0)) return;
+  const grip = e.target.closest(".sec-grip");
+  if (e.pointerType === "touch" && !grip) return;   // a finger on the header scrolls the page; the grip moves the section
+  if (!grip && e.target.closest("a,input,select,textarea,[data-act],[data-open],[data-nwtab]")) return;
+  if (grip) e.preventDefault();
+  const sec = h.parentElement, key = sec.dataset.sec;
+  boardDrag(e, {item:h, lift:sec, label:SEC_NAMES[key], scroller:$("main"), axis:"x",
+    containers:() => wideCols() ? [...document.querySelectorAll("#cols > .col")] : [$("main")],
+    items:c => [...c.querySelectorAll(":scope > .sec[data-sec]:not(.hide)")].filter(x => x !== sec),
+    keyOf:el => el.dataset.sec,
+    where:t => { const n = wideCols(); return t.before ? "Above " + SEC_NAMES[t.before] : n ? "Bottom of " + COL_NAME(t.ci, n) : "At the bottom"; },
+    onDrop:t => { secMoveTo(key, t.ci, t.before); const f = sec.querySelector(".sec-h"); if (f) f.focus({preventScroll:true}); }});
+});
+/* ---------- Arrange mode: every section down to its header, a bar with presets and Done ---------- */
+const LAYOUT_PRESETS = [
+  {k:"trading", name:"Trading day", tip:"For the session: In-play radar, Market pulse, your watchlist and the news first; your portfolio further down.",
+    order:["radar","pulse","watch","news","plan","markets","log","portfolio"]},
+  {k:"long", name:"Long-term", tip:"Your portfolio first, then Markets, Market pulse and the news; the trading sections further down.",
+    order:["portfolio","markets","pulse","news","watch","log","plan","radar"]}
+];
+let lyUndo = null;   // the arrangement before a preset or a reset, for Undo
+function lySnap(){ return {layout: settings.layout ? settings.layout.slice() : null, board: settings.board ? JSON.parse(JSON.stringify(settings.board)) : null, hideSec: Object.assign({}, settings.hideSec)}; }
+function lyApply(kind){
+  lyUndo = lySnap();
+  secCommit(() => {
+    const p = LAYOUT_PRESETS.find(x => x.k === kind);
+    settings.board = null;
+    if (p){ const L = p.order.filter(k => DEFAULT_LAYOUT.includes(k)); DEFAULT_LAYOUT.forEach(k => { if (!L.includes(k)) L.push(k); }); settings.layout = L; }
+    else { settings.layout = DEFAULT_LAYOUT.slice(); settings.hideSec = {}; }
+  });
+  const msg = kind === "default" ? "Layout reset to default" : "Layout: " + LAYOUT_PRESETS.find(x => x.k === kind).name;
+  toast(msg); secSay(msg);
+}
+function lyUndoNow(){ if (!lyUndo) return; const u = lyUndo; lyUndo = null; secCommit(() => Object.assign(settings, u)); toast("Layout put back"); }
+function arrBar(){
+  const bar = $("arrBar"); if (!bar) return;
+  const H = secHidden(), hid = layoutOrder().filter(k => H[k] && secEl(k)), n = wideCols();
+  bar.innerHTML = `<div class="arr-t"><b>Arrange sections</b><span>Drag a section by its header${matchMedia("(hover:none)").matches ? " (hold the ⠿ grip)" : ""}, or focus a header and press Alt + ↑ ↓${n ? " (← → between columns)" : ""}.${n ? ` This ${n}-column board is kept for wide windows; a narrow window has its own order.` : ""}</span></div>
+    <div class="arr-a"><span class="arr-l">Start from</span>${LAYOUT_PRESETS.map(p => `<button class="btn" data-arr="${p.k}" data-tip="${esc(p.tip)}">${esc(p.name)}</button>`).join("")}<button class="btn" data-arr="default" data-tip="News, Portfolio, Markets, Watchlist, Today's alerts, then the newer sections; every section shown">Default</button>${lyUndo ? `<button class="btn" data-arr="undo">Undo</button>` : ""}
+    <button class="btn primary" data-arr="done">Done</button></div>
+    ${hid.length ? `<div class="arr-h"><span class="arr-l">Hidden</span>${hid.map(k => `<button class="chip" data-arrshow="${k}" data-tip="Show ${esc(SEC_NAMES[k])} again">+ ${esc(SEC_NAMES[k])}</button>`).join("")}</div>` : ""}`;
+}
+function setArrange(on){
+  on = !!on; if (on === arranging) return;
+  arranging = on; closeMenu();
+  if (on){ setArrange.wasCompact = !!settings.compact; if (settings.compact){ settings.compact = false; saveSettings(); }
+    const bar = document.createElement("div"); bar.id = "arrBar"; bar.setAttribute("role", "region"); bar.setAttribute("aria-label", "Arrange sections");
+    $("main").prepend(bar); arrBar();
+    bar.onclick = e => { const b = e.target.closest("[data-arr]"), s = e.target.closest("[data-arrshow]");
+      if (s){ settings.hideSec = Object.assign({}, settings.hideSec, {[s.dataset.arrshow]: false}); secCommit(() => {}); return; }
+      if (!b) return; const a = b.dataset.arr;
+      if (a === "done") setArrange(false); else if (a === "undo") lyUndoNow(); else lyApply(a); arrBar(); };
+  } else {
+    if ($("arrBar")) $("arrBar").remove();
+    if (setArrange.wasCompact){ settings.compact = true; saveSettings(); }
+  }
+  document.body.classList.toggle("arranging", on);
+  $("mArrLbl") && ($("mArrLbl").textContent = on ? "Done arranging" : "Arrange sections");
+  renderAll();
+  if (on){ $("main").scrollTo({top:0}); const f = document.querySelector("#main .sec:not(.hide) > .sec-h"); if (f) f.focus({preventScroll:true}); secSay("Arrange sections. Drag a section by its header, or press Alt with the arrow keys on a header. Press Escape when done."); }
+  else secSay("Done arranging");
+}
+/* the ⋯ menu gets "Arrange sections", right under Compact view */
+(function(){ const c = $("bCompact"); if (!c) return; const b = document.createElement("button");
+  b.setAttribute("role", "menuitem"); b.id = "bArrange"; b.dataset.tip = "Move the sections around: every section shrinks to its header so you can drag it, with presets for a trading day or long-term view";
+  b.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2.5" width="5" height="5" rx="1"/><rect x="9" y="2.5" width="5" height="11" rx="1"/><rect x="2" y="9.5" width="5" height="4" rx="1"/></svg><span id="mArrLbl">Arrange sections</span>`;
+  b.onclick = () => setArrange(!arranging); c.after(b); })();
+
 document.addEventListener("click", e=>{
   if (Date.now() < (window.__noClickUntil || 0)){ e.stopPropagation(); return; }
   if (newsClick(e)) return;
@@ -2229,6 +2436,7 @@ document.addEventListener("click", e=>{
   if (t.dataset.tile){ settings.focus = settings.focus===t.dataset.tile ? "" : t.dataset.tile; saveSettings(); renderMarkets(); if (settings.focus){ refreshOne(t.dataset.tile, true); const f = document.querySelector(`[data-tile="${CSS.escape(settings.focus)}"]`); if (f) f.focus({preventScroll:true}); const bar = document.querySelector(".mkf"); if (bar) bar.scrollIntoView({block:"nearest", behavior:"smooth"}); } return; }
   if (t.dataset.ord){ settings.heatOrder = t.dataset.ord; saveSettings(); renderMarkets(); return; }
   if (t.dataset.toggle){
+    if (arranging) return;   // in Arrange mode the headers are for moving
     if (settings.compact){ settings.compact = false; Object.keys(settings.collapsed).forEach(k=>settings.collapsed[k]=true); settings.collapsed[t.dataset.toggle] = false; }
     else settings.collapsed[t.dataset.toggle] = !settings.collapsed[t.dataset.toggle];
     saveSettings(); renderAll(); return;
@@ -2252,12 +2460,15 @@ document.addEventListener("keydown", e=>{
   // Alt+↑ / Alt+↓ on a watchlist row moves it
   const rowK = (e.target.dataset && e.target.dataset.row) || "";
   if (e.altKey && !e.ctrlKey && !e.metaKey && rowK.startsWith("w:") && (e.key === "ArrowUp" || e.key === "ArrowDown")){ e.preventDefault(); moveWatch(rowK.slice(2), e.key === "ArrowUp" ? "up" : "down"); refocus(rowK); return; }
+  // 6.3: Alt + arrows on a focused section header moves the section (← → between columns in a wide window)
+  if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.target.matches && e.target.matches("#main .sec > .sec-h") && /^Arrow(Up|Down|Left|Right)$/.test(e.key)){ e.preventDefault(); secKeyMove(e.target.parentElement.dataset.sec, e.key.slice(5).toLowerCase()); return; }
   if (e.target.matches("input,textarea,select") || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase(), sheetOpen = !$("sheet").classList.contains("hide");
   if (e.key==="Escape" && !$("chart").classList.contains("hide")){ closeChart(); return; }
   if (!$("chart").classList.contains("hide") && !sheetOpen){ const r = {"1":"1D","2":"1M","3":"3M","4":"6M","5":"1Y","6":"5Y"}[e.key]; if (r){ setChartRange(r); return; } }
   if (e.key==="Escape"){
     if (!$("menu").classList.contains("hide")) closeMenu();
+    else if (arranging && !sheetOpen) setArrange(false);
     else if (!$("statusPop").classList.contains("hide")) $("statusPop").classList.add("hide");
     else if (sheetOpen) closeSheet();
     else if ($("banner").classList.contains("show")) dismissBanner();
@@ -2287,7 +2498,7 @@ document.addEventListener("keydown", e=>{
   else if (k==="/"){ e.preventDefault(); if (settings.collapsed.watch || settings.compact){ settings.collapsed.watch = false; if (settings.compact){ settings.compact = false; } saveSettings(); renderAll(); } setTimeout(()=>{ const i = $("wAddSym"); if (i){ i.focus(); i.scrollIntoView({block:"nearest"}); } }, 30); }
   else if (k==="n") newsJump("");
   else if (k==="o" && rowK.startsWith("n:")){ const a = e.target.querySelector("[data-nwgo]"); if (a) a.click(); }
-  else if (/^[1-9]$/.test(k)){ const sec = layoutOrder()[+k-1]; if (!sec) return; settings.compact = false; settings.collapsed[sec] = false; saveSettings(); renderAll(); document.querySelector(`[data-sec="${sec}"]`).scrollIntoView({behavior:"smooth", block:"start"}); }
+  else if (/^[1-9]$/.test(k)){ const sec = secOrder()[+k-1]; if (!sec) return; if (arranging) setArrange(false); settings.compact = false; settings.collapsed[sec] = false; saveSettings(); renderAll(); document.querySelector(`[data-sec="${sec}"]`).scrollIntoView({behavior:"smooth", block:"start"}); }
   else if (e.key===",") openSheet(settings.sheetTab || "general");
   else if ((e.key==="Enter"||e.key===" ") && e.target.dataset && e.target.dataset.row){ e.preventDefault(); e.target.click(); }
 });
@@ -2586,24 +2797,34 @@ function showTab(tab){
     };
   }
   else if (tab==="layout"){
-    const L = layoutOrder();
-    B.innerHTML = `<div class="field"><label>Section order</label><p>Drag the rows, or use the arrows. Turn a section off to hide it. Keys 1 to ${Math.min(9, L.length)} jump to the sections in this order.</p></div>
-      <div id="lyList">${L.map((k,i)=>`<div class="ly-row" data-ly="${k}">
-        <span class="grip" title="Drag to move">⠿</span><b>${SEC_NAMES[k]}</b>
-        <button class="x" data-lymv="${i}:up" title="Move up" ${i===0?"disabled":""}>↑</button><button class="x" data-lymv="${i}:down" title="Move down" ${i===L.length-1?"disabled":""}>↓</button>
-        <label class="sw" title="Show or hide this section"><input type="checkbox" data-lyshow="${k}" ${(settings.hideSec||{})[k]?"":"checked"}><span></span></label></div>`).join("")}</div>
-      <div style="display:flex;gap:8px;margin-top:10px"><button class="btn" id="lyReset">Reset to default</button></div>
+    // 6.3: a wide window shows its columns here (the same board as the main screen); a narrow one its single list
+    const n = wideCols(), H = secHidden(), cols = n ? E.boardCols(settings.board, layoutOrder(), n, H) : [layoutOrder()], ord = secOrder();
+    const row = (k, ci, i, len) => `<div class="ly-row" data-ly="${k}">
+        <span class="grip" title="Drag to move">⠿</span><b>${esc(SEC_NAMES[k])}</b>${ord.indexOf(k) >= 0 && ord.indexOf(k) < 9 ? `<kbd class="ly-k" title="Press ${ord.indexOf(k) + 1} on the main screen to jump here">${ord.indexOf(k) + 1}</kbd>` : ""}
+        <button class="x" data-lymv="${k}:up" title="Move up" aria-label="Move ${esc(SEC_NAMES[k])} up" ${i===0?"disabled":""}>↑</button><button class="x" data-lymv="${k}:down" title="Move down" aria-label="Move ${esc(SEC_NAMES[k])} down" ${i===len-1?"disabled":""}>↓</button>${n ? `<button class="x" data-lymv="${k}:left" title="To the column on the left" aria-label="Move ${esc(SEC_NAMES[k])} to the column on the left" ${ci===0?"disabled":""}>←</button><button class="x" data-lymv="${k}:right" title="To the column on the right" aria-label="Move ${esc(SEC_NAMES[k])} to the column on the right" ${ci===n-1?"disabled":""}>→</button>` : ""}
+        <label class="sw" title="Show or hide this section"><input type="checkbox" data-lyshow="${k}" ${H[k]?"":"checked"}><span></span></label></div>`;
+    B.innerHTML = `<div class="field"><label>Section order</label><p>${n ? `This window is wide enough for ${n} columns, and this is how they are arranged. Drag a row into a column, or use the arrows (← → move it to the next column). A narrow window keeps its own one-column order.` : "Drag the rows, or use the arrows."} Turn a section off to hide it. Keys 1 to ${Math.min(9, ord.length)} jump to the sections in the numbered order.</p>
+        <p class="note ly-hint">On the main screen: drag a section by its header (⠿), or focus a header and press Alt + ↑ ↓${n ? " (← → between columns)" : ""}. <button class="lnk" id="lyArr">Arrange on the main screen</button></p></div>
+      <div id="lyList" class="${n ? "ly-cols" : ""}" style="${n ? `--n:${n}` : ""}">${cols.map((c, ci) => `<div class="ly-col" data-lycol="${ci}">${n ? `<div class="ly-ch">${COL_NAME(ci, n).replace(/^the /, "").replace(/^./, x => x.toUpperCase())}</div>` : ""}${c.map((k, i) => row(k, ci, i, c.length)).join("")}${n && !c.length ? `<div class="ly-empty">Drop a section here</div>` : ""}</div>`).join("")}</div>
+      <div class="ly-pre"><span class="muted">Start from</span>${LAYOUT_PRESETS.map(p => `<button class="btn" data-lypre="${p.k}" title="${esc(p.tip)}">${esc(p.name)}</button>`).join("")}<button class="btn" id="lyReset" title="News, Portfolio, Markets, Watchlist, Today's alerts, then the newer sections; every section shown, in narrow and wide windows">Reset to default</button>${lyUndo ? `<button class="btn" id="lyUndo">Undo</button>` : ""}</div>
       <p class="note">Default: ${DEFAULT_LAYOUT.map(k => SEC_NAMES[k]).join(", ")}. Watchlist order: drag a row by its ⠿ grip, or use ↑ ↓ in Settings → Watchlist.</p>`;
-    const setL = L2 => { settings.layout = L2; saveSettings(); safe("layout", applyLayout); showTab("layout"); };
+    // every change goes through the same path as the main screen, so both stay in step (this tab redraws itself)
+    const setCols = C => secCommit(() => { if (n) settings.board = Object.assign({}, settings.board, {[n]: C}); else settings.layout = C[0]; });
     B.onclick = e=>{
-      const mv = e.target.closest("[data-lymv]"); if (mv){ const [i, dir] = mv.dataset.lymv.split(":"); const L2 = layoutOrder(), j = +i + (dir==="up"?-1:1); if (j<0||j>=L2.length) return; const [k] = L2.splice(+i,1); L2.splice(j,0,k); setL(L2); return; }
-      if (e.target.id==="lyReset"){ settings.hideSec = {}; setL(DEFAULT_LAYOUT.slice()); toast("Layout reset"); }
+      const mv = e.target.closest("[data-lymv]"); if (mv){ const [k, dir] = mv.dataset.lymv.split(":"); const C = E.boardStep(cols, k, dir, {}); if (C){ setCols(C); const b = document.querySelector(`[data-lymv="${k}:${dir}"]:not(:disabled)`) || document.querySelector(`.ly-row[data-ly="${k}"] .x:not(:disabled)`); if (b) b.focus(); } return; }
+      const pr = e.target.closest("[data-lypre]"); if (pr){ lyApply(pr.dataset.lypre); return; }
+      if (e.target.id==="lyReset"){ lyApply("default"); return; }
+      if (e.target.id==="lyUndo"){ lyUndoNow(); return; }
+      if (e.target.id==="lyArr"){ closeSheet(); setArrange(true); }
     };
-    B.onchange = e=>{ const k = e.target.dataset.lyshow; if (!k) return; settings.hideSec = Object.assign({}, settings.hideSec, {[k]: !e.target.checked}); saveSettings(); safe("layout", applyLayout); };
+    B.onchange = e=>{ const k = e.target.dataset.lyshow; if (!k) return; const on = e.target.checked; secCommit(() => { settings.hideSec = Object.assign({}, settings.hideSec, {[k]: !on}); }); const f = document.querySelector(`[data-lyshow="${k}"]`); if (f) f.focus(); };
     $("lyList").onpointerdown = e=>{
-      const r = e.target.closest(".ly-row"); if (!r || e.target.closest("button,label,input")) return;
-      sortDrag(e, r, ".ly-row", null, (t, after)=>{ if (!t || t === r){ showTab("layout"); return; }
-        const L2 = layoutOrder().filter(k=>k!==r.dataset.ly); let j = L2.indexOf(t.dataset.ly); if (after) j++; L2.splice(j,0,r.dataset.ly); setL(L2); });
+      const r = e.target.closest(".ly-row"); if (!r || e.target.closest("button,label,input") || (e.pointerType === "mouse" && e.button !== 0)) return;
+      e.preventDefault();
+      boardDrag(e, {item:r, label:SEC_NAMES[r.dataset.ly], scroller:B, axis:n ? "x" : "y",
+        containers:() => [...document.querySelectorAll("#lyList > .ly-col")], items:c => [...c.querySelectorAll(":scope > .ly-row")].filter(x => x !== r),
+        keyOf:el => el.dataset.ly, where:t => t.before ? "Above " + SEC_NAMES[t.before] : n ? "Bottom of " + COL_NAME(t.ci, n) : "At the bottom",
+        onDrop:t => setCols(E.boardMove(cols, r.dataset.ly, t.ci, t.before))});
     };
   }
   else if (tab==="diag"){
@@ -2665,14 +2886,14 @@ function showTab(tab){
       if (!confirm("Go back to the version from " + dateTime(h.t) + "?\n" + E.cfgDiff(cfg, c))) return;
       snapCfg("before restore", true); cfg = normCfg(c); saveCfg("restored"); toast("Restored"); showTab("backup"); renderAll(); schedule(true); };
     if ($("bImport")) $("bImport").onclick = ()=>{ if (importFromLive()){ closeSheet(); renderAll(); schedule(true); } };
-    $("bKeys").onchange = e=>{ const c = JSON.parse(JSON.stringify(cfg)); if (e.target.checked){ c._keys = {key:settings.key, tdKey:settings.tdKey, alpKey:settings.alpKey, alpSec:settings.alpSec}; c._settings = {ntfy:settings.ntfy, sound:settings.sound, refresh:settings.refresh, bench:settings.bench, theme:settings.theme, heatOrder:settings.heatOrder, layout:settings.layout, hideSec:settings.hideSec, sentryDsn:settings.sentryDsn}; } $("bTxt").value = JSON.stringify(c); };
+    $("bKeys").onchange = e=>{ const c = JSON.parse(JSON.stringify(cfg)); if (e.target.checked){ c._keys = {key:settings.key, tdKey:settings.tdKey, alpKey:settings.alpKey, alpSec:settings.alpSec}; c._settings = {ntfy:settings.ntfy, sound:settings.sound, refresh:settings.refresh, bench:settings.bench, theme:settings.theme, heatOrder:settings.heatOrder, layout:settings.layout, board:settings.board, hideSec:settings.hideSec, sentryDsn:settings.sentryDsn}; } $("bTxt").value = JSON.stringify(c); };
     $("bCopy").onclick = async ()=>{ try{ await navigator.clipboard.writeText($("bTxt").value); toast("Copied"); }catch(e){ $("bTxt").select(); document.execCommand("copy"); toast("Copied"); } };
     $("bDl").onclick = ()=>{ const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([$("bTxt").value], {type:"application/json"})); a.download = "mw-lab-backup.json"; a.click(); };
     $("bRestore").onclick = ()=>{
       try{ const c = JSON.parse($("bTxt").value); if (!E.validCfg(c)) throw new Error("this doesn't look like a widget backup");
         if (!confirm("Restore this backup?\n" + E.cfgDiff(cfg, c) + (c._keys ? "\nIt also replaces your data keys." : ""))) return;
         if (c._keys){ if (c._keys.key) settings.key = String(c._keys.key); if (c._keys.tdKey) settings.tdKey = String(c._keys.tdKey); if (c._keys.alpKey && c._keys.alpSec){ settings.alpKey = String(c._keys.alpKey); settings.alpSec = String(c._keys.alpSec); } delete c._keys; hist = {}; loadHist.day = null; }
-        if (c._settings && typeof c._settings === "object"){ ["ntfy","sound","refresh","bench","theme","heatOrder","layout","hideSec","sentryDsn"].forEach(k => { if (c._settings[k] != null) settings[k] = c._settings[k]; }); document.documentElement.dataset.theme = settings.theme; delete c._settings; }
+        if (c._settings && typeof c._settings === "object"){ ["ntfy","sound","refresh","bench","theme","heatOrder","layout","board","hideSec","sentryDsn"].forEach(k => { if (c._settings[k] != null) settings[k] = c._settings[k]; }); document.documentElement.dataset.theme = settings.theme; delete c._settings; }
         saveSettings();
         snapCfg("before restore", true); cfg = normCfg(c); saveCfg("restored"); toast("Restored"); closeSheet(); schedule(true);
       }catch(e){ $("bErr").textContent = "Couldn't restore: " + e.message; }
@@ -2754,7 +2975,10 @@ function palCmds(){
     {n:"News: show every headline", k:"N", run:()=>{ settings.newsAll = true; newsJump(""); }},
     {n:"News: check for new headlines", run:()=>{ loadHeadlines(true).then(()=> toast(news.err ? "Some headlines didn't load: " + news.err : "Headlines updated")); }},
     {n:"Copy market brief", run:()=>copyBrief(false)},
-    {n:"Market map: about 200 funds at a glance", k:"M", run:()=>openMap()}
+    {n:"Market map: about 200 funds at a glance", k:"M", run:()=>openMap()},
+    {n:arranging ? "Done arranging sections" : "Arrange sections: move News, Portfolio, Markets and the rest around", run:()=>setArrange(!arranging)},
+    ...LAYOUT_PRESETS.map(p => ({n:"Layout: " + p.name, run:()=>lyApply(p.k)})),
+    {n:"Layout: reset to default", run:()=>lyApply("default")}
   ];
   if (newsItems().some(nwIsNew)) C.splice(5, 0, {n:"News: mark all as read", run:()=>{ const n = nwMark(newsItems().map(x => x.id)); toast(`${n} headline${n === 1 ? "" : "s"} marked as read`); safe("news", renderNews); }});
   if (fundSyms().length && settings.tdKey) C.push({n:"Check mutual fund prices now", run:()=>{ loadNavs(true).then(()=>{ const fs = fundSyms().map(x => navs[x]).filter(n => n && n.nav > 0), d = fs.map(n => n.date).sort()[0]; toast(d ? "Funds are priced " + navDayLabel(d) + (d < E.navDueDate(Date.now()) ? ". Nothing newer is posted yet" : "") : "No fund prices came back"); }); }});

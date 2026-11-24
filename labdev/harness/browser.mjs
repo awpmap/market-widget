@@ -971,7 +971,221 @@ for (const OLD of [false, true]) {
 }
 
 /* ===== PULSE HARNESS BEGIN (6.3). Only this builder edits between BEGIN and END. ===== */
+/* ---------- 6.3: sections you arrange on the main screen, and the Market pulse (made-up keys; every price is synthetic) ---------- */
+console.log("Arrange sections and Market pulse (6.3)");
+{
+  // the pulse's funds move like a risk-on day; anything else (sectors, MW's own tickers) moves by a small made-up amount
+  const PDP = {SMH:2.1, SPY:0.5, QQQ:0.9, IWM:1.5, SPHB:2.4, SPLV:-0.3, XLY:1.1, XLP:-0.4, HYG:0.35, IEF:-0.1, VIXY:-4.5, UUP:-0.3, TLT:-0.2, GLD:0.4, USO:-0.8,
+    XLK:1.2, XLC:0.8, XLF:0.6, XLV:-0.2, XLI:0.7, XLE:-0.5, XLB:0.3, XLU:-0.6, XLRE:0.1};
+  const dpOf = s => PDP[s] ?? ((hash(s) % 5) - 2) * 0.3;
+  const mkAlp = (page, tRef, calls) => page.route(/https:\/\/data\.alpaca\.markets\/.*/, route => {
+    const u = new URL(route.request().url()), syms = (u.searchParams.get("symbols") || "").split(",").filter(Boolean), now = tRef(), day = E.etDateOf(now);
+    const pulse = syms.includes("SPHB") && syms.includes("XLRE");   // the pulse always asks for these together
+    if (u.pathname.includes("/v1beta1/news")) return route.fulfill({json:{news:[]}});
+    if (u.pathname.includes("/crypto/")) { calls.coin++; return route.fulfill({json:{snapshots:{"BTC/USD":{latestTrade:{p:61234.5, t:new Date(now).toISOString()}, dailyBar:{t:new Date(now).toISOString().slice(0, 10) + "T00:00:00Z", o:60000, h:61500, l:59800, c:61234.5, v:5, vw:60900}, prevDailyBar:{c:60000}}}}}); }
+    if (u.pathname.endsWith("/bars")) { if (pulse) calls.bars++;
+      return route.fulfill({json:{bars:Object.fromEntries(syms.map(s => [s, dailyBars(s, day).slice(0, 32).reverse().map(b => ({t:b.datetime + "T05:00:00Z", c:+b.close}))])), next_page_token:null}}); }
+    if (u.pathname.endsWith("/snapshots")) { if (pulse) calls.snap++; else calls.other++;
+      return route.fulfill({json:Object.fromEntries(syms.map(s => { const pc = pcOf(s), c = +(pc * (1 + dpOf(s) / 100)).toFixed(2);
+        return [s, {latestTrade:{p:c, t:new Date(now - 1500).toISOString()}, dailyBar:{t:day + "T05:00:00Z", o:pc, h:Math.max(pc, c), l:Math.min(pc, c), c, v:1e5, vw:c}, prevDailyBar:{t:E.prevTradingDay(day) + "T05:00:00Z", c:pc}}]; }))}); }
+    return route.fulfill({json:{}});
+  });
+  const seed = (page, st) => page.addInitScript(st => { if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
+    localStorage.setItem("mwlab_settings", JSON.stringify(st)); localStorage.setItem("mwlab_seenVer", JSON.stringify("99.0.0"));
+    localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"AAA", shares:1, acct:"Taxable"}], fixed:[], watch:[{sym:"AAA", levels:[], dayDrop:3, near:0}, {sym:"BBB", levels:[], dayDrop:3, near:0}]})); }, st);
+  const order = page => page.evaluate(() => [...document.querySelectorAll("#main .sec[data-sec]:not(.hide)")].map(s => s.dataset.sec));
+  const colsOf = page => page.evaluate(() => [...document.querySelectorAll("#cols > .col")].map(c => [...c.querySelectorAll(":scope > .sec:not(.hide)")].map(s => s.dataset.sec)));
+  // press on a header, move in small steps (like a hand), release
+  const drag = async (page, fromSel, to, opts = {}) => { const b = await page.locator(fromSel).boundingBox(); const x0 = b.x + (opts.dx ?? b.width / 2), y0 = b.y + b.height / 2;
+    await page.mouse.move(x0, y0); await page.mouse.down();
+    for (let i = 1; i <= 12; i++) { await page.mouse.move(x0 + (to.x - x0) * i / 12, y0 + (to.y - y0) * i / 12); await page.waitForTimeout(16); }
+    if (opts.hold) return; await page.waitForTimeout(60); await page.mouse.up(); await page.waitForTimeout(80); };
+  const shotEl = async (page, sel, name) => { if (SHOTS) await page.locator(sel).screenshot({path:path.join(SHOTS, name + ".png")}); };
 
+  /* ----- A: narrow window, Alpaca keys: drag, keyboard, focus, the pulse itself ----- */
+  const ctxA = await browser.newContext({viewport:{width:420, height:900}, timezoneId:"America/Chicago"});
+  const pA = await ctxA.newPage(); await mock(pA);
+  const errsA = []; pA.on("pageerror", e => errsA.push(e.message)); pA.on("console", m => { if (m.type() === "error" && !/Failed to load resource|sentry/i.test(m.text())) errsA.push(m.text()); });
+  let tA = Date.parse("2026-11-05T15:30:00Z"); const cA = {snap:0, bars:0, coin:0, other:0};
+  await mkAlp(pA, () => tA, cA);
+  await seed(pA, {key:"test", alpKey:"test-key-id", alpSec:"test-secret", refresh:60, theme:"dark"});
+  await pA.clock.install({time:tA});
+  const advA = async (ms, step = 1000) => { for (let t = 0; t < ms; t += step) { tA += step; simNow = tA; await pA.clock.runFor(step); await pA.waitForTimeout(20); } };
+  simNow = tA; Object.keys(px).forEach(k => delete px[k]); Object.keys(PDP).forEach(s => { px[s] = +(pcOf(s) * (1 + PDP[s] / 100)).toFixed(2); });
+  await pA.goto(BASE); await advA(20000);
+  check(await pA.locator("#pulse-sec.collapsed").count() === 1, "Market pulse starts closed the first time");
+  await advA(60000, 5000);
+  check(cA.snap + cA.bars + cA.coin === 0, `nothing is fetched for the pulse while it is closed (${cA.snap} snapshot, ${cA.bars} bars, ${cA.coin} coin calls)`);
+  check(/risk-on\s*[+]\d+/i.test(await pA.locator("#pulse-sum").innerText()), "the closed header still shows a reading, from prices MW already has: " + (await pA.locator("#pulse-sum").innerText()).replace(/\s+/g, " "));
+  // the header is still the collapse button
+  await pA.locator('#pulse-sec > .sec-h').click(); await advA(4000, 500);
+  check(await pA.locator("#pulse-sec.collapsed").count() === 0, "a plain click on a header still opens the section");
+  check(cA.snap === 1 && cA.bars === 1 && cA.coin === 1, `open: one snapshot call for every fund, one for daily bars, one for bitcoin (${cA.snap}, ${cA.bars}, ${cA.coin})`);
+  await advA(60000, 2000);
+  check(cA.snap >= 3 && cA.snap <= 5 && cA.bars === 1, `in market hours the funds refresh every 20 s and the bars stay cached (${cA.snap} snapshots, ${cA.bars} bars in 64 s)`);
+  const pv = await pA.evaluate(() => ({rows: document.querySelectorAll("#pulse-body .pulse-r").length, xs: document.querySelectorAll("#pulse-body .pulse-x").length, dots: document.querySelectorAll("#pulse-body .pulse-dots i").length,
+    up: document.querySelectorAll("#pulse-body .pulse-dots i.up").length, score: document.querySelector(".pulse-gv").textContent, v: document.querySelector(".pulse-v").textContent, lbl: document.querySelector(".pulse-gl b").textContent,
+    chips: document.querySelector('#pulse-body [data-pk="chips"]').innerText.replace(/\s+/g, " "), tips: [...document.querySelectorAll("#pulse-body .pulse-r,#pulse-body .pulse-x")].every(e => (e.dataset.tip || "").length > 40),
+    btc: document.querySelector('#pulse-body .pulse-x:not([data-chart])').innerText.replace(/\s+/g, " "), wide: document.getElementById("pulse-body").scrollWidth <= document.getElementById("pulse-body").clientWidth + 1}));
+  check(pv.rows === 6 && pv.xs === 6 && pv.dots === 11, `the pulse shows 6 pairs, 6 cross-asset tiles and 11 sector marks (${pv.rows}, ${pv.xs}, ${pv.dots})`);
+  check(/^\+\d+$/.test(pv.score) && /risk-on/i.test(pv.lbl) && /leading/.test(pv.v), `a risk-on day reads as risk-on: ${pv.score} ${pv.lbl} · ${pv.v}`);
+  const pxDp = s => (+(pcOf(s) * (1 + PDP[s] / 100)).toFixed(2) / pcOf(s) - 1) * 100, chipsToday = E.fmtPct(E.pulseRel(pxDp("SMH"), pxDp("SPY")), 2);
+  check(pv.chips.includes(chipsToday), `Chips vs S&P shows how SMH did against SPY (${chipsToday}): ${pv.chips}`);
+  check(pv.up === 7, `breadth counts the sectors up today (${pv.up} of 11)`);
+  check(/\$61,234\.50/.test(pv.btc) && /\+\$1,234\.50 \+2\.06%/.test(pv.btc), "bitcoin shows its price, then dollars and percent: " + pv.btc);
+  check(pv.tips, "every pulse line explains itself in a tooltip");
+  check(pv.wide, "at 420 px the pulse fits with no sideways scroll");
+  await shotEl(pA, "#pulse-sec", "pulse-dark-narrow");
+  // a pair opens the chart of its first fund
+  await pA.locator('#pulse-body [data-pk="chips"]').click(); await advA(1500, 500);
+  check(await pA.locator("#chart:not(.hide)").count() === 1 && (await pA.locator("#chSym").innerText()) === "SMH", "clicking a pair opens the chart of its first fund");
+  await pA.keyboard.press("Escape"); await advA(500, 250);
+  // light theme
+  await pA.evaluate(() => { settings.theme = "light"; document.documentElement.dataset.theme = "light"; }); await advA(500, 250);
+  await shotEl(pA, "#pulse-sec", "pulse-light-narrow");
+  await pA.evaluate(() => { settings.theme = "dark"; document.documentElement.dataset.theme = "dark"; });
+  // drag a section by its header: Today's alerts goes to the top
+  const n0 = await order(pA);
+  await pA.locator("#main").evaluate(m => m.scrollTo({top:0}));
+  await pA.evaluate(() => { settings.collapsed = {news:true, portfolio:true, markets:true, watch:true, log:true, pulse:true}; saveSettings(); renderAll(); }); await advA(500, 250);
+  await pA.locator("#main").evaluate(m => m.scrollTo({top:0, behavior:"instant"}));
+  const nb = await pA.locator("#nw-sec > .sec-h").boundingBox();
+  await drag(pA, "#log-sec > .sec-h", {x:nb.x + nb.width / 2 + 30, y:nb.y + 6}, {hold:true});
+  check(await pA.locator(".bd-ghost").count() === 1 && await pA.locator(".bd-line").count() === 1 && /Above News/.test(await pA.locator(".bd-ghost").innerText()), "while dragging, a copy of the header follows the pointer and a line shows where it lands");
+  if (SHOTS) await pA.screenshot({path:path.join(SHOTS, "drag-narrow.png")});
+  await pA.mouse.up(); await advA(600, 200);
+  const n1 = await order(pA);
+  check(n1[0] === "log" && n1.slice(1).join() === n0.filter(k => k !== "log").join(), "dropping it there moves the section: " + n1.join(", "));
+  check(await pA.locator("#log-sec.collapsed").count() === 1, "a drag never collapses or opens the section");
+  check(await pA.evaluate(() => settings.layout[0] === "log"), "the new order is saved");
+  // Esc cancels a drag
+  const lb = await pA.locator("#mk-sec > .sec-h").boundingBox();
+  await drag(pA, "#pulse-sec > .sec-h", {x:lb.x + 50, y:lb.y + 4}, {hold:true}); await pA.keyboard.press("Escape"); await pA.mouse.up(); await advA(400, 200);
+  check((await order(pA)).join() === n1.join() && await pA.locator(".bd-ghost").count() === 0, "Esc cancels a drag and leaves everything where it was");
+  // keyboard: Alt + arrows on a focused header
+  await pA.locator("#mk-sec > .sec-h").focus(); await pA.keyboard.press("Alt+ArrowUp"); await advA(400, 200);
+  const n2 = await order(pA), i1 = n1.indexOf("markets");
+  check(n2.indexOf("markets") === i1 - 1 && await pA.evaluate(() => document.activeElement === document.querySelector("#mk-sec > .sec-h")), "Alt + ↑ on a focused header moves the section up and keeps the focus on it");
+  check(/Markets/.test(await pA.evaluate(() => document.getElementById("secLive").textContent)), "the move is announced to screen readers: " + await pA.evaluate(() => document.getElementById("secLive").textContent));
+  await pA.keyboard.press("Alt+ArrowDown"); await advA(300, 100);
+  check((await order(pA)).join() === n1.join(), "Alt + ↓ moves it back");
+  // a box being typed in keeps the focus when another section moves
+  await pA.evaluate(() => { settings.collapsed.watch = false; saveSettings(); renderAll(); }); await advA(500, 250);
+  await pA.locator("#wAddSym").focus(); await pA.keyboard.type("ZZ");
+  await pA.evaluate(() => { secMoveTo("pulse", 0, layoutOrder()[0]); renderAll(); renderAll(); }); await advA(400, 200);
+  check(await pA.evaluate(() => document.activeElement && document.activeElement.id === "wAddSym" && document.activeElement.value === "ZZ"), "moving another section doesn't take the focus out of the watchlist's add box");
+  check((await order(pA))[0] === "pulse", "secMoveTo puts the section where asked");
+  await pA.locator("#wAddSym").fill(""); await pA.locator("#main").click({position:{x:5, y:5}}).catch(() => {});
+  // it survives a reload
+  const saved = await order(pA);
+  await pA.reload(); await advA(4000, 500);
+  check((await order(pA)).join() === saved.join(), "the narrow order is the same after a reload");
+  // keys 1 to 9 follow the order on screen
+  await pA.locator("body").press("1"); await advA(600, 200);
+  check(await pA.evaluate(() => !settings.collapsed.pulse), "key 1 opens the first section on screen (Market pulse)");
+  // collapse it again: nothing more is fetched
+  await pA.evaluate(() => { settings.collapsed.pulse = true; saveSettings(); renderAll(); }); await advA(1000, 500);
+  const sA = cA.snap + cA.coin; await advA(60000, 5000);
+  check(cA.snap + cA.coin === sA, "closing the pulse again stops its calls");
+  check(errsA.length === 0, "no page errors in the narrow checks" + (errsA.length ? ": " + [...new Set(errsA)].slice(0, 4).join(" | ") : ""));
+  await ctxA.close();
+
+  /* ----- B: no keys at all: the pulse says what it needs and calls nothing ----- */
+  const ctxB = await browser.newContext({viewport:{width:420, height:900}, timezoneId:"America/Chicago"});
+  const pB = await ctxB.newPage(); await mock(pB);
+  const errsB = []; pB.on("pageerror", e => errsB.push(e.message));
+  let tB = Date.parse("2026-11-05T15:30:00Z"); const cB = {snap:0, bars:0, coin:0, other:0};
+  await mkAlp(pB, () => tB, cB);
+  await seed(pB, {key:"", refresh:60, collapsed:{pulse:false}, pulse63:1});
+  await pB.clock.install({time:tB});
+  await pB.goto(BASE); for (let i = 0; i < 20; i++) { tB += 1000; await pB.clock.runFor(1000); await pB.waitForTimeout(20); }
+  check(/Add your free Alpaca key for the pulse/.test(await pB.locator("#pulse-body").innerText()) && await pB.locator('#pulse-body [data-open="general"]').count() === 1, "without a key the pulse asks for the free Alpaca key, with a button to Settings");
+  check(cB.snap + cB.bars + cB.coin === 0, "and fetches nothing");
+  await shotEl(pB, "#pulse-sec", "pulse-no-key");
+  check(errsB.length === 0, "no page errors without a key" + (errsB.length ? ": " + errsB.slice(0, 4).join(" | ") : ""));
+  await ctxB.close();
+
+  /* ----- C: a wide window: real columns, kept after a reload; Arrange mode; Settings → Layout ----- */
+  const ctxC = await browser.newContext({viewport:{width:1400, height:900}, timezoneId:"America/Chicago"});
+  const pC = await ctxC.newPage(); await mock(pC);
+  const errsC = []; pC.on("pageerror", e => errsC.push(e.message)); pC.on("console", m => { if (m.type() === "error" && !/Failed to load resource|sentry/i.test(m.text())) errsC.push(m.text()); });
+  let tC = Date.parse("2026-11-05T15:30:00Z"); const cC = {snap:0, bars:0, coin:0, other:0};
+  await mkAlp(pC, () => tC, cC);
+  await seed(pC, {key:"test", alpKey:"test-key-id", alpSec:"test-secret", refresh:60, theme:"dark", collapsed:{pulse:false}, pulse63:1});
+  await pC.clock.install({time:tC});
+  const advC = async (ms, step = 1000) => { for (let t = 0; t < ms; t += step) { tC += step; simNow = tC; await pC.clock.runFor(step); await pC.waitForTimeout(20); } };
+  simNow = tC;
+  await pC.goto(BASE); await advC(25000);
+  const c0 = await colsOf(pC);
+  check(c0.length === 3 && c0.flat().length >= 6, "1400 px: three columns (" + c0.map(c => c.join("+")).join(" | ") + ")");
+  await shotEl(pC, "#pulse-sec", "pulse-dark-wide");
+  // drag Market pulse to the top of the right-hand column
+  await pC.locator("#main").evaluate(m => m.scrollTo({top:0, behavior:"instant"})); await advC(300, 100);
+  const right = await pC.locator("#cols > .col").nth(2).boundingBox(), top3 = await pC.locator("#cols > .col").nth(2).locator(".sec").first().boundingBox();
+  await drag(pC, "#pulse-sec > .sec-h", {x:right.x + right.width / 2, y:top3.y + 8}, {hold:true});
+  const gh = await pC.evaluate(() => { const g = document.querySelector(".bd-ghost"), l = document.querySelector(".bd-line"); return g && l ? {g: g.getBoundingClientRect().toJSON(), l: l.getBoundingClientRect().toJSON(), t: g.innerText} : null; });
+  check(gh && gh.g.left < right.x + right.width / 2 && gh.g.right > right.x + right.width / 2 && gh.l.left >= right.x - 1 && /Above Markets/.test(gh.t), "the header copy is under the pointer and the line marks the right column: " + (gh && gh.t.replace(/\s+/g, " ")));
+  if (SHOTS) await pC.screenshot({path:path.join(SHOTS, "drag-wide.png")});
+  await pC.mouse.up(); await advC(800, 200);
+  const c1 = await colsOf(pC);
+  check(c1[2][0] === "pulse" && c1.flat().filter(k => k === "pulse").length === 1, "dragged into the right column, Market pulse sits at its top: " + c1.map(c => c.join("+")).join(" | "));
+  check(await pC.evaluate(() => Array.isArray(settings.board && settings.board[3]) && settings.board[3][2][0] === "pulse"), "the 3-column board is saved");
+  // the other columns didn't get dealt again
+  const others = c0.map(c => c.filter(k => k !== "pulse")), nowOthers = c1.map(c => c.filter(k => k !== "pulse"));
+  check(JSON.stringify(others) === JSON.stringify(nowOthers), "every other section stayed in its column");
+  // Alt + → moves a focused section to the next column
+  await pC.locator("#nw-sec > .sec-h").focus(); const fromCol = (await colsOf(pC)).findIndex(c => c.includes("news"));
+  await pC.keyboard.press(fromCol < 2 ? "Alt+ArrowRight" : "Alt+ArrowLeft"); await advC(500, 250);
+  const c2 = await colsOf(pC), toCol = c2.findIndex(c => c.includes("news"));
+  check(toCol === (fromCol < 2 ? fromCol + 1 : fromCol - 1) && await pC.evaluate(() => document.activeElement === document.querySelector("#nw-sec > .sec-h")), `Alt + ${fromCol < 2 ? "→" : "←"} moves News to the next column (${fromCol + 1} → ${toCol + 1}) and keeps the focus`);
+  // a click on a header still collapses
+  const wasC = await pC.evaluate(() => !!settings.collapsed.markets);
+  await pC.locator("#mk-sec > .sec-h .sec-t").click(); await advC(400, 200);
+  check(await pC.evaluate(() => !!settings.collapsed.markets) === !wasC, "a click on a header in a wide window still collapses it");
+  await pC.locator("#mk-sec > .sec-h .sec-t").click(); await advC(400, 200);
+  if (SHOTS) await pC.screenshot({path:path.join(SHOTS, "board-3col-custom.png")});
+  // reload: the columns are the same
+  const keep = await colsOf(pC); await pC.reload(); await advC(5000, 500);
+  check(JSON.stringify(await colsOf(pC)) === JSON.stringify(keep), "the custom columns are the same after a reload");
+  // two columns (1100 px) start from the 3-column board instead of dealing again; back to 3 is unchanged
+  await pC.setViewportSize({width:1100, height:900}); await advC(800, 200);
+  const two = await colsOf(pC);
+  check(two.length === 2 && JSON.stringify(two[0]) === JSON.stringify(keep[0]) && JSON.stringify(two[1]) === JSON.stringify([...keep[1], ...keep[2]]), "at 1100 px the third column goes under the second: " + two.map(c => c.join("+")).join(" | "));
+  await pC.setViewportSize({width:1400, height:900}); await advC(800, 200);
+  check(JSON.stringify(await colsOf(pC)) === JSON.stringify(keep), "back at 1400 px the three columns are as you left them");
+  // hide a section: its column closes up, and showing it again puts it back
+  await pC.evaluate(() => { settings.hideSec = {log:true}; saveSettings(); applyLayout(); }); await advC(300, 100);
+  check(!(await colsOf(pC)).flat().includes("log"), "a hidden section leaves the board");
+  await pC.evaluate(() => { settings.hideSec = {}; saveSettings(); applyLayout(); }); await advC(300, 100);
+  check(JSON.stringify(await colsOf(pC)) === JSON.stringify(keep), "shown again, it is back in its place");
+  // Arrange mode from the ⋯ menu
+  await pC.locator("#bMore").click(); await pC.locator("#bArrange").click(); await advC(600, 200);
+  const ar = await pC.evaluate(() => ({on: document.body.classList.contains("arranging"), bar: !!document.getElementById("arrBar"), bodies: [...document.querySelectorAll("#main .sec:not(.hide) .sec-b")].every(b => b.offsetParent === null)}));
+  check(ar.on && ar.bar && ar.bodies, "Arrange (⋯ menu) shrinks every section to its header, with a bar of presets and Done");
+  if (SHOTS) await pC.screenshot({path:path.join(SHOTS, "arrange-mode-wide.png")});
+  const colBefore = await pC.evaluate(() => JSON.stringify(settings.collapsed));
+  await pC.locator("#wl-sec > .sec-h").click(); await advC(300, 100);
+  check(await pC.evaluate(() => JSON.stringify(settings.collapsed)) === colBefore, "in Arrange mode a click on a header doesn't collapse anything");
+  const s0 = cC.snap; await advC(45000, 5000);
+  check(cC.snap === s0, "the pulse fetches nothing while Arrange mode hides it");
+  await pC.locator('#arrBar [data-arr="trading"]').click(); await advC(400, 200);
+  check(await pC.evaluate(() => settings.layout[0] === "pulse" || settings.layout[0] === "radar") && await pC.evaluate(() => settings.board == null), "the Trading day preset puts the trading sections first");
+  await pC.locator('#arrBar [data-arr="undo"]').click(); await advC(400, 200);
+  check(JSON.stringify(await colsOf(pC)) === JSON.stringify(keep), "Undo puts the board back");
+  await pC.locator('#arrBar [data-arr="done"]').click(); await advC(400, 200);
+  check(await pC.evaluate(() => !document.body.classList.contains("arranging") && !document.getElementById("arrBar")), "Done leaves Arrange mode");
+  // Settings → Layout shows the same columns, and Reset puts everything back
+  await pC.evaluate(() => openSheet("layout")); await advC(300, 100);
+  const ly = await pC.evaluate(() => [...document.querySelectorAll("#lyList > .ly-col")].map(c => [...c.querySelectorAll(".ly-row")].map(r => r.dataset.ly).filter(k => !settings.hideSec[k])));
+  check(JSON.stringify(ly) === JSON.stringify(keep), "Settings → Layout shows the same three columns");
+  await pC.locator('.ly-row[data-ly="news"] [data-lymv$=":left"]').click().catch(() => {}); await advC(300, 100);
+  check(JSON.stringify(await pC.evaluate(() => [...document.querySelectorAll("#lyList > .ly-col")].map(c => [...c.querySelectorAll(".ly-row")].map(r => r.dataset.ly)))) === JSON.stringify(await colsOf(pC)), "a move in Settings shows on the main screen at once");
+  await pC.locator("#lyReset").click(); await advC(300, 100);
+  check(await pC.evaluate(() => settings.board == null && settings.layout.slice(0, 5).join() === "news,portfolio,markets,watch,log"), "Reset to default resets the columns and the order");
+  await pC.evaluate(() => closeSheet());
+  check(errsC.length === 0, "no page errors in the wide checks" + (errsC.length ? ": " + [...new Set(errsC)].slice(0, 4).join(" | ") : ""));
+  await ctxC.close();
+}
 /* ===== PULSE HARNESS END ===== */
 
 // (spacer)
