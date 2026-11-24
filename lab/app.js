@@ -200,8 +200,32 @@ function saveCfg(why){ cfg.v = E.CFG_V; store.set("cfg", cfg); snapCfg(why || "e
 
 let settings = Object.assign({key:"", tdKey:"", ntfy:"", ntfyFull:false, hcUrl:"", sound:"on", theme:"auto", refresh:60, compact:false, collapsed:{}, allOff:false, period:"1D", sort:"value", grpCollapsed:{}, heatOrder:"fixed", focus:"", bench:"SMH", pauseUntil:0, snooze:{}, layout:null, hideSec:{}, sentryDsn:"", tz:"auto", overnight:false, sizing:false, refVol:2, concCap:25, record:false, showZeroCash:false, alpKey:"", alpSec:"", fast:true, cvd:false, fundEst:true, newsTab:"live", liveF:"all", newsPing:"mine", newsBeep:true, wireOff:{}, secUa:"", newsAll:false, hideAmt:false, hdTab:"position", riskHide:false}, store.get("settings", {}));
 if (!settings.live62){ settings.newsTab = "live"; settings.live62 = 1; }   // 6.2: the News section opens on the live feed once
-const DEFAULT_LAYOUT = ["news","portfolio","markets","watch","log"];
+const DEFAULT_LAYOUT = ["news","portfolio","markets","watch","log"];   // sections added by the files below join the end (registerSection)
 const SEC_NAMES = {news:"News", portfolio:"Portfolio", markets:"Markets", watch:"Watchlist", log:"Today's alerts"};
+/* ---------- extra sections (6.3): each lives in its own file (pulse.js, radar.js, plan.js) and registers itself ----------
+   registerSection({key, name, sumClass?, render()}) adds a section with the same header as the built-in ones,
+   puts it in the layout (after the built-in ones the first time), and renderAll() calls its render() from then on.
+   secLive(key): true while the section is shown, open, in full view, and the window is visible, so a section
+   only fetches when somebody can see it. */
+const EXTRA_SECS = [];
+function registerSection(d){
+  if (!d || !d.key || SEC_NAMES[d.key]) return null;
+  const el = document.createElement("section");
+  el.className = "sec"; el.id = d.key + "-sec"; el.dataset.sec = d.key;
+  el.innerHTML = `<button class="sec-h" data-toggle="${d.key}">
+      <svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>
+      <span class="sec-t">${d.name}</span>
+      <span class="sec-sum ${d.sumClass || "num"}" id="${d.key}-sum"></span>
+    </button>
+    <div class="sec-b" id="${d.key}-body"></div>`;
+  const main = $("main"), anchor = $("err");
+  if (main && anchor) main.insertBefore(el, anchor);
+  DEFAULT_LAYOUT.push(d.key); SEC_NAMES[d.key] = d.name; EXTRA_SECS.push(d);
+  el.classList.toggle("collapsed", !!settings.collapsed[d.key]);
+  safe("layout", applyLayout); safe(d.key, () => d.render && d.render());
+  return {el, body: el.querySelector(".sec-b"), sum: el.querySelector(".sec-sum")};
+}
+const secLive = k => !settings.compact && !settings.collapsed[k] && !(settings.hideSec||{})[k] && document.visibilityState !== "hidden" && DEFAULT_LAYOUT.includes(k);
 /* a section this layout was saved without (News, new in 5.0) goes first, where the headline strip used to be */
 function layoutOrder(){ const L = (Array.isArray(settings.layout) ? settings.layout : []).filter(k => DEFAULT_LAYOUT.includes(k)); DEFAULT_LAYOUT.forEach(k => { if (!L.includes(k)) k === "news" ? L.unshift(k) : L.push(k); }); return L; }
 function applyLayout(){
@@ -2030,6 +2054,7 @@ function renderAll(){
   safe("tray", updateTray);
   safe("chart", chartLive);
   safe("news", renderNews);
+  EXTRA_SECS.forEach(d => safe(d.key, () => d.render && d.render()));
 }
 function renderStatus(){
   const ses = session(), ds = dataState(), d = etNow().date, L = tdBudget();
@@ -2262,7 +2287,7 @@ document.addEventListener("keydown", e=>{
   else if (k==="/"){ e.preventDefault(); if (settings.collapsed.watch || settings.compact){ settings.collapsed.watch = false; if (settings.compact){ settings.compact = false; } saveSettings(); renderAll(); } setTimeout(()=>{ const i = $("wAddSym"); if (i){ i.focus(); i.scrollIntoView({block:"nearest"}); } }, 30); }
   else if (k==="n") newsJump("");
   else if (k==="o" && rowK.startsWith("n:")){ const a = e.target.querySelector("[data-nwgo]"); if (a) a.click(); }
-  else if (["1","2","3","4","5"].includes(k)){ const sec = layoutOrder()[+k-1]; if (!sec) return; settings.compact = false; settings.collapsed[sec] = false; saveSettings(); renderAll(); document.querySelector(`[data-sec="${sec}"]`).scrollIntoView({behavior:"smooth", block:"start"}); }
+  else if (/^[1-9]$/.test(k)){ const sec = layoutOrder()[+k-1]; if (!sec) return; settings.compact = false; settings.collapsed[sec] = false; saveSettings(); renderAll(); document.querySelector(`[data-sec="${sec}"]`).scrollIntoView({behavior:"smooth", block:"start"}); }
   else if (e.key===",") openSheet(settings.sheetTab || "general");
   else if ((e.key==="Enter"||e.key===" ") && e.target.dataset && e.target.dataset.row){ e.preventDefault(); e.target.click(); }
 });
@@ -2562,13 +2587,13 @@ function showTab(tab){
   }
   else if (tab==="layout"){
     const L = layoutOrder();
-    B.innerHTML = `<div class="field"><label>Section order</label><p>Drag the rows, or use the arrows. Turn a section off to hide it. Keys 1 to 5 jump to the sections in this order.</p></div>
+    B.innerHTML = `<div class="field"><label>Section order</label><p>Drag the rows, or use the arrows. Turn a section off to hide it. Keys 1 to ${Math.min(9, L.length)} jump to the sections in this order.</p></div>
       <div id="lyList">${L.map((k,i)=>`<div class="ly-row" data-ly="${k}">
         <span class="grip" title="Drag to move">⠿</span><b>${SEC_NAMES[k]}</b>
         <button class="x" data-lymv="${i}:up" title="Move up" ${i===0?"disabled":""}>↑</button><button class="x" data-lymv="${i}:down" title="Move down" ${i===L.length-1?"disabled":""}>↓</button>
         <label class="sw" title="Show or hide this section"><input type="checkbox" data-lyshow="${k}" ${(settings.hideSec||{})[k]?"":"checked"}><span></span></label></div>`).join("")}</div>
       <div style="display:flex;gap:8px;margin-top:10px"><button class="btn" id="lyReset">Reset to default</button></div>
-      <p class="note">Default: News, Portfolio, Markets, Watchlist, Today's alerts. Watchlist order: drag a row by its ⠿ grip, or use ↑ ↓ in Settings → Watchlist.</p>`;
+      <p class="note">Default: ${DEFAULT_LAYOUT.map(k => SEC_NAMES[k]).join(", ")}. Watchlist order: drag a row by its ⠿ grip, or use ↑ ↓ in Settings → Watchlist.</p>`;
     const setL = L2 => { settings.layout = L2; saveSettings(); safe("layout", applyLayout); showTab("layout"); };
     B.onclick = e=>{
       const mv = e.target.closest("[data-lymv]"); if (mv){ const [i, dir] = mv.dataset.lymv.split(":"); const L2 = layoutOrder(), j = +i + (dir==="up"?-1:1); if (j<0||j>=L2.length) return; const [k] = L2.splice(+i,1); L2.splice(j,0,k); setL(L2); return; }

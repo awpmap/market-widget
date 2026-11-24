@@ -17,6 +17,7 @@ app = swap(app, "MW Beta", "MW", "app.js");
 write("app.js", HEAD + app);
 write("engine.js", HEAD + read("engine.js"));
 write("map.js", HEAD + read("map.js"));
+for (const f of ["pulse.js", "radar.js", "plan.js"]) write(f, HEAD + read(f));
 write("boot.js", HEAD + read("boot.js"));
 write("sw.js", HEAD.replace("/*", "//").replace(" */", "") + read("sw.js"));
 write("version.json", read("version.json"));
