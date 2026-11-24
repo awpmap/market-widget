@@ -1162,6 +1162,30 @@ E.wireLag = function (lags) {
 /* "14s", "3m", "2h" */
 E.lagShort = function (sec) { return sec == null ? "" : sec < 60 ? Math.round(sec) + "s" : sec < 3600 ? Math.round(sec / 60) + "m" : Math.round(sec / 3600) + "h"; };
 
+/* =====================================================================
+   ===== PULSE BEGIN: Market pulse (pulse.js). Only this builder edits between BEGIN and END. =====
+   ===================================================================== */
+
+/* ===== PULSE END ===== */
+
+/* (spacer so the three regions merge cleanly) */
+
+/* =====================================================================
+   ===== RADAR BEGIN: In-play radar (radar.js). Only this builder edits between BEGIN and END. =====
+   ===================================================================== */
+
+/* ===== RADAR END ===== */
+
+/* (spacer so the three regions merge cleanly) */
+
+/* =====================================================================
+   ===== PLAN BEGIN: Game plan (plan.js). Only this builder edits between BEGIN and END. =====
+   ===================================================================== */
+
+/* ===== PLAN END ===== */
+
+/* (spacer so the three regions merge cleanly) */
+
 if (typeof module !== "undefined" && module.exports) module.exports = E;
 else root.MWE = E;
 })(typeof self !== "undefined" ? self : this);

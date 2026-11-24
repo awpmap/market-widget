@@ -970,6 +970,24 @@ for (const OLD of [false, true]) {
   await ctx9.close();
 }
 
+/* ===== PULSE HARNESS BEGIN (6.3). Only this builder edits between BEGIN and END. ===== */
+
+/* ===== PULSE HARNESS END ===== */
+
+// (spacer)
+
+/* ===== RADAR HARNESS BEGIN (6.3). Only this builder edits between BEGIN and END. ===== */
+
+/* ===== RADAR HARNESS END ===== */
+
+// (spacer)
+
+/* ===== PLAN HARNESS BEGIN (6.3). Only this builder edits between BEGIN and END. ===== */
+
+/* ===== PLAN HARNESS END ===== */
+
+// (spacer)
+
 await browser.close(); server.close();
 console.log(fail.length ? `\n${fail.length} check(s) failed` : "\nAll browser checks passed");
 process.exit(fail.length ? 1 : 0);
