@@ -1173,7 +1173,232 @@ E.lagShort = function (sec) { return sec == null ? "" : sec < 60 ? Math.round(se
 /* =====================================================================
    ===== RADAR BEGIN: In-play radar (radar.js). Only this builder edits between BEGIN and END. =====
    ===================================================================== */
+/* What is "in play" today, measured the one way that held up in MW's own backtests: relative volume. Everything
+   here is a plain function: the page (radar.js) feeds it Alpaca snapshots and daily bars and draws what comes back.
 
+   RELATIVE VOLUME, and what is approximate about it. The exact figure is today's volume so far over the 20-day
+   average volume by the same minute; that needs 20 days of minute bars for every ticker, far past the free limits.
+   MW uses today's volume so far over (the 20-day average FULL-day volume x the share of a day's volume that has
+   normally traded by this minute). That share is one fixed curve, E.RADAR_CURVE, the usual U shape of US trading
+   (busy open, quiet lunch, busy close). So the number is exact at the close and an estimate before it, and a ticker
+   whose day is shaped unlike the typical one reads a little high or low in the morning. Both volumes are IEX's
+   (one exchange, a few percent of all US trading), so the ratio is like for like. */
+
+/* the fixed part of the universe: liquid US stocks and funds (public tickers only; nothing personal) */
+E.RADAR_UNIVERSE = (
+  // the market, sectors, bonds, metals, oil, and the funds day traders lean on
+  "SPY QQQ IWM DIA SMH XLK XLF XLE XLV XLI XLY XLP XLU XLB XLC XLRE TLT HYG GLD SLV USO ARKK XBI KRE IBIT TQQQ SQQQ SOXL " +
+  // the largest companies
+  "AAPL MSFT NVDA AMZN GOOGL META TSLA AVGO BRK.B JPM LLY V MA UNH XOM COST HD PG JNJ WMT NFLX BAC ORCL CRM ABBV CVX KO PEP MRK " +
+  "ADBE CSCO MCD WFC DIS QCOM TXN IBM GE CAT GS MS AXP NOW UBER BKNG PFE AMGN BA NKE SBUX C T VZ CMCSA RTX LMT DE UPS " +
+  // chips, AI and software
+  "AMD MU INTC TSM ASML AMAT LRCX KLAC MRVL ARM SMCI ON DELL ANET VRT CRWV PLTR SNOW DDOG NET CRWD PANW ZS MDB SHOP APP " +
+  // names that move: crypto-linked, fintech, consumer, EVs, power, travel, energy, miners, China
+  "COIN MSTR HOOD SOFI RBLX ROKU SNAP PINS DKNG AFRM RIVN NIO F GM CVNA ABNB DASH PYPL XYZ MARA RIOT IONQ OKLO CEG VST GEV " +
+  "RDDT HIMS ENPH FSLR CCL DAL UAL OXY SLB FCX BABA"
+).split(" ");
+E.RADAR_MIN_AV = 20000;      // a 20-day average under this many IEX shares a day is too thin to measure against
+E.RADAR_SHOCK_X = 5;         // a "volume surge": one minute at 5 times its usual pace or more,
+E.RADAR_SHOCK_USD = 50000;   // and at least this many dollars on IEX in that minute
+/* your tickers first (so they are always in the first call), then the fixed list; mutual funds and odd symbols are left out */
+E.radarUniverse = function (mine) {
+  const seen = new Set(), out = [];
+  [...(mine || []).map(s => String(s || "").toUpperCase()), ...E.RADAR_UNIVERSE].forEach(s => {
+    if (/^[A-Z][A-Z.]{0,6}$/.test(s) && !E.isFundSym(s) && !seen.has(s)) { seen.add(s); out.push(s); } });
+  return out;
+};
+/* the share of a regular session's volume that has normally traded `mins` minutes after the open (0 to 1).
+   [minutes after 9:30, share so far]; straight lines in between. A half day uses the same shape, squeezed. */
+E.RADAR_CURVE = [[0, 0], [5, 0.035], [15, 0.078], [30, 0.13], [60, 0.22], [90, 0.295], [120, 0.36], [150, 0.418], [180, 0.471],
+  [210, 0.521], [240, 0.571], [270, 0.624], [300, 0.684], [330, 0.754], [360, 0.844], [390, 1]];
+E.radarDayFrac = function (mins, len) {
+  const C = E.RADAR_CURVE, m = Math.max(0, Math.min(390, mins * 390 / (len > 0 ? len : 390)));
+  for (let i = 1; i < C.length; i++) if (m <= C[i][0]) { const a = C[i - 1], b = C[i]; return a[1] + (b[1] - a[1]) * (m - a[0]) / (b[0] - a[0]); }
+  return 1;
+};
+/* where the market is, for the radar: ph "open" | "pre" | "after" | "closed"; date and mins (New York now);
+   sess, the regular session the list is about (today from 9:30 on a trading day, else the one before);
+   settled, the moment that session's after-hours trading ended (ms) */
+E.radarPhase = function (now, opts) {
+  const mc = E.marketClock(now, opts), p = E.etParts(now), sess = E.lastSessionDate(now), close = E.closeMins(sess);
+  return {ph: mc.ph === "open" || mc.ph === "pre" || mc.ph === "after" ? mc.ph : "closed", date: p.date, mins: p.mins, sess,
+    settled: E.etMs(sess, close === 960 ? 1200 : close + 240)};
+};
+/* what a ticker's own history says is normal, from daily bars [{d:"YYYY-MM-DD", h, l, c, v}] (any order), using only
+   sessions BEFORE `before`: av (average volume of the last 20), n (how many of them there were), atr (Wilder, 14 days),
+   c (the last close), h20/l20 and h52/l52 (the highest high and lowest low of the last 20 and 252 sessions), n52 */
+E.radarBase = function (bars, before) {
+  const b = (bars || []).filter(x => x && x.d < before && x.c > 0 && x.h > 0 && x.l > 0).sort((x, y) => x.d < y.d ? -1 : x.d > y.d ? 1 : 0), n = b.length;
+  if (!n) return null;
+  const m20 = b.slice(-20), yr = b.slice(-252), r4 = v => v == null || !isFinite(v) ? null : +v.toFixed(4);
+  const atr = E.atrWilder(b.slice(-120).reverse().map(x => [x.d, 0, x.h, x.l, x.c]), 14);
+  return {asOf: b[n - 1].d, n: m20.length, av: Math.round(E.mean(m20.map(x => +x.v || 0))), atr: r4(atr), c: +b[n - 1].c,
+    h20: Math.max(...m20.map(x => x.h)), l20: Math.min(...m20.map(x => x.l)), h52: Math.max(...yr.map(x => x.h)), l52: Math.min(...yr.map(x => x.l)), n52: yr.length};
+};
+/* one Alpaca stock snapshot, tidied: day (the last regular session there is a daily bar for), c (its price: the
+   latest regular trade while it is open, else its close), pc (the close before), o/h/l, v (shares) and vw (VWAP) on
+   IEX, t (ms of the trade behind c), ext {p, t, ph:"pre"|"after"} for a later trade outside regular hours,
+   mv/mt/mc (the latest one-minute bar: shares, start in ms, close), pv (pre-market shares, when the feed counts them).
+   Before the open some feeds already start today's bar from pre-market trades; the last full session is then the
+   previous bar, and today's early bar becomes the pre-market trade. */
+E.radarSnap = function (snap, now) {
+  const db = snap && snap.dailyBar, pdb = snap && snap.prevDailyBar, lt = snap && snap.latestTrade, mb = snap && snap.minuteBar;
+  if (!db || !(db.c > 0) || !db.t) return null;
+  const pos = v => isFinite(+v) && +v > 0 ? +v : null, dOf = b => E.etDateOf(Date.parse(b.t)), p = E.etParts(now);
+  let cur = db, prev = pdb && pdb.c > 0 ? pdb : null, early = null;
+  if (dOf(db) === p.date && p.mins < 570 && prev) { early = db; cur = prev; prev = null; }
+  const day = dOf(cur);
+  const out = {day, c: +cur.c, pc: prev ? +prev.c : null, o: pos(cur.o), h: pos(cur.h), l: pos(cur.l), v: +cur.v || 0, vw: pos(cur.vw), t: 0, ext: null, mv: 0, mt: 0, mc: null, pv: early ? +early.v || 0 : null};
+  if (lt && lt.p > 0 && lt.t) {
+    const tms = Date.parse(lt.t), tp = E.etParts(tms), close = E.closeMins(tp.date), reg = E.isTradingDay(tp.date) && tp.mins >= 570 && tp.mins < close;
+    if (reg && tp.date === day) { out.c = +lt.p; out.t = tms; }
+    else if (!reg && tp.mins >= 240 && tp.mins < 1200 && (tp.date > day || (tp.date === day && tp.mins >= close))) out.ext = {p: +lt.p, t: tms, ph: tp.mins < 570 ? "pre" : "after"};
+  }
+  if (!out.ext && early) out.ext = {p: +early.c, t: Date.parse(early.t), ph: "pre"};
+  if (mb && mb.v > 0 && mb.t) { out.mv = +mb.v; out.mt = Date.parse(mb.t); out.mc = pos(mb.c); }
+  return out;
+};
+/* how big an opening gap has to be to count, in percent: half the ticker's average daily range (ATR), never under
+   0.5%; 2% when the range is not known */
+E.radarGapMin = (pc, atr) => atr > 0 && pc > 0 ? Math.max(0.5, 50 * atr / pc) : 2;
+/* an opening gap and what became of it. o: the open, pc: the close before, c: the price now.
+   fill: the share of the gap given back (0 at the open, 1 back at the previous close, under 0 when it has extended).
+   state: "holding" (a third or less given back), "fading", "filled". null when the gap is too small to count. */
+E.radarGap = function (o, pc, c, atr) {
+  if (!(o > 0 && pc > 0 && c > 0)) return null;
+  const pct = (o / pc - 1) * 100;
+  if (Math.abs(pct) < E.radarGapMin(pc, atr)) return null;
+  const fill = (o - c) / (o - pc);
+  return {dir: pct > 0 ? 1 : -1, pct, fill, state: fill >= 1 ? "filled" : fill > 1 / 3 ? "fading" : "holding"};
+};
+/* every figure the radar shows for one ticker. q: E.radarSnap's answer; bases: E.radarBase answers (the newest one
+   that ends before q.day is used); ctx: {now, spy (SPY's move in percent, or null)}.
+   live: its session is trading now. stale: no trade in the session the list is about (the price is an older close).
+   rvol: volume against what is normal by this time (null when it can't be measured). move/moveUsd: what the row
+   leads with, which is the day's change, or in pre-market the latest trade against the last close. rs: move - SPY's. */
+E.radarRow = function (sym, q, bases, ctx) {
+  if (!q || !(q.c > 0)) return null;
+  const ph = E.radarPhase(ctx.now, ctx.clock), b = (bases || []).find(x => x && x.asOf < q.day) || null;
+  const live = ph.ph === "open" && q.day === ph.date, stale = q.day < ph.sess;
+  const pc = q.pc > 0 ? q.pc : b ? b.c : null, close = E.closeMins(ph.date);
+  const frac = live ? Math.max(E.radarDayFrac(ph.mins - 570, close - 570), E.radarDayFrac(5)) : 1;
+  const r = {sym, day: q.day, live, stale, px: q.c, pc, chg: pc ? q.c - pc : null, pct: pc ? (q.c / pc - 1) * 100 : null,
+    o: q.o, h: q.h, l: q.l, v: q.v, vw: q.vw, dv: q.v * (q.vw || q.c), t: q.t, av: b ? b.av : null, atr: b ? b.atr : null,
+    rvol: !stale && b && b.n >= 10 && b.av >= E.RADAR_MIN_AV ? q.v / (b.av * frac) : null,
+    thin: !!b && !(b.n >= 10 && b.av >= E.RADAR_MIN_AV),
+    gapPct: q.o > 0 && pc ? (q.o / pc - 1) * 100 : null, sinceOpen: q.o > 0 ? (q.c / q.o - 1) * 100 : null, vwap: q.vw > 0 ? (q.c / q.vw - 1) * 100 : null,
+    rng: b && b.atr > 0 && q.h > 0 && q.l > 0 ? (Math.max(q.h, pc || q.h) - Math.min(q.l, pc || q.l)) / b.atr : null,
+    gap: stale ? null : E.radarGap(q.o, pc, q.c, b && b.atr), ext: null};
+  r.hi52 = !stale && !!b && b.n52 >= 200 && q.h >= b.h52; r.lo52 = !stale && !!b && b.n52 >= 200 && q.l > 0 && q.l <= b.l52;
+  r.hi20 = !stale && !!b && b.n >= 20 && q.h >= b.h20; r.lo20 = !stale && !!b && b.n >= 20 && q.l > 0 && q.l <= b.l20;
+  r.ref = b ? {h52: b.h52, l52: b.l52, h20: b.h20, l20: b.l20} : null;
+  const x = q.ext;
+  if (x && x.p > 0 && (ph.ph === "pre" ? x.ph === "pre" && E.etDateOf(x.t) === ph.date : ph.ph !== "open" && x.ph === "after" && E.etDateOf(x.t) === q.day))
+    r.ext = {p: x.p, t: x.t, ph: x.ph, chg: x.p - q.c, pct: (x.p / q.c - 1) * 100, big: Math.abs(x.p / q.c - 1) * 100 >= E.radarGapMin(q.c, b && b.atr)};
+  if (ph.ph === "pre") { r.move = r.ext ? r.ext.pct : null; r.moveUsd = r.ext ? r.ext.chg : null; r.last = r.ext ? r.ext.p : r.px; }
+  else { r.move = stale ? null : r.pct; r.moveUsd = stale ? null : r.chg; r.last = r.px; }
+  r.rs = r.move != null && ctx.spy != null && isFinite(ctx.spy) ? r.move - ctx.spy : null;
+  return r;
+};
+/* all rows at once: {rows: {SYM: row}, spy: SPY's move (percent) or null, ph} */
+E.radarRows = function (qs, bases, ctx) {
+  const s = qs.SPY ? E.radarRow("SPY", qs.SPY, bases.SPY, Object.assign({}, ctx, {spy: null})) : null, spy = s && s.move != null ? s.move : null, rows = {};
+  Object.keys(qs).forEach(k => { const r = E.radarRow(k, qs[k], bases[k], Object.assign({}, ctx, {spy})); if (r) rows[k] = r; });
+  return {rows, spy, ph: E.radarPhase(ctx.now, ctx.clock)};
+};
+/* what a row is ranked by. "inplay": relative volume (in pre-market, when volume has not started counting, the
+   size of the move against the last close). "rs": its move minus SPY's. null: can't be ranked. */
+E.radarScore = function (r, view, ph) {
+  if (!r) return null;
+  if (view === "rs") return r.rs;
+  if (ph === "pre") return r.ext ? Math.abs(r.ext.pct) : null;
+  return r.stale ? null : r.rvol;
+};
+/* the filters: a price floor and a floor on the session's dollar volume (IEX) */
+E.radarPass = (r, f) => !!r && (!(f && f.minPx > 0) || r.last >= f.minPx) && (!(f && f.minDv > 0) || r.dv >= f.minDv);
+/* a calm ranking. scored: [{sym, score}] (higher first); prev: the order shown until now. A ticker already listed
+   only moves above its neighbour when it beats it by more than `h` (10%), so two names with nearly the same score
+   don't keep swapping places; a newcomer is placed by its score as it is. With no previous order: a plain sort. */
+E.radarRank = function (prev, scored, h) {
+  h = h == null ? 0.1 : h;
+  const sc = new Map(); (scored || []).forEach(x => { if (x && x.score != null && isFinite(x.score)) sc.set(x.sym, x.score); });
+  const plain = (a, b) => sc.get(b) - sc.get(a) || (a < b ? -1 : a > b ? 1 : 0);
+  const kept = (prev || []).filter(s => sc.has(s)), was = new Set(kept);
+  if (!kept.length) return [...sc.keys()].sort(plain);
+  const beats = (a, b, tol) => sc.get(a) - sc.get(b) > tol * Math.max(Math.abs(sc.get(b)), 1e-9);
+  const list = [];
+  [...kept, ...[...sc.keys()].filter(s => !was.has(s)).sort(plain)].forEach(s => {
+    let i = list.length; const tol = was.has(s) ? h : 0;
+    while (i > 0 && beats(s, list[i - 1], was.has(list[i - 1]) ? tol : 0)) i--;
+    list.splice(i, 0, s);
+  });
+  return list;
+};
+/* a volume surge: the latest one-minute bar against the pace normal for that minute (the 20-day average day x the
+   slope of the curve there). Only inside the regular session, after its first five minutes (the open is always a
+   burst), for a bar no more than three minutes old. -> {x, t, v} or null */
+E.radarShock = function (q, base, now) {
+  if (!q || !base || !(q.mv > 0) || !(q.mt > 0) || !(base.av >= E.RADAR_MIN_AV) || now < q.mt || now - q.mt > 180e3) return null;
+  const tp = E.etParts(q.mt), len = E.closeMins(tp.date) - 570, m = tp.mins - 570;
+  if (!E.isTradingDay(tp.date) || m < 5 || m >= len) return null;
+  const usual = base.av * (E.radarDayFrac(m + 1, len) - E.radarDayFrac(m, len)), x = usual > 0 ? q.mv / usual : 0;
+  return x >= E.RADAR_SHOCK_X && q.mv * (q.mc || q.c) >= E.RADAR_SHOCK_USD ? {x, t: q.mt, v: q.mv} : null;
+};
+/* the tags on a row, most telling first: [{k, t (the words), tone, tip (one sentence)}].
+   ctx: {ph, today, er {d, hour, prev (true: the session before today)}, news {h, mins}, ping {x, t}, time (ms -> "10:31 AM")} */
+E.radarTags = function (r, ctx) {
+  ctx = ctx || {};
+  const T = [], ph = ctx.ph || "open", add = (k, t, tone, tip) => T.push({k, t, tone, tip});
+  const xs = v => (v >= 9.95 ? String(Math.round(v)) : v.toFixed(1)) + "×", p1 = v => Math.abs(v).toFixed(1) + "%";
+  const time = ms => ctx.time ? ctx.time(ms) : "", cur = r.day === ctx.today, day = cur ? "today" : "in the last session", Day = cur ? "Today's" : "The last session's";
+  if (ctx.ping && ph === "open") add("surge", "Volume surge", "hot", `A sudden burst of trading${time(ctx.ping.t) ? " at " + time(ctx.ping.t) : ""}: about ${Math.round(ctx.ping.x)} times its usual volume for one minute at that time of day.`);
+  const er = ctx.er;
+  if (er && er.d === ctx.today) add("er", er.hour === "amc" ? "Earnings after close" : "Earnings today", "warn",
+    er.hour === "amc" ? "Reports earnings after the close today, so the results are not in this price yet." : er.hour === "bmo" ? "Reported earnings before the open today: this is the first session to trade on the results." : "Reports earnings today (the time of day is not listed).");
+  else if (er && er.prev && er.hour === "amc") add("er", "Just reported", "warn", `Reported earnings after the close on ${E.mdLabel(er.d)}: the session after that is the first to trade on the results.`);
+  if (ctx.news && ctx.news.h) add("news", "News", "info", `“${String(ctx.news.h).slice(0, 150)}” (${ctx.news.mins < 1 ? "just now" : Math.round(ctx.news.mins) + " min ago"})`);
+  if (r.ext && ph !== "pre" && Math.abs(r.ext.pct) >= 1) add("ext", "After hours " + E.fmtPct(r.ext.pct, 1), r.ext.pct > 0 ? "xup" : "xdown",
+    `The latest after-hours trade${time(r.ext.t) ? " (" + time(r.ext.t) + ", IEX)" : " (IEX)"} was ${E.fmtPx(r.ext.p)}, ${p1(r.ext.pct)} ${r.ext.pct > 0 ? "above" : "below"} the close.`);
+  if (r.stale) { add("quiet", "No trade yet today", "mute", "No trade on IEX in today's session yet, so the price shown is still the last close."); return T; }
+  if (r.rvol != null && r.rvol >= 2) {
+    if (ph === "pre") add("vol", "Heavy volume last session", "vol", `Traded ${xs(r.rvol)} its 20-day average volume in the last session (${E.mdLabel(r.day)}).`);
+    else add("vol", r.rvol >= 5 ? "Extreme volume" : "Unusual volume", r.rvol >= 5 ? "vol2" : "vol",
+      r.live ? `Trading ${xs(r.rvol)} its usual volume for this time of day (today's volume so far against its 20-day average, IEX).` : `Traded ${xs(r.rvol)} its 20-day average volume ${day} (IEX).`);
+  }
+  if (ph === "pre") { if (r.ext && r.ext.big) add("gap", r.ext.pct > 0 ? "Gapping up" : "Gapping down", r.ext.pct > 0 ? "up" : "down",
+    `Trading ${p1(r.ext.pct)} ${r.ext.pct > 0 ? "above" : "below"} the last close in the pre-market (IEX). It is only a gap if it holds to the open.`); }
+  else if (r.gap) { const g = r.gap, up = g.dir > 0, open = `Opened ${p1(g.pct)} ${up ? "above" : "below"} the previous close`;
+    add("gap", `Gap ${up ? "up" : "down"} ${g.state}`, g.state === "holding" ? (up ? "up" : "down") : g.state === "fading" ? "fade" : "mute",
+      g.state === "holding" ? `${open} and has kept the gap: the price is still ${g.fill <= 0 ? (up ? "at or above" : "at or below") : "close to"} the open.`
+      : g.state === "fading" ? `${open} and has given back about ${Math.round(g.fill * 100)}% of the gap.`
+      : `${open} and has come all the way back to it: the gap is filled.`); }
+  if (ph !== "pre") {
+    if (r.hi52) add("hi", "New 52-wk high", "up2", `${Day} high of ${E.fmtPx(r.h)} passed its highest price of the past 52 weeks (${E.fmtPx(r.ref.h52)}).`);
+    else if (r.hi20) add("hi", "New 20-day high", "up", `${Day} high of ${E.fmtPx(r.h)} passed its highest price of the past 20 sessions (${E.fmtPx(r.ref.h20)}).`);
+    if (r.lo52) add("lo", "New 52-wk low", "down2", `${Day} low of ${E.fmtPx(r.l)} fell under its lowest price of the past 52 weeks (${E.fmtPx(r.ref.l52)}).`);
+    else if (r.lo20) add("lo", "New 20-day low", "down", `${Day} low of ${E.fmtPx(r.l)} fell under its lowest price of the past 20 sessions (${E.fmtPx(r.ref.l20)}).`);
+    if (r.rng != null && r.rng >= 1.5) add("rng", "Range " + xs(r.rng) + " ATR", "mute", `${Day} range, counting any gap, is ${xs(r.rng)} its average daily range (14-day ATR of ${E.fmtPx(r.atr)}): a much bigger day than usual.`);
+    if (r.vwap != null && Math.abs(r.vwap) >= 0.15) add("vwap", r.vwap > 0 ? "Above VWAP" : "Below VWAP", r.vwap > 0 ? "sup" : "sdown",
+      `${r.live ? "The price is" : "It closed"} ${p1(r.vwap)} ${r.vwap > 0 ? "above" : "below"} ${cur ? "today's" : "that session's"} volume-weighted average price of ${E.fmtPx(r.vw)} (IEX trades), so the average share traded ${cur ? "today" : "that day"} sits at a ${r.vwap > 0 ? "gain" : "loss"}.`);
+  }
+  return T;
+};
+/* the scope's scales. radarCap: how far the sideways axis reaches (percent), a round step past 90% of the moves
+   and past every move in `fit` (the in-play tickers, which must never be pushed to the edge).
+   radarTop: the top of the volume axis, a power of two from 4. radarXY: where a dot goes, x and y from 0 to 1
+   (0.5 is no change; the volume axis is logarithmic from 0.25 times usual), pinned to the edge when off the scale. */
+E.radarCap = function (moves, fit) {
+  const abs = l => (l || []).filter(v => v != null && isFinite(v)).map(Math.abs), a = abs(moves).sort((x, y) => x - y);
+  if (!a.length) return 3;
+  const q = Math.max(a[Math.min(a.length - 1, Math.floor(a.length * 0.9))], ...abs(fit));
+  return [2, 3, 4, 6, 8, 12, 16, 24, 40].find(s => s >= q * 1.04) || 40;
+};
+E.radarTop = function (rvols) { const m = Math.max(0, ...(rvols || []).filter(v => v != null && isFinite(v))); return [4, 8, 16, 32].find(s => s >= m) || 32; };
+E.radarXY = function (move, rvol, cap, top) {
+  if (move == null || !isFinite(move) || rvol == null || !isFinite(rvol)) return null;
+  const x = 0.5 + move / cap / 2, y = Math.log(Math.max(rvol, 1e-9) / 0.25) / Math.log(top / 0.25);
+  return {x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)), off: x < 0 || x > 1 || y > 1};
+};
 /* ===== RADAR END ===== */
 
 /* (spacer so the three regions merge cleanly) */
