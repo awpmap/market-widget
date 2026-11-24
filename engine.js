@@ -7,7 +7,7 @@
 (function (root) {
 "use strict";
 const E = {};
-E.VERSION = "6.2.0";
+E.VERSION = "6.3.0";
 
 /* ====================================================================================
    1. Calendar (NYSE). Source: NYSE Group release of 2025-12-23, "2026, 2027 and 2028 Holiday
@@ -664,7 +664,7 @@ E.MACRO_KINDS = {
   gdp:  {mins:510, name:"GDP + PCE", tip:"GDP and the PCE inflation gauge the Fed watches most, 8:30 AM ET."}
 };
 E.MACRO_DATES = {
-  fomc: ["2026-12-09","2027-01-27","2027-03-17","2027-04-28","2027-06-09","2027-07-28","2027-09-15","2027-10-27","2027-12-08"],
+  fomc: ["2026-12-09","2027-01-27","2027-03-17","2027-04-28","2027-06-09","2027-07-28","2027-09-15","2027-11-17","2028-01-26"],   // 2027 revised by the Fed on 2026-11-12: Oct 26-27 is strategy-only (no decision), last decision Nov 17
   cpi:  ["2026-11-10","2026-12-10","2027-01-13","2027-02-11","2027-03-10","2027-04-13","2027-05-12","2027-06-10","2027-07-14","2027-08-11","2027-09-14","2027-10-14","2027-11-10","2027-12-10"],
   jobs: ["2026-11-06","2026-12-04","2027-01-08","2027-02-05","2027-03-05","2027-04-02","2027-05-07","2027-06-04","2027-07-02","2027-08-06","2027-09-03","2027-10-08","2027-11-05","2027-12-03"],
   ppi:  ["2026-11-13","2026-12-15","2027-01-14","2027-02-12","2027-03-12","2027-04-14","2027-05-13","2027-06-11","2027-07-15","2027-08-10","2027-09-10","2027-10-15","2027-11-12","2027-12-15"],
@@ -1162,6 +1162,719 @@ E.wireLag = function (lags) {
 };
 /* "14s", "3m", "2h" */
 E.lagShort = function (sec) { return sec == null ? "" : sec < 60 ? Math.round(sec) + "s" : sec < 3600 ? Math.round(sec / 60) + "m" : Math.round(sec / 3600) + "h"; };
+
+/* =====================================================================
+   ===== PULSE BEGIN: Market pulse (pulse.js). Only this builder edits between BEGIN and END. =====
+   ===================================================================== */
+
+/* ---------- 6.3 board layout: where each section sits on the main screen ----------
+   order: every section key, in the one-column (narrow window) order. A wide window shows n columns (2 or 3); the
+   arrangement for each column count is kept on its own (settings.board = {"2":[[keys],[keys]], "3":[...]}) once you
+   move a section there. Until then, and for a column count you never arranged, it is worked out:
+   - nothing saved: the visible sections take turns across the columns in the one-column order (the 4.7 rule);
+   - another column count was arranged: 3 -> 2 puts the third column under the second; 2 -> 3 deals the reading order;
+   - a section that is in no column yet (new in a later version) goes at the end of the shortest column.
+   A hidden section keeps its place in its column, so turning it back on puts it where it was. */
+const boardOk = (c, n) => Array.isArray(c) && c.length === n && c.every(Array.isArray);
+E.boardDeal = function (order, n, hidden) {
+  hidden = hidden || {}; const cols = Array.from({length: n}, () => []), where = {};
+  order.filter(k => !hidden[k]).forEach((k, i) => { cols[i % n].push(k); where[k] = i % n; });
+  // a hidden section rides right after the visible one before it in the order (top of the first column if none)
+  order.forEach((k, i) => { if (!hidden[k]) return; let p = i - 1; while (p >= 0 && hidden[order[p]]) p--;
+    if (p < 0) { cols[0].unshift(k); where[k] = 0; return; }
+    const c = cols[where[order[p]]]; c.splice(c.indexOf(order[p]) + 1, 0, k); where[k] = where[order[p]]; });
+  return cols;
+};
+/* reading order of a board: across the top row first, then the next (the order keys 1 to 9 follow) */
+E.boardRead = function (cols, hidden) {
+  hidden = hidden || {}; const v = cols.map(c => c.filter(k => !hidden[k])), out = [];
+  for (let r = 0, m = Math.max(0, ...v.map(c => c.length)); r < m; r++) v.forEach(c => { if (c[r]) out.push(c[r]); });
+  return out;
+};
+E.boardCols = function (saved, order, n, hidden) {
+  hidden = hidden || {}; const known = new Set(order);
+  let src = saved && saved[n];
+  if (!boardOk(src, n)) {
+    const other = saved && typeof saved === "object" ? Object.keys(saved).map(Number).filter(m => m !== n && m >= 1 && m <= 4 && boardOk(saved[m], m)).sort((a, b) => Math.abs(a - n) - Math.abs(b - n))[0] : null;
+    if (other > n) { const S = saved[other]; src = S.slice(0, n).map((c, i) => i === n - 1 ? [].concat(...S.slice(n - 1)) : c.slice()); }
+    else if (other) src = E.boardDeal([...new Set(E.boardRead(saved[other], {}).concat(order))], n, hidden);
+    else src = E.boardDeal(order, n, hidden);
+  }
+  const seen = new Set();
+  const cols = src.map(c => c.filter(k => known.has(k) && !seen.has(k) && (seen.add(k), true)));
+  const visN = c => c.filter(x => !hidden[x]).length;
+  order.filter(k => !seen.has(k)).forEach(k => {
+    let best = 0; cols.forEach((c, i) => { if (visN(c) < visN(cols[best])) best = i; });
+    cols[best].push(k); seen.add(k);
+  });
+  return cols;
+};
+/* move key into column `to`, in front of `before` (null: the end of that column) */
+E.boardMove = function (cols, key, to, before) {
+  const out = cols.map(c => c.filter(k => k !== key)); if (!out[to]) return out;
+  const i = before ? out[to].indexOf(before) : -1;
+  if (i < 0) out[to].push(key); else out[to].splice(i, 0, key);
+  return out;
+};
+/* one step with the keyboard: "up", "down" (within the column), "left", "right" (the next column, same height).
+   Hidden sections are stepped over. Returns the new columns, or null when the section can't go that way. */
+E.boardStep = function (cols, key, dir, hidden) {
+  hidden = hidden || {}; const ci = cols.findIndex(c => c.includes(key)); if (ci < 0) return null;
+  const v = cols[ci].filter(k => k === key || !hidden[k]), vi = v.indexOf(key);
+  if (dir === "up") return vi > 0 ? E.boardMove(cols, key, ci, v[vi - 1]) : null;
+  if (dir === "down") return vi < v.length - 1 ? E.boardMove(cols, key, ci, v[vi + 2] || null) : null;
+  const tc = ci + (dir === "left" ? -1 : dir === "right" ? 1 : 0); if (tc === ci || tc < 0 || tc >= cols.length) return null;
+  const tv = cols[tc].filter(k => !hidden[k]);
+  return E.boardMove(cols, key, tc, tv[Math.min(vi, tv.length)] || null);
+};
+/* the keys of `want` to move so a list in the order `have` ends up as `want`: all but the longest run that is already
+   in order. Moving a section takes the focus out of it, so only these are moved. */
+E.minMoves = function (have, want) {
+  const pos = new Map(have.map((k, i) => [k, i])), seq = want.map(k => pos.has(k) ? pos.get(k) : -1);
+  const len = seq.map(() => 1), prev = seq.map(() => -1);
+  for (let i = 0; i < seq.length; i++) for (let j = 0; j < i; j++) if (seq[i] >= 0 && seq[j] >= 0 && seq[i] > seq[j] && len[j] + 1 > len[i]) { len[i] = len[j] + 1; prev[i] = j; }
+  let best = -1; seq.forEach((s, i) => { if (s >= 0 && (best < 0 || len[i] > len[best])) best = i; });
+  const keep = new Set(); for (let i = best; i >= 0; i = prev[i]) keep.add(want[i]);
+  return want.filter(k => !keep.has(k));
+};
+
+/* ---------- 6.3 Market pulse: risk appetite from relative strength, breadth and cross-asset moves ----------
+   An indicator, not advice. Every figure is a public ETF (or bitcoin); no personal data here.
+   Pairs: how fund A did against fund B, as the change in the ratio A/B: today, over 5 sessions (today counts as one,
+   the 5D rule used everywhere in MW) and over 20 sessions. s: the move (in percent) that counts as a full reading for
+   today, 5D and 20D; anything bigger counts the same as the scale. See CHANGES-6.3-pulse.md for the method. */
+E.PULSE = {
+  pairs: [
+    {k:"chips",    a:"SMH",  b:"SPY",  w:1,    s:[1.2, 3, 6],     subj:"chips"},
+    {k:"growth",   a:"QQQ",  b:"SPY",  w:0.75, s:[0.5, 1.5, 3],   subj:"the Nasdaq"},
+    {k:"small",    a:"IWM",  b:"SPY",  w:1,    s:[0.8, 2, 4],     subj:"small caps"},
+    {k:"beta",     a:"SPHB", b:"SPLV", w:1.25, s:[1.2, 3, 6],     subj:"high beta"},
+    {k:"consumer", a:"XLY",  b:"XLP",  w:1,    s:[0.8, 2, 4],     subj:"discretionary"},
+    {k:"credit",   a:"HYG",  b:"IEF",  w:1.25, s:[0.3, 0.8, 1.5], subj:"credit"}
+  ],
+  // dir: +1 when a rise means more appetite for risk, -1 when it means less, 0: shown for context, not scored
+  cross: [
+    {k:"vol",    sym:"VIXY",    w:1,   dir:-1, s:4,   subj:"volatility", up:"rising", dn:"easing"},
+    {k:"dollar", sym:"UUP",     w:0.5, dir:-1, s:0.4, subj:"the dollar", up:"firmer", dn:"softer"},
+    {k:"btc",    sym:"BTC/USD", w:0.5, dir:1,  s:3,   subj:"bitcoin",    up:"rising", dn:"falling"},
+    {k:"rates",  sym:"TLT",     w:0,   dir:0},
+    {k:"gold",   sym:"GLD",     w:0,   dir:0},
+    {k:"oil",    sym:"USO",     w:0,   dir:0}
+  ],
+  sectors: ["XLK","XLC","XLY","XLF","XLV","XLI","XLE","XLB","XLU","XLP","XLRE"],
+  wBreadth: 1, wTrend: 1,
+  parts: [0.5, 0.3, 0.2],   // how today, 5D and 20D mix inside one pair
+  minCover: 0.4             // below this share of the total weight there is no reading
+};
+/* every stock ticker the pulse needs (bitcoin comes from the crypto feed) */
+E.pulseSyms = function () {
+  const P = E.PULSE, s = new Set();
+  P.pairs.forEach(p => { s.add(p.a); s.add(p.b); }); P.cross.forEach(c => { if (!c.sym.includes("/")) s.add(c.sym); }); P.sectors.forEach(x => s.add(x));
+  return [...s];
+};
+const pClamp = x => Math.max(-1, Math.min(1, x));
+const pNum = x => x != null && isFinite(x);
+/* how A did against B, in percent, from their two percent changes */
+E.pulseRel = (pa, pb) => pNum(pa) && pNum(pb) ? ((1 + pa / 100) / (1 + pb / 100) - 1) * 100 : null;
+/* closes: [[date, close], ...] oldest first, completed sessions only. The change over n sessions with today counting
+   as one: the price now (px, or the last close) against closes[len - n]. */
+E.pulseBack = function (closes, px, n) {
+  if (!Array.isArray(closes) || closes.length < n) return null;
+  const ref = closes[closes.length - n][1], now = px > 0 ? px : closes[closes.length - 1][1];
+  return ref > 0 && now > 0 ? (now / ref - 1) * 100 : null;
+};
+/* the ratio A/B on the dates both have, then the ratio now: its 5D and 20D change, and up to 21 points to draw */
+E.pulseTrend = function (ca, cb, pxA, pxB) {
+  if (!Array.isArray(ca) || !Array.isArray(cb)) return {r5:null, r20:null, line:[]};
+  const mb = new Map(cb.map(x => [x[0], x[1]]));
+  const R = ca.filter(x => x[1] > 0 && mb.get(x[0]) > 0).map(x => [x[0], x[1] / mb.get(x[0])]);
+  const now = pxA > 0 && pxB > 0 ? pxA / pxB : null;
+  const line = R.slice(-20).map(x => x[1]); if (now && R.length) line.push(now);
+  return {r5: E.pulseBack(R, now, 5), r20: E.pulseBack(R, now, 20), line};
+};
+/* sectors: [{dp, px, closes}] -> how many are up and down today, and how many trade above their 20-day average
+   (the mean of the last 20 completed closes) */
+E.pulseBreadth = function (rows) {
+  let up = 0, down = 0, n = 0, above = 0, n20 = 0;
+  (rows || []).forEach(r => {
+    if (r && pNum(r.dp)) { n++; if (+r.dp.toFixed(2) > 0) up++; else if (+r.dp.toFixed(2) < 0) down++; }
+    const c = r && r.closes;
+    if (Array.isArray(c) && c.length >= 20) { const px = r.px > 0 ? r.px : c[c.length - 1][1], avg = c.slice(-20).reduce((a, x) => a + x[1], 0) / 20; if (px > 0 && avg > 0) { n20++; if (px > avg) above++; } }
+  });
+  return {up, down, n, above, n20};
+};
+const pJoin = a => a.length <= 1 ? (a[0] || "") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
+/* phrases that share a verb go together: [["chips","leading"],["small caps","leading"],["credit","leading"]] -> "chips, small caps and credit leading" */
+E.pulsePhrase = function (ph) {
+  const g = []; ph.forEach(([s, v]) => { const x = g.find(y => y.v === v); if (x) x.s.push(s); else g.push({v, s:[s]}); });
+  return g.map(x => pJoin(x.s) + " " + x.v).join(", ");
+};
+/* in: {pairs:{k:{today, r5, r20}}, cross:{k:{dp}}, breadth:{up, down, n, above, n20}}
+   out: {score -100..+100 (null when too little is known), label, verdict, cover 0..1, parts:[{k, c -1..1, w, ph}]} */
+E.pulseScore = function (inp) {
+  const P = E.PULSE, parts = []; inp = inp || {};
+  let wAll = 0;
+  P.pairs.forEach(p => {
+    wAll += p.w; const x = (inp.pairs || {})[p.k]; if (!x) return;
+    let s = 0, ww = 0;
+    [x.today, x.r5, x.r20].forEach((y, i) => { if (pNum(y)) { s += P.parts[i] * pClamp(y / p.s[i]); ww += P.parts[i]; } });
+    // a pair with only part of its readings (no history yet) counts for less
+    if (ww > 0) { const c = s / ww; parts.push({k:p.k, c, w:p.w * Math.min(1, ww / 0.5), ph:[p.subj, c >= 0 ? "leading" : "lagging"]}); }
+  });
+  P.cross.forEach(x => {
+    if (!x.w) return; wAll += x.w; const y = (inp.cross || {})[x.k];
+    if (y && pNum(y.dp)) parts.push({k:x.k, c:pClamp(x.dir * y.dp / x.s), w:x.w, ph:[x.subj, y.dp >= 0 ? x.up : x.dn]});
+  });
+  const b = inp.breadth || {}; wAll += P.wBreadth + P.wTrend;
+  if (b.n >= 6) { const c = (b.up - b.down) / b.n; parts.push({k:"breadth", c, w:P.wBreadth, ph:["most sectors", c >= 0 ? "up" : "down"]}); }
+  if (b.n20 >= 6) { const c = (2 * b.above - b.n20) / b.n20; parts.push({k:"trend", c, w:P.wTrend, ph:["most sectors", c >= 0 ? "above their 20-day average" : "below their 20-day average"]}); }
+  const wHave = parts.reduce((a, x) => a + x.w, 0), cover = wAll ? wHave / wAll : 0;
+  if (!parts.length || cover < P.minCover) return {score:null, label:"Not enough data", verdict:"", cover, parts};
+  const score = Math.round(100 * parts.reduce((a, x) => a + x.w * x.c, 0) / wHave) || 0;   // || 0: never "-0"
+  const label = score >= 40 ? "Strong risk-on" : score >= 15 ? "Risk-on" : score > -15 ? "Mixed" : score > -40 ? "Risk-off" : "Strong risk-off";
+  const pick = sign => { const seen = new Set(); return parts.filter(x => Math.sign(x.c) === sign && Math.abs(x.c) >= 0.15).sort((a, b) => Math.abs(b.w * b.c) - Math.abs(a.w * a.c))
+    .filter(x => !seen.has(x.ph[0]) && (seen.add(x.ph[0]), true)); };
+  let why;
+  if (label === "Mixed") { const a = pick(1)[0], d = pick(-1)[0]; why = a && d ? E.pulsePhrase([a.ph]) + ", but " + E.pulsePhrase([d.ph]) : a || d ? E.pulsePhrase([(a || d).ph]) : "no clear lead either way"; }
+  else { const top = pick(Math.sign(score)).slice(0, 3); why = top.length ? E.pulsePhrase(top.map(x => x.ph)) : "a broad, mild tilt"; }
+  return {score, label, verdict: label + ": " + why, cover, parts};
+};
+
+/* ===== PULSE END ===== */
+
+/* (spacer so the three regions merge cleanly) */
+
+/* =====================================================================
+   ===== RADAR BEGIN: In-play radar (radar.js). Only this builder edits between BEGIN and END. =====
+   ===================================================================== */
+/* What is "in play" today, measured the one way that held up in MW's own backtests: relative volume. Everything
+   here is a plain function: the page (radar.js) feeds it Alpaca snapshots and daily bars and draws what comes back.
+
+   RELATIVE VOLUME, and what is approximate about it. The exact figure is today's volume so far over the 20-day
+   average volume by the same minute; that needs 20 days of minute bars for every ticker, far past the free limits.
+   MW uses today's volume so far over (the 20-day average FULL-day volume x the share of a day's volume that has
+   normally traded by this minute). That share is one fixed curve, E.RADAR_CURVE, the usual U shape of US trading
+   (busy open, quiet lunch, busy close). So the number is exact at the close and an estimate before it, and a ticker
+   whose day is shaped unlike the typical one reads a little high or low in the morning. Both volumes are IEX's
+   (one exchange, a few percent of all US trading), so the ratio is like for like. */
+
+/* the fixed part of the universe: liquid US stocks and funds (public tickers only; nothing personal) */
+E.RADAR_UNIVERSE = (
+  // the market, sectors, bonds, metals, oil, and the funds day traders lean on
+  "SPY QQQ IWM DIA SMH XLK XLF XLE XLV XLI XLY XLP XLU XLB XLC XLRE TLT HYG GLD SLV USO ARKK XBI KRE IBIT TQQQ SQQQ SOXL " +
+  // the largest companies
+  "AAPL MSFT NVDA AMZN GOOGL META TSLA AVGO BRK.B JPM LLY V MA UNH XOM COST HD PG JNJ WMT NFLX BAC ORCL CRM ABBV CVX KO PEP MRK " +
+  "ADBE CSCO MCD WFC DIS QCOM TXN IBM GE CAT GS MS AXP NOW UBER BKNG PFE AMGN BA NKE SBUX C T VZ CMCSA RTX LMT DE UPS " +
+  // chips, AI and software
+  "AMD MU INTC TSM ASML AMAT LRCX KLAC MRVL ARM SMCI ON DELL ANET VRT CRWV PLTR SNOW DDOG NET CRWD PANW ZS MDB SHOP APP " +
+  // names that move: crypto-linked, fintech, consumer, EVs, power, travel, energy, miners, China
+  "COIN MSTR HOOD SOFI RBLX ROKU SNAP PINS DKNG AFRM RIVN NIO F GM CVNA ABNB DASH PYPL XYZ MARA RIOT IONQ OKLO CEG VST GEV " +
+  "RDDT HIMS ENPH FSLR CCL DAL UAL OXY SLB FCX BABA"
+).split(" ");
+E.RADAR_MIN_AV = 20000;      // a 20-day average under this many IEX shares a day is too thin to measure against
+E.RADAR_SHOCK_X = 5;         // a "volume surge": one minute at 5 times its usual pace or more,
+E.RADAR_SHOCK_USD = 50000;   // and at least this many dollars on IEX in that minute
+/* your tickers first (so they are always in the first call), then the fixed list; mutual funds and odd symbols are left out */
+E.radarUniverse = function (mine) {
+  const seen = new Set(), out = [];
+  [...(mine || []).map(s => String(s || "").toUpperCase()), ...E.RADAR_UNIVERSE].forEach(s => {
+    if (/^[A-Z][A-Z.]{0,6}$/.test(s) && !E.isFundSym(s) && !seen.has(s)) { seen.add(s); out.push(s); } });
+  return out;
+};
+/* the share of a regular session's volume that has normally traded `mins` minutes after the open (0 to 1).
+   [minutes after 9:30, share so far]; straight lines in between. A half day uses the same shape, squeezed. */
+E.RADAR_CURVE = [[0, 0], [5, 0.035], [15, 0.078], [30, 0.13], [60, 0.22], [90, 0.295], [120, 0.36], [150, 0.418], [180, 0.471],
+  [210, 0.521], [240, 0.571], [270, 0.624], [300, 0.684], [330, 0.754], [360, 0.844], [390, 1]];
+E.radarDayFrac = function (mins, len) {
+  const C = E.RADAR_CURVE, m = Math.max(0, Math.min(390, mins * 390 / (len > 0 ? len : 390)));
+  for (let i = 1; i < C.length; i++) if (m <= C[i][0]) { const a = C[i - 1], b = C[i]; return a[1] + (b[1] - a[1]) * (m - a[0]) / (b[0] - a[0]); }
+  return 1;
+};
+/* where the market is, for the radar: ph "open" | "pre" | "after" | "closed"; date and mins (New York now);
+   sess, the regular session the list is about (today from 9:30 on a trading day, else the one before);
+   settled, the moment that session's after-hours trading ended (ms) */
+E.radarPhase = function (now, opts) {
+  const mc = E.marketClock(now, opts), p = E.etParts(now), sess = E.lastSessionDate(now), close = E.closeMins(sess);
+  return {ph: mc.ph === "open" || mc.ph === "pre" || mc.ph === "after" ? mc.ph : "closed", date: p.date, mins: p.mins, sess,
+    settled: E.etMs(sess, close === 960 ? 1200 : close + 240)};
+};
+/* what a ticker's own history says is normal, from daily bars [{d:"YYYY-MM-DD", h, l, c, v}] (any order), using only
+   sessions BEFORE `before`: av (average volume of the last 20), n (how many of them there were), atr (Wilder, 14 days),
+   c (the last close), h20/l20 and h52/l52 (the highest high and lowest low of the last 20 and 252 sessions), n52 */
+E.radarBase = function (bars, before) {
+  const b = (bars || []).filter(x => x && x.d < before && x.c > 0 && x.h > 0 && x.l > 0).sort((x, y) => x.d < y.d ? -1 : x.d > y.d ? 1 : 0), n = b.length;
+  if (!n) return null;
+  const m20 = b.slice(-20), yr = b.slice(-252), r4 = v => v == null || !isFinite(v) ? null : +v.toFixed(4);
+  const atr = E.atrWilder(b.slice(-120).reverse().map(x => [x.d, 0, x.h, x.l, x.c]), 14);
+  return {asOf: b[n - 1].d, n: m20.length, av: Math.round(E.mean(m20.map(x => +x.v || 0))), atr: r4(atr), c: +b[n - 1].c,
+    h20: Math.max(...m20.map(x => x.h)), l20: Math.min(...m20.map(x => x.l)), h52: Math.max(...yr.map(x => x.h)), l52: Math.min(...yr.map(x => x.l)), n52: yr.length};
+};
+/* one Alpaca stock snapshot, tidied: day (the last regular session there is a daily bar for), c (its price: the
+   latest regular trade while it is open, else its close), pc (the close before), o/h/l, v (shares) and vw (VWAP) on
+   IEX, t (ms of the trade behind c), ext {p, t, ph:"pre"|"after"} for a later trade outside regular hours,
+   mv/mt/mc (the latest one-minute bar: shares, start in ms, close), pv (pre-market shares, when the feed counts them).
+   Before the open some feeds already start today's bar from pre-market trades; the last full session is then the
+   previous bar, and today's early bar becomes the pre-market trade. */
+E.radarSnap = function (snap, now) {
+  const db = snap && snap.dailyBar, pdb = snap && snap.prevDailyBar, lt = snap && snap.latestTrade, mb = snap && snap.minuteBar;
+  if (!db || !(db.c > 0) || !db.t) return null;
+  const pos = v => isFinite(+v) && +v > 0 ? +v : null, dOf = b => E.etDateOf(Date.parse(b.t)), p = E.etParts(now);
+  let cur = db, prev = pdb && pdb.c > 0 ? pdb : null, early = null;
+  if (dOf(db) === p.date && p.mins < 570 && prev) { early = db; cur = prev; prev = null; }
+  const day = dOf(cur);
+  const out = {day, c: +cur.c, pc: prev ? +prev.c : null, o: pos(cur.o), h: pos(cur.h), l: pos(cur.l), v: +cur.v || 0, vw: pos(cur.vw), t: 0, ext: null, mv: 0, mt: 0, mc: null, pv: early ? +early.v || 0 : null};
+  if (lt && lt.p > 0 && lt.t) {
+    const tms = Date.parse(lt.t), tp = E.etParts(tms), close = E.closeMins(tp.date), reg = E.isTradingDay(tp.date) && tp.mins >= 570 && tp.mins < close;
+    if (reg && tp.date === day) { out.c = +lt.p; out.t = tms; }
+    else if (!reg && tp.mins >= 240 && tp.mins < 1200 && (tp.date > day || (tp.date === day && tp.mins >= close))) out.ext = {p: +lt.p, t: tms, ph: tp.mins < 570 ? "pre" : "after"};
+  }
+  if (!out.ext && early) out.ext = {p: +early.c, t: Date.parse(early.t), ph: "pre"};
+  if (mb && mb.v > 0 && mb.t) { out.mv = +mb.v; out.mt = Date.parse(mb.t); out.mc = pos(mb.c); }
+  return out;
+};
+/* how big an opening gap has to be to count, in percent: half the ticker's average daily range (ATR), never under
+   0.5%; 2% when the range is not known */
+E.radarGapMin = (pc, atr) => atr > 0 && pc > 0 ? Math.max(0.5, 50 * atr / pc) : 2;
+/* an opening gap and what became of it. o: the open, pc: the close before, c: the price now.
+   fill: the share of the gap given back (0 at the open, 1 back at the previous close, under 0 when it has extended).
+   state: "holding" (a third or less given back), "fading", "filled". null when the gap is too small to count. */
+E.radarGap = function (o, pc, c, atr) {
+  if (!(o > 0 && pc > 0 && c > 0)) return null;
+  const pct = (o / pc - 1) * 100;
+  if (Math.abs(pct) < E.radarGapMin(pc, atr)) return null;
+  const fill = (o - c) / (o - pc);
+  return {dir: pct > 0 ? 1 : -1, pct, fill, state: fill >= 1 ? "filled" : fill > 1 / 3 ? "fading" : "holding"};
+};
+/* every figure the radar shows for one ticker. q: E.radarSnap's answer; bases: E.radarBase answers (the newest one
+   that ends before q.day is used); ctx: {now, spy (SPY's move in percent, or null)}.
+   live: its session is trading now. stale: no trade in the session the list is about (the price is an older close).
+   rvol: volume against what is normal by this time (null when it can't be measured). move/moveUsd: what the row
+   leads with, which is the day's change, or in pre-market the latest trade against the last close. rs: move - SPY's. */
+E.radarRow = function (sym, q, bases, ctx) {
+  if (!q || !(q.c > 0)) return null;
+  const ph = E.radarPhase(ctx.now, ctx.clock), b = (bases || []).find(x => x && x.asOf < q.day) || null;
+  const live = ph.ph === "open" && q.day === ph.date, stale = q.day < ph.sess;
+  const pc = q.pc > 0 ? q.pc : b ? b.c : null, close = E.closeMins(ph.date);
+  const frac = live ? Math.max(E.radarDayFrac(ph.mins - 570, close - 570), E.radarDayFrac(5)) : 1;
+  const r = {sym, day: q.day, live, stale, px: q.c, pc, chg: pc ? q.c - pc : null, pct: pc ? (q.c / pc - 1) * 100 : null,
+    o: q.o, h: q.h, l: q.l, v: q.v, vw: q.vw, dv: q.v * (q.vw || q.c), t: q.t, av: b ? b.av : null, atr: b ? b.atr : null,
+    rvol: !stale && b && b.n >= 10 && b.av >= E.RADAR_MIN_AV ? q.v / (b.av * frac) : null,
+    thin: !!b && !(b.n >= 10 && b.av >= E.RADAR_MIN_AV),
+    gapPct: q.o > 0 && pc ? (q.o / pc - 1) * 100 : null, sinceOpen: q.o > 0 ? (q.c / q.o - 1) * 100 : null, vwap: q.vw > 0 ? (q.c / q.vw - 1) * 100 : null,
+    rng: b && b.atr > 0 && q.h > 0 && q.l > 0 ? (Math.max(q.h, pc || q.h) - Math.min(q.l, pc || q.l)) / b.atr : null,
+    gap: stale ? null : E.radarGap(q.o, pc, q.c, b && b.atr), ext: null};
+  r.hi52 = !stale && !!b && b.n52 >= 200 && q.h >= b.h52; r.lo52 = !stale && !!b && b.n52 >= 200 && q.l > 0 && q.l <= b.l52;
+  r.hi20 = !stale && !!b && b.n >= 20 && q.h >= b.h20; r.lo20 = !stale && !!b && b.n >= 20 && q.l > 0 && q.l <= b.l20;
+  r.ref = b ? {h52: b.h52, l52: b.l52, h20: b.h20, l20: b.l20} : null;
+  const x = q.ext;
+  if (x && x.p > 0 && (ph.ph === "pre" ? x.ph === "pre" && E.etDateOf(x.t) === ph.date : ph.ph !== "open" && x.ph === "after" && E.etDateOf(x.t) === q.day))
+    r.ext = {p: x.p, t: x.t, ph: x.ph, chg: x.p - q.c, pct: (x.p / q.c - 1) * 100, big: Math.abs(x.p / q.c - 1) * 100 >= E.radarGapMin(q.c, b && b.atr)};
+  if (ph.ph === "pre") { r.move = r.ext ? r.ext.pct : null; r.moveUsd = r.ext ? r.ext.chg : null; r.last = r.ext ? r.ext.p : r.px; }
+  else { r.move = stale ? null : r.pct; r.moveUsd = stale ? null : r.chg; r.last = r.px; }
+  r.rs = r.move != null && ctx.spy != null && isFinite(ctx.spy) ? r.move - ctx.spy : null;
+  return r;
+};
+/* all rows at once: {rows: {SYM: row}, spy: SPY's move (percent) or null, ph} */
+E.radarRows = function (qs, bases, ctx) {
+  const s = qs.SPY ? E.radarRow("SPY", qs.SPY, bases.SPY, Object.assign({}, ctx, {spy: null})) : null, spy = s && s.move != null ? s.move : null, rows = {};
+  Object.keys(qs).forEach(k => { const r = E.radarRow(k, qs[k], bases[k], Object.assign({}, ctx, {spy})); if (r) rows[k] = r; });
+  return {rows, spy, ph: E.radarPhase(ctx.now, ctx.clock)};
+};
+/* what a row is ranked by. "inplay": relative volume (in pre-market, when volume has not started counting, the
+   size of the move against the last close). "rs": its move minus SPY's. null: can't be ranked. */
+E.radarScore = function (r, view, ph) {
+  if (!r) return null;
+  if (view === "rs") return r.rs;
+  if (ph === "pre") return r.ext ? Math.abs(r.ext.pct) : null;
+  return r.stale ? null : r.rvol;
+};
+/* the filters: a price floor and a floor on the session's dollar volume (IEX) */
+E.radarPass = (r, f) => !!r && (!(f && f.minPx > 0) || r.last >= f.minPx) && (!(f && f.minDv > 0) || r.dv >= f.minDv);
+/* a calm ranking. scored: [{sym, score}] (higher first); prev: the order shown until now. A ticker already listed
+   only moves above its neighbour when it beats it by more than `h` (10%), so two names with nearly the same score
+   don't keep swapping places; a newcomer is placed by its score as it is. With no previous order: a plain sort. */
+E.radarRank = function (prev, scored, h) {
+  h = h == null ? 0.1 : h;
+  const sc = new Map(); (scored || []).forEach(x => { if (x && x.score != null && isFinite(x.score)) sc.set(x.sym, x.score); });
+  const plain = (a, b) => sc.get(b) - sc.get(a) || (a < b ? -1 : a > b ? 1 : 0);
+  const kept = (prev || []).filter(s => sc.has(s)), was = new Set(kept);
+  if (!kept.length) return [...sc.keys()].sort(plain);
+  const beats = (a, b, tol) => sc.get(a) - sc.get(b) > tol * Math.max(Math.abs(sc.get(b)), 1e-9);
+  const list = [];
+  [...kept, ...[...sc.keys()].filter(s => !was.has(s)).sort(plain)].forEach(s => {
+    let i = list.length; const tol = was.has(s) ? h : 0;
+    while (i > 0 && beats(s, list[i - 1], was.has(list[i - 1]) ? tol : 0)) i--;
+    list.splice(i, 0, s);
+  });
+  return list;
+};
+/* a volume surge: the latest one-minute bar against the pace normal for that minute (the 20-day average day x the
+   slope of the curve there). Only inside the regular session, after its first five minutes (the open is always a
+   burst), for a bar no more than three minutes old. -> {x, t, v} or null */
+E.radarShock = function (q, base, now) {
+  if (!q || !base || !(q.mv > 0) || !(q.mt > 0) || !(base.av >= E.RADAR_MIN_AV) || now < q.mt || now - q.mt > 180e3) return null;
+  const tp = E.etParts(q.mt), len = E.closeMins(tp.date) - 570, m = tp.mins - 570;
+  if (!E.isTradingDay(tp.date) || m < 5 || m >= len) return null;
+  const usual = base.av * (E.radarDayFrac(m + 1, len) - E.radarDayFrac(m, len)), x = usual > 0 ? q.mv / usual : 0;
+  return x >= E.RADAR_SHOCK_X && q.mv * (q.mc || q.c) >= E.RADAR_SHOCK_USD ? {x, t: q.mt, v: q.mv} : null;
+};
+/* the tags on a row, most telling first: [{k, t (the words), tone, tip (one sentence)}].
+   ctx: {ph, today, er {d, hour, prev (true: the session before today)}, news {h, mins}, ping {x, t}, time (ms -> "10:31 AM")} */
+E.radarTags = function (r, ctx) {
+  ctx = ctx || {};
+  const T = [], ph = ctx.ph || "open", add = (k, t, tone, tip) => T.push({k, t, tone, tip});
+  const xs = v => (v >= 9.95 ? String(Math.round(v)) : v.toFixed(1)) + "×", p1 = v => Math.abs(v).toFixed(1) + "%";
+  const time = ms => ctx.time ? ctx.time(ms) : "", cur = r.day === ctx.today, day = cur ? "today" : "in the last session", Day = cur ? "Today's" : "The last session's";
+  if (ctx.ping && ph === "open") add("surge", "Volume surge", "hot", `A sudden burst of trading${time(ctx.ping.t) ? " at " + time(ctx.ping.t) : ""}: about ${Math.round(ctx.ping.x)} times its usual volume for one minute at that time of day.`);
+  const er = ctx.er;
+  if (er && er.d === ctx.today) add("er", er.hour === "amc" ? "Earnings after close" : "Earnings today", "warn",
+    er.hour === "amc" ? "Reports earnings after the close today, so the results are not in this price yet." : er.hour === "bmo" ? "Reported earnings before the open today: this is the first session to trade on the results." : "Reports earnings today (the time of day is not listed).");
+  else if (er && er.prev && er.hour === "amc") add("er", "Just reported", "warn", `Reported earnings after the close on ${E.mdLabel(er.d)}: the session after that is the first to trade on the results.`);
+  if (ctx.news && ctx.news.h) add("news", "News", "info", `“${String(ctx.news.h).slice(0, 150)}” (${ctx.news.mins < 1 ? "just now" : Math.round(ctx.news.mins) + " min ago"})`);
+  if (r.ext && ph !== "pre" && Math.abs(r.ext.pct) >= 1) add("ext", "After hours " + E.fmtPct(r.ext.pct, 1), r.ext.pct > 0 ? "xup" : "xdown",
+    `The latest after-hours trade${time(r.ext.t) ? " (" + time(r.ext.t) + ", IEX)" : " (IEX)"} was ${E.fmtPx(r.ext.p)}, ${p1(r.ext.pct)} ${r.ext.pct > 0 ? "above" : "below"} the close.`);
+  if (r.stale) { add("quiet", "No trade yet today", "mute", "No trade on IEX in today's session yet, so the price shown is still the last close."); return T; }
+  if (r.rvol != null && r.rvol >= 2) {
+    if (ph === "pre") add("vol", "Heavy volume last session", "vol", `Traded ${xs(r.rvol)} its 20-day average volume in the last session (${E.mdLabel(r.day)}).`);
+    else add("vol", r.rvol >= 5 ? "Extreme volume" : "Unusual volume", r.rvol >= 5 ? "vol2" : "vol",
+      r.live ? `Trading ${xs(r.rvol)} its usual volume for this time of day (today's volume so far against its 20-day average, IEX).` : `Traded ${xs(r.rvol)} its 20-day average volume ${day} (IEX).`);
+  }
+  if (ph === "pre") { if (r.ext && r.ext.big) add("gap", r.ext.pct > 0 ? "Gapping up" : "Gapping down", r.ext.pct > 0 ? "up" : "down",
+    `Trading ${p1(r.ext.pct)} ${r.ext.pct > 0 ? "above" : "below"} the last close in the pre-market (IEX). It is only a gap if it holds to the open.`); }
+  else if (r.gap) { const g = r.gap, up = g.dir > 0, open = `Opened ${p1(g.pct)} ${up ? "above" : "below"} the previous close`;
+    add("gap", `Gap ${up ? "up" : "down"} ${g.state}`, g.state === "holding" ? (up ? "up" : "down") : g.state === "fading" ? "fade" : "mute",
+      g.state === "holding" ? `${open} and has kept the gap: the price is still ${g.fill <= 0 ? (up ? "at or above" : "at or below") : "close to"} the open.`
+      : g.state === "fading" ? `${open} and has given back about ${Math.round(g.fill * 100)}% of the gap.`
+      : `${open} and has come all the way back to it: the gap is filled.`); }
+  if (ph !== "pre") {
+    if (r.hi52) add("hi", "New 52-wk high", "up2", `${Day} high of ${E.fmtPx(r.h)} passed its highest price of the past 52 weeks (${E.fmtPx(r.ref.h52)}).`);
+    else if (r.hi20) add("hi", "New 20-day high", "up", `${Day} high of ${E.fmtPx(r.h)} passed its highest price of the past 20 sessions (${E.fmtPx(r.ref.h20)}).`);
+    if (r.lo52) add("lo", "New 52-wk low", "down2", `${Day} low of ${E.fmtPx(r.l)} fell under its lowest price of the past 52 weeks (${E.fmtPx(r.ref.l52)}).`);
+    else if (r.lo20) add("lo", "New 20-day low", "down", `${Day} low of ${E.fmtPx(r.l)} fell under its lowest price of the past 20 sessions (${E.fmtPx(r.ref.l20)}).`);
+    if (r.rng != null && r.rng >= 1.5) add("rng", "Range " + xs(r.rng) + " ATR", "mute", `${Day} range, counting any gap, is ${xs(r.rng)} its average daily range (14-day ATR of ${E.fmtPx(r.atr)}): a much bigger day than usual.`);
+    if (r.vwap != null && Math.abs(r.vwap) >= 0.15) add("vwap", r.vwap > 0 ? "Above VWAP" : "Below VWAP", r.vwap > 0 ? "sup" : "sdown",
+      `${r.live ? "The price is" : "It closed"} ${p1(r.vwap)} ${r.vwap > 0 ? "above" : "below"} ${cur ? "today's" : "that session's"} volume-weighted average price of ${E.fmtPx(r.vw)} (IEX trades), so the average share traded ${cur ? "today" : "that day"} sits at a ${r.vwap > 0 ? "gain" : "loss"}.`);
+  }
+  return T;
+};
+/* the scope's scales. radarCap: how far the sideways axis reaches (percent), a round step past 90% of the moves
+   and past every move in `fit` (the in-play tickers, which must never be pushed to the edge).
+   radarTop: the top of the volume axis, a power of two from 4. radarXY: where a dot goes, x and y from 0 to 1
+   (0.5 is no change; the volume axis is logarithmic from 0.25 times usual), pinned to the edge when off the scale. */
+E.radarCap = function (moves, fit) {
+  const abs = l => (l || []).filter(v => v != null && isFinite(v)).map(Math.abs), a = abs(moves).sort((x, y) => x - y);
+  if (!a.length) return 3;
+  const q = Math.max(a[Math.min(a.length - 1, Math.floor(a.length * 0.9))], ...abs(fit));
+  return [2, 3, 4, 6, 8, 12, 16, 24, 40].find(s => s >= q * 1.04) || 40;
+};
+E.radarTop = function (rvols) { const m = Math.max(0, ...(rvols || []).filter(v => v != null && isFinite(v))); return [4, 8, 16, 32].find(s => s >= m) || 32; };
+E.radarXY = function (move, rvol, cap, top) {
+  if (move == null || !isFinite(move) || rvol == null || !isFinite(rvol)) return null;
+  const x = 0.5 + move / cap / 2, y = Math.log(Math.max(rvol, 1e-9) / 0.25) / Math.log(top / 0.25);
+  return {x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)), off: x < 0 || x > 1 || y > 1};
+};
+/* ===== RADAR END ===== */
+
+/* (spacer so the three regions merge cleanly) */
+
+/* =====================================================================
+   ===== PLAN BEGIN: Game plan (plan.js). Only this builder edits between BEGIN and END. =====
+   ===================================================================== */
+
+/* ---- 1. The official calendar of what moves the market (read from the publishers' own pages, see PLAN_SOURCES).
+   Only dates found on those pages are listed. A schedule that is not published yet stays empty and the page says
+   so (E.planCoverage); nothing here is a guess. Times are New York time. ---- */
+E.PLAN_CHECKED = "2026-11-24";   // the day the pages below were read; dates before it are left out
+E.PLAN_SOURCES = {
+  fomc:   {name:"Federal Reserve", url:"https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm", note:"2026 meetings; 2027 and Jan 2028 as revised in the Fed's press release of 2026-11-12 (https://www.federalreserve.gov/newsevents/pressreleases/monetary20261112a.htm); 2027 dates stay tentative until the meeting before confirms them"},
+  cpi:    {name:"Bureau of Labor Statistics", url:"https://www.bls.gov/schedule/news_release/cpi.htm"},
+  ppi:    {name:"Bureau of Labor Statistics", url:"https://www.bls.gov/schedule/news_release/ppi.htm"},
+  jobs:   {name:"Bureau of Labor Statistics", url:"https://www.bls.gov/schedule/news_release/empsit.htm"},
+  gdp:    {name:"Bureau of Economic Analysis", url:"https://www.bea.gov/news/schedule/full", note:"2027: https://www.bea.gov/news/schedule/next-year"},
+  pce:    {name:"Bureau of Economic Analysis", url:"https://www.bea.gov/news/schedule/full", note:"Personal Income and Outlays; 2027: https://www.bea.gov/news/schedule/next-year"},
+  retail: {name:"Census Bureau", url:"https://www.census.gov/economic-indicators/calendar-listview-2026.html", note:"2027: https://census.gov/retail/release_schedule.html"},
+  opex:   {name:"computed", url:"", note:"third Friday of the month, the Thursday before when that Friday is an NYSE holiday (E.HOLIDAYS, NYSE Group calendar)"}
+};
+E.PLAN_KINDS = {
+  fomc:   {name:"FOMC decision", mins:840, big:3, tip:"The Fed's interest-rate decision and statement at 2:00 PM ET, followed by the chair's press conference. It moves rate-sensitive stocks, bonds and the dollar."},
+  fomc1:  {name:"FOMC meeting, day 1", mins:null, big:1, tip:"First day of the Fed's two-day meeting. No decision today: the statement comes tomorrow at 2:00 PM ET."},
+  fomcs:  {name:"FOMC strategy meeting", mins:null, big:1, tip:"A meeting set aside for the Fed's broad strategy. The Fed says no policy decision is announced after it."},
+  fomcmin:{name:"FOMC minutes", mins:840, big:2, tip:"The record of what the Fed's last meeting discussed, released 2:00 PM ET. It can shift rate expectations."},
+  cpi:    {name:"CPI", mins:510, big:3, tip:"Consumer prices (inflation) for last month, 8:30 AM ET. A surprise moves rate expectations and the whole market."},
+  ppi:    {name:"PPI", mins:510, big:1, tip:"Producer (wholesale) prices for last month, 8:30 AM ET."},
+  jobs:   {name:"Jobs report", mins:510, big:3, tip:"Payrolls and the unemployment rate for last month, 8:30 AM ET. One of the biggest scheduled movers."},
+  pce:    {name:"PCE inflation", mins:510, big:2, tip:"Personal Income and Outlays, with the PCE price index the Fed watches most, 8:30 AM ET."},
+  gdp:    {name:"GDP", mins:510, big:2, tip:"Growth in the economy for the quarter, 8:30 AM ET. The first (advance) estimate moves markets most."},
+  retail: {name:"Retail sales", mins:510, big:2, tip:"What shoppers spent last month, 8:30 AM ET. A read on consumer demand."},
+  opex:   {name:"Options expiration", mins:null, big:2, tip:"Monthly stock options expire at the close. Heavy open interest can pin prices near big strikes and lift volume."},
+  quad:   {name:"Quad witching", mins:null, big:3, tip:"Quarterly expiration: stock options, index options and index futures all expire at the close. Volume is often the heaviest of the quarter."},
+  holiday:{name:"Market closed", mins:null, big:0, tip:"The NYSE and Nasdaq are closed all day."},
+  early:  {name:"Early close", mins:null, big:1, tip:"Stocks stop trading early (1:00 PM ET), and volume is usually thin."},
+  night:  {name:"Overnight trading starts", mins:1260, big:1, tip:"Nasdaq's planned overnight session (Sunday to Friday, about 23 hours a day). Free price feeds carry no overnight prices."},
+  earn:   {name:"Earnings", mins:null, big:1, tip:"Companies report results; prices can gap at the open (before-open reports) or the next morning (after-close reports)."}
+};
+/* [date, what it covers, flags]. flags: "s" meeting with new projections, "t" tentative until the meeting before confirms it */
+E.PLAN_DATES = {
+  fomc:   [["2026-12-09", "Dec 8-9 meeting", "s"], ["2027-01-27", "Jan 26-27 meeting", "t"], ["2027-03-17", "Mar 16-17 meeting", "t"], ["2027-04-28", "Apr 27-28 meeting", "t"],
+           ["2027-06-09", "Jun 8-9 meeting", "t"], ["2027-07-28", "Jul 27-28 meeting", "t"], ["2027-09-15", "Sep 14-15 meeting", "t"], ["2027-11-17", "Nov 16-17 meeting", "t"], ["2028-01-26", "Jan 25-26 meeting", "t"]],
+  fomcs:  [["2027-10-26", "Oct 26-27 meeting", "t"]],
+  fomcmin:[],   // the Fed has not posted the minutes date for the Dec 8-9 meeting yet
+  cpi:    [["2026-12-10", "November"], ["2027-01-13", "December"], ["2027-02-11", "January"], ["2027-03-10", "February"], ["2027-04-13", "March"], ["2027-05-12", "April"], ["2027-06-10", "May"],
+           ["2027-07-14", "June"], ["2027-08-11", "July"], ["2027-09-14", "August"], ["2027-10-14", "September"], ["2027-11-10", "October"], ["2027-12-10", "November"]],
+  ppi:    [["2026-12-15", "November"], ["2027-01-14", "December"], ["2027-02-12", "January"], ["2027-03-12", "February"], ["2027-04-14", "March"], ["2027-05-13", "April"], ["2027-06-11", "May"],
+           ["2027-07-15", "June"], ["2027-08-10", "July"], ["2027-09-10", "August"], ["2027-10-15", "September"], ["2027-11-12", "October"], ["2027-12-15", "November"]],
+  jobs:   [["2026-12-04", "November"], ["2027-01-08", "December"], ["2027-02-05", "January"], ["2027-03-05", "February"], ["2027-04-02", "March"], ["2027-05-07", "April"], ["2027-06-04", "May"],
+           ["2027-07-02", "June"], ["2027-08-06", "July"], ["2027-09-03", "August"], ["2027-10-08", "September"], ["2027-11-05", "October"], ["2027-12-03", "November"]],
+  gdp:    [["2026-11-25", "Q3, second estimate"], ["2026-12-23", "Q3, third estimate"], ["2027-01-28", "Q4, first estimate"], ["2027-02-25", "Q4, second estimate"], ["2027-03-31", "Q4, third estimate"],
+           ["2027-04-29", "Q1, first estimate"], ["2027-05-27", "Q1, second estimate"], ["2027-06-25", "Q1, third estimate"], ["2027-07-29", "Q2, first estimate"], ["2027-08-25", "Q2, second estimate"],
+           ["2027-09-30", "Q2, third estimate"], ["2027-10-28", "Q3, first estimate"], ["2027-11-24", "Q3, second estimate"], ["2027-12-22", "Q3, third estimate"]],
+  pce:    [["2026-11-25", "October"], ["2026-12-23", "November"], ["2027-01-28", "December"], ["2027-02-25", "January"], ["2027-03-31", "February"], ["2027-04-29", "March"], ["2027-05-27", "April"],
+           ["2027-06-25", "May"], ["2027-07-29", "June"], ["2027-08-25", "July"], ["2027-09-30", "August"], ["2027-10-28", "September"], ["2027-11-24", "October"], ["2027-12-22", "November"]],
+  retail: [["2026-12-16", "November"], ["2027-01-15", "December"], ["2027-02-17", "January"], ["2027-03-16", "February"], ["2027-04-16", "March"], ["2027-05-14", "April"], ["2027-06-16", "May"],
+           ["2027-07-16", "June"], ["2027-08-16", "July"], ["2027-09-16", "August"], ["2027-10-15", "September"], ["2027-11-16", "October"], ["2027-12-15", "November"]]
+};
+/* schedules that end before the window does: the page says "not published yet" for these instead of guessing */
+E.planCoverage = function (now, days) {
+  const end = E.addDays(E.etDateOf(now), days), out = [];
+  Object.keys(E.PLAN_DATES).forEach(k => {
+    if (k === "fomcs") return;
+    const L = E.PLAN_DATES[k], last = L.length ? L[L.length - 1][0] : null;
+    if (!last || last < end) out.push({k, name:E.PLAN_KINDS[k].name, through:last});
+  });
+  return out;
+};
+E.thirdFriday = function (y, m) {
+  const p = n => String(n).padStart(2, "0"), first = E.weekday(`${y}-${p(m)}-01`), fri = 1 + ((5 - first + 7) % 7) + 14;
+  return `${y}-${p(m)}-${p(fri)}`;
+};
+/* monthly options expire on the third Friday; when that is a market holiday, the day before (Juneteenth 2026 and 2027) */
+E.optionsExpiry = function (y, m) { const d = E.thirdFriday(y, m); return E.isTradingDay(d) ? d : E.prevTradingDay(d); };
+E.isQuadMonth = m => m % 3 === 0;
+E.holidayName = function (d) {
+  const m = +d.slice(5, 7), day = +d.slice(8, 10);
+  if (m === 1) return day <= 2 ? "New Year's Day" : "Martin Luther King Jr. Day";
+  if (m === 2) return "Presidents Day";
+  if (m === 3 || m === 4) return "Good Friday";
+  if (m === 5) return "Memorial Day";
+  if (m === 6) return "Juneteenth";
+  if (m === 7) return "Independence Day";
+  if (m === 9) return "Labor Day";
+  if (m === 11) return "Thanksgiving";
+  if (m === 12) return day >= 20 ? "Christmas" : "New Year's Day";
+  return "Market holiday";
+};
+/* a published date as an event; t is the moment it happens (all-day items get a nominal moment that orders them) */
+E.planEvent = function (k, d, extra) {
+  const K = E.PLAN_KINDS[k], mins = K.mins;
+  return Object.assign({k, d, name:K.name, big:K.big, tip:K.tip, mins, timed:mins != null, t:E.etMs(d, mins != null ? mins : 0)}, extra || {});
+};
+E.PLAN_EVENTS = (function () {
+  const out = [];
+  Object.keys(E.PLAN_DATES).forEach(k => E.PLAN_DATES[k].forEach(r => {
+    const flags = r[2] || "", ex = {ref:r[1], tentative:flags.includes("t"), sep:flags.includes("s")};
+    if (k === "fomc") {
+      out.push(E.planEvent("fomc", r[0], Object.assign({}, ex, {tip:E.PLAN_KINDS.fomc.tip + (ex.sep ? " This meeting also brings new projections (the dot plot)." : "") + (ex.tentative ? " The date is tentative until the meeting before it confirms it." : "")})));
+      out.push(E.planEvent("fomc1", E.addDays(r[0], -1), {ref:r[1], tentative:ex.tentative, t:E.etMs(E.addDays(r[0], -1), 960)}));
+    } else if (k === "fomcs") {
+      out.push(E.planEvent("fomcs", r[0], Object.assign({}, ex, {t:E.etMs(r[0], 960)})));
+    } else out.push(E.planEvent(k, r[0], ex));
+  }));
+  return out;
+})();
+/* what is coming from today until `days` days out: published releases, computed options expirations, market
+   holidays and early closes, the overnight start, and grouped earnings. o.earn: [{sym, d, hour ("bmo"|"amc"|""), mine}] */
+E.planEvents = function (now, o) {
+  o = o || {};
+  const p = E.etParts(now), today = p.date, end = E.addDays(today, o.days || 14), out = [];
+  E.PLAN_EVENTS.forEach(ev => { if (ev.d >= today && ev.d <= end) out.push(Object.assign({}, ev)); });
+  for (let y = +today.slice(0, 4), m = +today.slice(5, 7), i = 0; i < 4; i++, m++) {
+    if (m > 12) { m = 1; y++; }
+    const d = E.optionsExpiry(y, m);
+    if (d >= today && d <= end && E.calendarValid(d)) out.push(E.planEvent(E.isQuadMonth(m) ? "quad" : "opex", d, {t:E.etMs(d, E.closeMins(d)), ref:E.isQuadMonth(m) ? "Index and stock options and futures expire at the close" : "Monthly options expire at the close", early:E.closeMins(d) < 960}));
+  }
+  for (let d = today; d <= end && E.calendarValid(d); d = E.addDays(d, 1)) {
+    if (E.HOLIDAYS.has(d) && E.weekday(d) !== 0 && E.weekday(d) !== 6) out.push(E.planEvent("holiday", d, {ref:E.holidayName(d), t:E.etMs(d, 570)}));
+    else if (E.EARLY_CLOSE[d]) out.push(E.planEvent("early", d, {ref:"Stocks stop at 1:00 PM ET", t:E.etMs(d, E.EARLY_CLOSE[d])}));
+  }
+  { const nd = E.etDateOf(E.OVERNIGHT_FROM); if (nd >= today && nd <= end) out.push(E.planEvent("night", nd, {t:E.OVERNIGHT_FROM, ref:"planned start, subject to SEC approval"})); }
+  const g = {};
+  (o.earn || []).forEach(e => { if (!e || !e.d || e.d < today || e.d > end) return;
+    const h = e.hour === "bmo" || e.hour === "amc" ? e.hour : "", key = e.d + "|" + h, G = g[key] || (g[key] = {d:e.d, hour:h, syms:[]});
+    if (!G.syms.some(s => s.sym === e.sym)) G.syms.push({sym:e.sym, mine:!!e.mine}); });
+  Object.keys(g).forEach(key => { const G = g[key], mine = G.syms.some(s => s.mine);
+    G.syms.sort((a, b) => (b.mine - a.mine) || a.sym.localeCompare(b.sym));
+    out.push(E.planEvent("earn", G.d, {hour:G.hour, syms:G.syms, mine, big: mine ? 2 : 1, ref:G.hour === "bmo" ? "before the open" : G.hour === "amc" ? "after the close" : "time not given", t:E.etMs(G.d, G.hour === "bmo" ? 420 : G.hour === "amc" ? 970 : 720)})); });
+  out.forEach(ev => { ev.today = ev.d === today; ev.past = ev.t <= now; ev.left = ev.t - now; });
+  return out.sort((a, b) => a.t - b.t || b.big - a.big || a.name.localeCompare(b.name));
+};
+/* the events worth a card at the top: not out yet (or released in the last 90 minutes), big enough to matter */
+E.planNextUp = function (events, now, n) {
+  return events.filter(ev => ev.big >= 2 && (!ev.past || (ev.timed && now - ev.t < 90 * 60e3))).slice(0, n || 4);
+};
+/* "1 d 3 h", "2 h 05 min", "45 min" */
+E.planLeft = function (ms) {
+  if (!(ms > 0)) return "now";
+  const mins = Math.ceil(ms / 60e3);
+  if (mins < 60) return mins + " min";
+  const h = Math.floor(mins / 60);
+  if (h < 24) return h + " h " + String(mins % 60).padStart(2, "0") + " min";
+  return Math.floor(h / 24) + " d " + (h % 24) + " h";
+};
+/* "today", "tomorrow", "in 5 days" for two ET dates */
+E.planDayWord = function (d, today) {
+  const n = Math.round((Date.parse(d + "T12:00:00Z") - Date.parse(today + "T12:00:00Z")) / 864e5);
+  return n <= 0 ? "today" : n === 1 ? "tomorrow" : "in " + n + " days";
+};
+
+/* ---- 2. Key levels ---- */
+E.PLAN_LV = {
+  pdh:  {s:"PDH",       n:"prior-day high",       side:"hi", g:"pd",  tip:"Yesterday's highest price: above it buyers have beaten yesterday's ceiling, and stalling under it shows it still caps price."},
+  pdl:  {s:"PDL",       n:"prior-day low",        side:"lo", g:"pd",  tip:"Yesterday's lowest price: below it sellers have broken yesterday's floor, and holding above it shows it still supports price."},
+  pdc:  {s:"PDC",       n:"prior-day close",      side:"mid",g:"pd",  tip:"Yesterday's closing price, the line the day's change is measured from."},
+  pmh:  {s:"PM high",   n:"pre-market high",      side:"hi", g:"pm",  tip:"The highest price before the open (4:00 to 9:30 AM ET, IEX trades): a move over it means the open is stronger than the pre-market."},
+  pml:  {s:"PM low",    n:"pre-market low",       side:"lo", g:"pm",  tip:"The lowest price before the open (4:00 to 9:30 AM ET, IEX trades): a move under it means the open is weaker than the pre-market."},
+  or5h: {s:"OR5 high",  n:"5-minute range high",  side:"hi", g:"or",  tip:"The highest price in the first 5 minutes after the 9:30 open, the first line many day traders watch."},
+  or5l: {s:"OR5 low",   n:"5-minute range low",   side:"lo", g:"or",  tip:"The lowest price in the first 5 minutes after the 9:30 open."},
+  or15h:{s:"OR15 high", n:"15-minute range high", side:"hi", g:"or",  tip:"The highest price in the first 15 minutes after the open: a break above it often sets the tone for the morning."},
+  or15l:{s:"OR15 low",  n:"15-minute range low",  side:"lo", g:"or",  tip:"The lowest price in the first 15 minutes after the open: a break below it often sets the tone for the morning."},
+  vwap: {s:"VWAP",      n:"today's VWAP",         side:"mid",g:"vw",  tip:"The day's average price weighted by volume (from IEX trades): above it buyers are ahead of the day's average, below it sellers are."},
+  hi20: {s:"20d high",  n:"20-day high",          side:"hi", g:"lng", tip:"The highest price in the last 20 trading days, through yesterday."},
+  lo20: {s:"20d low",   n:"20-day low",           side:"lo", g:"lng", tip:"The lowest price in the last 20 trading days, through yesterday."},
+  hi52: {s:"52w high",  n:"52-week high",         side:"hi", g:"lng", tip:"The highest price in the last 52 weeks."},
+  lo52: {s:"52w low",   n:"52-week low",          side:"lo", g:"lng", tip:"The lowest price in the last 52 weeks."}
+};
+E.PLAN_LV_ORDER = ["pdh", "pdl", "pdc", "vwap", "pmh", "pml", "or5h", "or5l", "or15h", "or15l", "hi20", "lo20", "hi52", "lo52"];
+/* the session a prior-day level belongs to: yesterday until 15 minutes after the close, then today's own */
+E.planPriorDay = function (now) {
+  const p = E.etParts(now);
+  return E.isTradingDay(p.date) && p.mins >= E.closeMins(p.date) + 15 ? p.date : E.prevTradingDay(p.date);
+};
+/* the day whose pre-market and opening range still matter: a trading day from 4:00 AM ET to 15 minutes after the close */
+E.planSessionDay = function (now) {
+  const p = E.etParts(now);
+  return E.isTradingDay(p.date) && p.mins >= 240 && p.mins < E.closeMins(p.date) + 15 ? p.date : null;
+};
+/* daily bars (newest first: [date, open, high, low, close, volume]) -> prior-day, 20-day and 52-week levels.
+   fresh: the newest bar at or before `prior` IS `prior` (otherwise the prior-day levels are left out, not guessed) */
+E.planDaily = function (bars, prior) {
+  if (!Array.isArray(bars) || !bars.length) return null;
+  let i = 0; while (i < bars.length && bars[i][0] > prior) i++;
+  if (i >= bars.length) return null;
+  const b = bars[i], ok = x => isFinite(x) && x > 0, o = {asOf:b[0], fresh:b[0] === prior};
+  if (o.fresh && ok(+b[2]) && ok(+b[3]) && ok(+b[4])) { o.pdh = +b[2]; o.pdl = +b[3]; o.pdc = +b[4]; }
+  const hl = list => { const hs = list.map(x => +x[2]).filter(ok), ls = list.map(x => +x[3]).filter(ok); return hs.length && ls.length ? {h:Math.max(...hs), l:Math.min(...ls), n:hs.length} : null; };
+  const w20 = hl(bars.slice(i, i + 20)); if (w20 && w20.n >= 15) { o.hi20 = w20.h; o.lo20 = w20.l; }
+  const cut = E.addDays(b[0], -365), w52 = []; for (let j = i; j < bars.length && bars[j][0] > cut; j++) w52.push(bars[j]);
+  const y = hl(w52); if (y && y.n >= 200) { o.hi52 = y.h; o.lo52 = y.l; }
+  return o;
+};
+/* 5-minute bars ([{t: ms, h, l}], any order) for one date -> pre-market and opening-range levels, each only once it is complete */
+E.planIntraday = function (bars, date, now) {
+  const p = E.etParts(now), mins = p.date === date ? p.mins : p.date > date ? 1440 : 0, o = {pmDone:mins >= 570, or5Done:mins >= 575, or15Done:mins >= 585};
+  const grab = (a, b) => { let h = null, l = null; (bars || []).forEach(x => { const q = E.etParts(x.t); if (q.date !== date || q.mins < a || q.mins >= b || !(x.h > 0) || !(x.l > 0)) return; h = h == null ? +x.h : Math.max(h, +x.h); l = l == null ? +x.l : Math.min(l, +x.l); }); return h == null ? null : {h, l}; };
+  const pm = grab(240, 570), r5 = o.or5Done ? grab(570, 575) : null, r15 = o.or15Done ? grab(570, 585) : null;
+  if (pm) { o.pmh = pm.h; o.pml = pm.l; }
+  if (r5) { o.or5h = r5.h; o.or5l = r5.l; }
+  if (r15) { o.or15h = r15.h; o.or15l = r15.l; }
+  return o;
+};
+/* which fetch the opening phases call for: "pre" (developing pre-market, again every 5 min), "pm" (pre-market done, 9:31), "or5" (9:36), "or15" (9:46) */
+E.PLAN_PH_RANK = {none:0, pre:1, pm:2, or5:3, or15:4};
+E.planPhase = function (now) {
+  const d = E.planSessionDay(now); if (!d) return {date:null, ph:"none"};
+  const m = E.etParts(now).mins;
+  return {date:d, ph: m >= 586 ? "or15" : m >= 576 ? "or5" : m >= 571 ? "pm" : "pre"};
+};
+E.planFetchDue = function (st, now) {
+  const P = E.planPhase(now); if (!P.date) return null;
+  if (!st || st.date !== P.date) return P.ph;
+  if (E.PLAN_PH_RANK[P.ph] > E.PLAN_PH_RANK[st.ph || "none"]) return P.ph;
+  if (P.ph === "pre" && now - (st.at || 0) >= 5 * 60e3) return "pre";
+  return null;
+};
+/* every level we have for one ticker: s = {daily, intra, vwap, m52:{hi, lo}, pc} (pc, the quote's previous close, is used only when the daily levels have none) */
+E.planLevels = function (s) {
+  const L = {}, put = (k, v) => { if (v != null && isFinite(+v) && +v > 0) L[k] = +v; }, d = s.daily || {}, it = s.intra || {};
+  put("pdh", d.pdh); put("pdl", d.pdl); put("pdc", d.pdc != null ? d.pdc : s.pc); put("hi20", d.hi20); put("lo20", d.lo20);
+  const m = s.m52 || {}; put("hi52", m.hi > 0 ? m.hi : d.hi52); put("lo52", m.lo > 0 ? m.lo : d.lo52);
+  put("pmh", it.pmh); put("pml", it.pml);
+  if (it.or5Done) { put("or5h", it.or5h); put("or5l", it.or5l); }
+  if (it.or15Done) { put("or15h", it.or15h); put("or15l", it.or15l); }
+  put("vwap", s.vwap);
+  return L;
+};
+/* the levels around a price: equal levels (within 0.01%) share one tick; up/dn are the nearest above and below; near are within `near` percent */
+E.planLadder = function (L, px, near) {
+  near = near == null ? 0.5 : near;
+  const ks = Object.keys(L).filter(k => E.PLAN_LV[k] && L[k] > 0).sort((a, b) => L[a] - L[b] || E.PLAN_LV_ORDER.indexOf(a) - E.PLAN_LV_ORDER.indexOf(b)), ticks = [];
+  ks.forEach(k => { const t = ticks[ticks.length - 1]; if (t && Math.abs(L[k] / t.v - 1) < 1e-4) t.ks.push(k); else ticks.push({v:L[k], ks:[k]}); });
+  ticks.forEach(t => { t.usd = t.v - px; t.pct = px > 0 ? (t.v / px - 1) * 100 : null; t.ks.sort((a, b) => E.PLAN_LV_ORDER.indexOf(a) - E.PLAN_LV_ORDER.indexOf(b)); });
+  let up = null, dn = null;
+  ticks.forEach(t => { if (t.v > px && !up) up = t; if (t.v < px) dn = t; });
+  const nr = ticks.filter(t => t.pct != null && Math.abs(t.pct) <= near).sort((a, b) => Math.abs(a.pct) - Math.abs(b.pct));
+  return {ticks, up, dn, near:nr};
+};
+/* which side of each level the price is on: 1 above, -1 below (0: exactly on it) */
+E.planSides = function (L, px) { const s = {}; Object.keys(L).forEach(k => { s[k] = px > L[k] ? 1 : px < L[k] ? -1 : 0; }); return s; };
+/* levels the price crossed between two looks (only when the looks are close together in time) */
+E.planFlips = function (prev, sides, now, maxGapMs) {
+  if (!prev || !prev.sides || now - prev.at > (maxGapMs || 10 * 60e3)) return [];
+  const out = []; Object.keys(sides).forEach(k => { const a = prev.sides[k], b = sides[k]; if (a && b && a !== b) out.push({k, dir:b, t:now}); });
+  return out;
+};
+E.planFlipText = function (k, dir) {
+  const lv = E.PLAN_LV[k]; if (!lv) return "";
+  if (k === "vwap") return dir > 0 ? "Reclaimed VWAP" : "Lost VWAP";
+  if (lv.side === "hi") return dir > 0 ? "Broke " + lv.s : "Back under " + lv.s;
+  if (lv.side === "lo") return dir < 0 ? "Broke " + lv.s : "Back over " + lv.s;
+  return dir > 0 ? "Reclaimed " + lv.s : "Lost " + lv.s;
+};
+/* the little labels on a row, most important first: {id, text, tone ("up"|"down"|"warn"|""), tip, rank, fresh}.
+   ctx: {open (regular session now), or5Done, or15Done, pmDone, flips:[{k, dir, t}], now, near (percent)} */
+E.planChips = function (L, px, ctx) {
+  ctx = ctx || {}; const out = [], used = {}, $ = (v, r) => E.fmt$(v, r > 0 && r < 1 ? 4 : 2), now = ctx.now || 0;
+  if (!(px > 0)) return out;
+  const add = (id, text, tone, tip, rank, key, fresh) => { if (used[id]) return; used[id] = 1; if (key) used["k:" + key] = 1; out.push({id, text, tone, tip, rank, fresh:!!fresh}); };
+  (ctx.flips || []).slice().sort((a, b) => E.PLAN_LV_ORDER.indexOf(a.k) - E.PLAN_LV_ORDER.indexOf(b.k)).slice(0, 2).forEach(f => { const lv = E.PLAN_LV[f.k]; if (!lv || !(L[f.k] > 0)) return;
+    const ago = Math.max(0, Math.round((now - f.t) / 60e3));
+    add("f:" + f.k, E.planFlipText(f.k, f.dir), f.dir > 0 ? "up" : "down", `Price just crossed the ${lv.n} (${$(L[f.k], px)}) ${f.dir > 0 ? "upward" : "downward"}${ago < 1 ? " a moment ago" : ", " + ago + " min ago"}.`, 0, f.k, true); });
+  const brk = (k, text, tone, tip, rank) => { if (!used["k:" + k]) add("b:" + k, text, tone, tip, rank, k); };
+  if (L.hi52 && px >= L.hi52) brk("hi52", "At 52-week high", "up", `Price is at or above the 52-week high (${$(L.hi52, px)}): there is no older price overhead.`, 1);
+  else if (L.lo52 && px <= L.lo52) brk("lo52", "At 52-week low", "down", `Price is at or below the 52-week low (${$(L.lo52, px)}): there is no older price below.`, 1);
+  if (L.pdh && px > L.pdh) brk("pdh", "Broke PDH", "up", `Price is above yesterday's high (${$(L.pdh, px)}), so it has pushed through yesterday's ceiling.`, 2);
+  else if (L.pdl && px < L.pdl) brk("pdl", "Broke PDL", "down", `Price is below yesterday's low (${$(L.pdl, px)}), so it has broken yesterday's floor.`, 2);
+  const orK = ctx.or15Done && L.or15h ? "or15" : ctx.or5Done && L.or5h ? "or5" : null;
+  if (orK) { const h = L[orK + "h"], l = L[orK + "l"], mins = orK === "or15" ? 15 : 5;
+    if (px > h) brk(orK + "h", "Broke OR high", "up", `Price is above the first ${mins} minutes' high (${$(h, px)}).`, 4);
+    else if (px < l) brk(orK + "l", "Broke OR low", "down", `Price is below the first ${mins} minutes' low (${$(l, px)}).`, 4);
+    else if (ctx.open) add("or:in", "Inside opening range", "", `Price is between the first ${mins} minutes' low (${$(l, px)}) and high (${$(h, px)}): no break either way yet.`, 4); }
+  if (ctx.pmDone && L.pmh && px > L.pmh) brk("pmh", "Over PM high", "up", `Price is above the pre-market high (${$(L.pmh, px)}).`, 5);
+  else if (ctx.pmDone && L.pml && px < L.pml) brk("pml", "Under PM low", "down", `Price is below the pre-market low (${$(L.pml, px)}).`, 5);
+  if (!orK && L.hi20 && px > L.hi20 && !(L.hi52 && px >= L.hi52)) brk("hi20", "Over 20-day high", "up", `Price is above the 20-day high (${$(L.hi20, px)}).`, 6);
+  else if (!orK && L.lo20 && px < L.lo20 && !(L.lo52 && px <= L.lo52)) brk("lo20", "Under 20-day low", "down", `Price is below the 20-day low (${$(L.lo20, px)}).`, 6);
+  if (ctx.open && L.vwap) {
+    if (px > L.vwap) brk("vwap", "Above VWAP", "up", `Price is above today's VWAP (${$(L.vwap, px)}): buyers are ahead of the day's average price.`, 3);
+    else if (px < L.vwap) brk("vwap", "Below VWAP", "down", `Price is below today's VWAP (${$(L.vwap, px)}): sellers are ahead of the day's average price.`, 3); }
+  const lad = E.planLadder(L, px, ctx.near);
+  lad.near.slice(0, 1).forEach(t => { if (t.ks.every(k => used["k:" + k])) return; const lv = E.PLAN_LV[t.ks[0]], a = Math.abs(t.pct);
+    add("n:" + t.ks[0], "Near " + lv.s, "warn", `Price is within ${a.toFixed(2)}% of the ${t.ks.map(k => E.PLAN_LV[k].n).join(" and ")} (${$(t.v, px)}), ${t.v > px ? "just under" : "just over"} it.`, 1); });
+  return out.sort((a, b) => a.rank - b.rank);
+};
+/* ---- 3. The trading day as a bar: pre-market, open, morning, lunch, afternoon, power hour, after hours ---- */
+E.planTimeline = function (date) {
+  const close = E.closeMins(date), end = close === 960 ? 1200 : close + 240;
+  const mid = [[570, "open", "Open", "The first hour: the widest ranges and the heaviest volume."], [630, "morn", "Morning", "Prices usually settle into a trend or a range."],
+    [690, "lunch", "Lunch", "Often the quietest stretch (11:30 AM to 1:30 PM ET)."], [810, "aft", "Afternoon", "Volume builds again toward the close."]].filter(x => x[0] < close - 60);
+  const segs = [{k:"pre", name:"Pre-market", from:240, to:570, tip:"4:00 to 9:30 AM ET: thin trading, where news and earnings first move prices."}];
+  mid.forEach((x, i) => segs.push({k:x[1], name:x[2], from:x[0], to: i + 1 < mid.length ? mid[i + 1][0] : close - 60, tip:x[3]}));
+  segs.push({k:"power", name:"Power hour", from:close - 60, to:close, tip:"The last hour before the close: heavier volume as funds trade, and the day's closing move."});
+  segs.push({k:"after", name:"After hours", from:close, to:end, tip:"Trading after the close, until " + (end === 1200 ? "8:00 PM" : "5:00 PM") + " ET: thin, and earnings reports often land here."});
+  return {close, start:240, end, segs};
+};
+
+/* ===== PLAN END ===== */
+
+/* (spacer so the three regions merge cleanly) */
 
 if (typeof module !== "undefined" && module.exports) module.exports = E;
 else root.MWE = E;
