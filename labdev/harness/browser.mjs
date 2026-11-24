@@ -1191,7 +1191,205 @@ console.log("Arrange sections and Market pulse (6.3)");
 // (spacer)
 
 /* ===== RADAR HARNESS BEGIN (6.3). Only this builder edits between BEGIN and END. ===== */
+/* ---------- 6.3: the in-play radar (synthetic Alpaca and Finnhub answers; every ticker's price and volume here is made up) ---------- */
+console.log("In-play radar (6.3)");
+{
+  const T_OPEN = Date.parse("2026-11-10T15:45:00Z");   // 10:45 New York, a Tuesday: 75 minutes into the session
+  const T_PRE = Date.parse("2026-11-10T13:30:00Z");    // 8:30 the same morning
+  const T_SAT = Date.parse("2026-11-14T15:00:00Z");    // the Saturday after
+  Object.keys(px).forEach(k => delete px[k]); pcFix.F = 12.4;   // one low-priced ticker, for the price filter
+  ["AAA", "BBB", "CCC"].forEach(s => { px[s] = +(pcOf(s) * ({AAA:1.07, BBB:1.02, CCC:0.955})[s]).toFixed(2); });   // Finnhub's answer for the same tickers (the no-key part)
+  const volOf = s => ({AAA:1e6, BBB:8e5, CCC:6e5})[s] ?? 2e5 + hash(s) % 8e5;   // every day's volume, so the 20-day average is this number
+  /* what each ticker is doing, as multiples of its previous close: o open, c price, hi/lo, vw VWAP; rv volume against usual;
+     surge: the last minute against its usual pace; pre: the pre-market trade against the last close */
+  const SC = {AAA:{o:1.04, c:1.06, hi:1.062, lo:1.038, vw:1.05, rv:4.2, surge:12, pre:0.05}, BBB:{o:1.05, c:1.02, hi:1.053, lo:1.017, vw:1.035, rv:2.4, pre:-0.03},
+    CCC:{o:0.97, c:0.955, hi:0.972, lo:0.95, vw:0.96, rv:2.6, pre:0.002}, F:{o:1.001, c:1.012, hi:1.014, lo:0.999, vw:1.008, rv:3, pre:0.004}, SPY:{o:1.001, c:1.004, hi:1.006, lo:0.999, vw:1.002, rv:1, pre:0.003}};
+  const scOf = s => SC[s] || (k => ({o:1 + k / 3, c:1 + k, hi:1 + Math.max(k, k / 3) + 0.002, lo:1 + Math.min(k, k / 3) - 0.002, vw:1 + k / 2, rv:0.45 + (hash(s + "v") % 10) / 10, pre:k / 2}))(((hash(s) % 17) - 8) / 500);
+  const r2 = (v, s) => +v.toFixed(pcOf(s) < 1 ? 4 : 2);
+  const sessBar = (s, d) => { const pc = pcOf(s), sc = scOf(s); return {t:d + "T05:00:00Z", o:r2(pc * sc.o, s), h:r2(pc * sc.hi, s), l:r2(pc * sc.lo, s), c:r2(pc * sc.c, s), v:Math.round(sc.rv * volOf(s)), vw:r2(pc * sc.vw, s)}; };
+  // a calm year of daily bars up to the session before `sess`: closes within 3% of the last close, the same volume every day
+  const yearBars = (s, sess) => { const out = [], pc = pcOf(s); let d = sess;
+    for (let i = 0; i < 262; i++) { d = E.prevTradingDay(d); const c = r2(pc * (1 + 0.03 * Math.sin(i / 11)), s); out.push({t:d + "T05:00:00Z", o:c, h:r2(c * 1.008, s), l:r2(c * 0.992, s), c, v:volOf(s), vw:c}); }
+    return out.reverse(); };
+  const snapOf = (s, t) => {
+    const ph = E.radarPhase(t), pc = pcOf(s), sc = scOf(s), db = sessBar(s, ph.sess), iso = ms => new Date(ms).toISOString();
+    const out = {dailyBar:db, prevDailyBar:{t:E.prevTradingDay(ph.sess) + "T05:00:00Z", o:pc, h:r2(pc * 1.008, s), l:r2(pc * 0.992, s), c:pc, v:volOf(s), vw:pc}};
+    if (ph.ph === "open") { const m = ph.mins - 570; db.v = Math.round(sc.rv * volOf(s) * E.radarDayFrac(m));
+      out.latestTrade = {t:iso(t - 2000), p:db.c};
+      out.minuteBar = {t:iso(Math.floor((t - 60e3) / 60e3) * 60e3), o:db.c, h:db.c, l:db.c, c:db.c, v:Math.round((sc.surge || 1) * volOf(s) * (E.radarDayFrac(m) - E.radarDayFrac(m - 1)))}; }
+    else if (ph.ph === "pre") out.latestTrade = {t:iso(t - 5000), p:r2(db.c * (1 + sc.pre), s)};
+    else out.latestTrade = {t:iso(E.etMs(ph.sess, 959) + 50e3), p:db.c};
+    return out;
+  };
+  const open = async (t0, width) => {
+    const ctx = await browser.newContext({viewport:{width, height:900}, timezoneId:"America/Chicago"}), p = await ctx.newPage(); await mock(p);
+    const errs = [], rc = {snap:0, bars:0, er:0}; let t = t0;
+    p.on("pageerror", e => errs.push(e.message)); p.on("console", m => { if (m.type() === "error" && !/Failed to load resource|sentry/i.test(m.text())) errs.push(m.text()); });
+    await p.route(/https:\/\/data\.alpaca\.markets\/.*/, route => {
+      const u = new URL(route.request().url()), syms = (u.searchParams.get("symbols") || "").split(",").filter(Boolean);
+      if (u.pathname.includes("/news")) return route.fulfill({json:{news:[{id:9001, headline:"AAA lands a made-up order", summary:"", url:"https://example.com/radar/1", created_at:new Date(t - 12 * 60e3).toISOString(), symbols:["AAA"], source:"testwire"}]}});
+      if (u.pathname.includes("/crypto/")) return route.fulfill({json:{snapshots:{}, bars:{}}});
+      if (u.pathname.endsWith("snapshots")) { if (syms.includes("AAPL") || syms.includes("BABA")) rc.snap++;   // MW's own fast prices never ask for these two
+        return route.fulfill({json:Object.fromEntries(syms.map(s => [s, snapOf(s, t)]))}); }
+      if (u.pathname.endsWith("bars")) { rc.bars++; const today = E.etDateOf(t), sess = E.lastSessionDate(t);
+        return route.fulfill({json:{bars:Object.fromEntries(syms.map(s => [s, [...yearBars(s, sess), ...(sess < today ? [sessBar(s, sess)] : [])]])), next_page_token:null}}); }
+      return route.fulfill({json:{}});
+    });
+    await p.route(/https:\/\/finnhub\.io\/api\/v1\/calendar\/earnings.*/, route => { const u = new URL(route.request().url()), today = E.etDateOf(t);
+      if (u.searchParams.get("to") === today) rc.er++;   // the radar asks for yesterday and today; MW's own calendar asks five weeks ahead
+      route.fulfill({json:{earningsCalendar:[{symbol:"BBB", date:today, hour:"bmo"}, {symbol:"NVDA", date:E.prevTradingDay(today), hour:"amc"}]}}); });
+    await p.addInitScript(() => { if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
+      localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", alpKey:"test-key-id", alpSec:"test-secret", refresh:60, theme:"dark", sound:"off"})); localStorage.setItem("mwlab_seenVer", JSON.stringify("99.0.0"));
+      localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"AAA", shares:10, acct:"Taxable"}], fixed:[], watch:[{sym:"AAA", levels:[], dayDrop:30, near:0}, {sym:"BBB", levels:[], dayDrop:30, near:0}, {sym:"CCC", levels:[], dayDrop:30, near:0}]})); });
+    await p.clock.install({time:t});
+    const adv = async (ms, step = 1000) => { for (let x = 0; x < ms; x += step) { t += step; simNow = t; await p.clock.runFor(step); await p.waitForTimeout(25); } };
+    simNow = t; await p.goto(BASE);
+    return {ctx, p, errs, rc, adv, now: () => t};
+  };
+  const syms = p => p.locator("#radar-body .radar-row").evaluateAll(els => els.map(e => e.dataset.chart));
+  const tagsOf = (p, s) => p.locator(`#radar-body .radar-row[data-chart="${s}"] .radar-tag`).allInnerTexts();
+  const cell = async (p, s, c) => (await p.locator(`#radar-body .radar-row[data-chart="${s}"] ${c}`).innerText()).replace(/\s+/g, " ").trim();
+  const shotR = async (p, name, sel) => { if (!SHOTS) return; await p.mouse.move(2, 2); await p.waitForTimeout(700);
+    if (sel) return p.locator(sel).screenshot({path:path.join(SHOTS, name + ".png")});
+    const size = p.viewportSize(), h = await p.evaluate(() => Math.max(document.querySelector("main").scrollHeight + 80, 900));
+    await p.setViewportSize({width:size.width, height:Math.min(h, 4200)}); await p.waitForTimeout(250);
+    await p.screenshot({path:path.join(SHOTS, name + ".png")});
+    await p.locator("#radar-sec").screenshot({path:path.join(SHOTS, name + "-section.png")}); await p.setViewportSize(size); };
+  const pctOf = s => (r2(pcOf(s) * scOf(s).c, s) / pcOf(s) - 1) * 100, rsTxt = s => { const d = pctOf(s) - pctOf("SPY"); return "vs SPY " + E.sgn(d) + Math.abs(d).toFixed(2) + " pts"; };
+  const pair = s => { const pc = pcOf(s), c = r2(pc * scOf(s).c, s); return E.sgn(c - pc) + "$" + Math.abs(c - pc).toFixed(2) + " " + E.fmtPct((c / pc - 1) * 100); };
 
+  /* --- market hours --- */
+  const A = await open(T_OPEN, 440), pR = A.p;
+  await A.adv(40000);
+  check(await pR.locator('#radar-sec .sec-t').innerText().then(x => /in-play radar/i.test(x)) && await pR.locator("#radar-sec.collapsed").count() === 1, "the radar is its own section and starts closed the first time");
+  check((await pR.locator("#radar-sum").innerText()).trim() === "Open to scan" && A.rc.snap === 0 && A.rc.bars === 0 && A.rc.er === 0, `closed, it says "Open to scan" and fetches nothing (${A.rc.snap} snapshot, ${A.rc.bars} bar calls in 40 s)`);
+  check(await pR.evaluate(() => { openSheet("layout"); const x = document.getElementById("shBody").innerText; closeSheet(); return /In-play radar/i.test(x); }).catch(() => false), "Settings → Layout lists it with the other sections");
+  await pR.locator('#radar-sec .sec-h').click(); await A.adv(7000);
+  check(A.rc.snap === 2, `opening it scans the universe in ${A.rc.snap} snapshot calls (100 tickers each)`);
+  check(A.rc.bars >= 2 && A.rc.bars <= 6, `the 20-day averages come from daily bars once (${A.rc.bars} calls)`);
+  let order = await syms(pR);
+  check(order.length === 10 && order.slice(0, 4).join() === "AAA,F,CCC,BBB", "In play ranks by relative volume, busiest first (" + order.slice(0, 5).join(", ") + ")");
+  check(await cell(pR, "AAA", ".radar-rv") === "4.2×" && await pR.locator('#radar-body .radar-row[data-chart="AAA"] .radar-bar i').evaluate(e => Math.round(parseFloat(e.style.width))) === 84, "relative volume is today's volume against the usual for this time of day (AAA " + await cell(pR, "AAA", ".radar-rv") + ")");
+  check(/usual volume for this time of day/.test(await pR.locator('#radar-body .radar-row[data-chart="AAA"] .radar-rv').getAttribute("data-tip")) , "the volume cell explains itself on hover, with the shares behind it");
+  check(await cell(pR, "AAA", ".radar-p") === E.fmt$(r2(pcOf("AAA") * 1.06, "AAA")) && await cell(pR, "AAA", ".radar-c") === pair("AAA"), "a row shows the price, then the day's change in dollars for one share and percent (" + await cell(pR, "AAA", ".radar-c") + ")");
+  const tA = await tagsOf(pR, "AAA"), tB = await tagsOf(pR, "BBB"), tC = await tagsOf(pR, "CCC");
+  check(["Volume surge", "News", "Unusual volume", "Gap up holding", "New 52-wk high", "Above VWAP"].every(x => tA.includes(x)) && tA.some(x => /^Range \d\.\d× ATR$/.test(x)), "AAA's tags: " + tA.join(" · "));
+  check(["Earnings today", "Unusual volume", "Gap up fading", "Below VWAP"].every(x => tB.includes(x)), "BBB's tags: " + tB.join(" · "));
+  check(["Unusual volume", "Gap down holding", "New 52-wk low", "Below VWAP"].every(x => tC.includes(x)), "CCC's tags: " + tC.join(" · "));
+  check(await pR.locator("#radar-body .radar-tag").evaluateAll(els => els.length > 10 && els.every(e => (e.dataset.tip || "").length > 20)), "every tag has a one-sentence explanation");
+  check(/AAA lands a made-up order/.test(await pR.locator('#radar-body .radar-row[data-chart="AAA"] .radar-tag[data-rdt="news"]').getAttribute("data-tip")), "the News tag carries the headline from MW's live tape");
+  check((await pR.locator("#radar-sum").innerText()).replace(/\s+/g, " ").trim() === "4 in play" && (await pR.locator("#radar-body .radar-ses").innerText()).trim() === "Market open", "the header counts what is in play and the session is labelled (" + (await pR.locator("#radar-sum").innerText()).trim() + ")");
+  // the scope
+  const sc = await pR.evaluate(() => { const d = s => document.querySelector(`#radar-body .radar-dot[data-chart="${s}"]`), r = s => d(s).getBoundingClientRect(), box = document.querySelector("#radar-body .radar-scope").getBoundingClientRect();
+    return {n: document.querySelectorAll("#radar-body .radar-dot").length, cls: d("AAA").className, lab: d("AAA").textContent, above: r("AAA").top < r("SPY").top - 20, right: r("AAA").left > r("SPY").left + 20, left: r("CCC").left < r("SPY").left - 20,
+      inside: [...document.querySelectorAll("#radar-body .radar-dot")].every(e => { const b = e.getBoundingClientRect(); return b.left >= box.left - 1 && b.right <= box.right + 1 && b.top >= box.top - 1 && b.bottom <= box.bottom + 1; }), tip: d("AAA").dataset.tip}; });
+  check(sc.n >= 140 && sc.inside, `the scope plots every ticker once (${sc.n} dots), all inside it`);
+  check(sc.above && sc.right && sc.left, "a dot sits higher for more volume, right for a gain and left for a loss");
+  check(/\bhot\b/.test(sc.cls) && /\bmine\b/.test(sc.cls) && /\bping\b/.test(sc.cls) && sc.lab === "AAA" && /4\.2× its usual volume/.test(sc.tip), "your own busiest ticker is ringed, named, and pulses on a volume surge");
+  check(/AAA/.test(await pR.locator("#radar-body .radar-pings").innerText()) && await pR.locator('#radar-body .radar-row.surge[data-chart="AAA"]').count() === 1, "a volume surge is flagged on the row and listed under the scope (on screen only)");
+  await shotR(pR, "radar-1-dark-440"); await shotR(pR, "radar-5-scope", "#radar-body .radar-scope");
+  // calm: two calls every 30 s, prices follow each read, the order waits a minute and ignores near-ties
+  const n0 = A.rc.snap, b0 = A.rc.bars; SC.AAA.c = 1.07; SC.AAA.hi = 1.072; SC.BBB.rv = 2.78;
+  await A.adv(34000, 2000);
+  check(await cell(pR, "AAA", ".radar-p") === E.fmt$(r2(pcOf("AAA") * 1.07, "AAA")), "a new price shows with the next read (" + await cell(pR, "AAA", ".radar-p") + ")");
+  await A.adv(36000, 2000);
+  check(A.rc.snap - n0 >= 4 && A.rc.snap - n0 <= 5 && A.rc.bars === b0, `two snapshot calls every 30 s while open (${A.rc.snap - n0} in 70 s), and no more daily bars`);
+  order = await syms(pR);
+  check(order.slice(0, 4).join() === "AAA,F,CCC,BBB" && await cell(pR, "BBB", ".radar-rv") === "2.8×", "a near-tie does not reshuffle the rows (BBB 2.8× stays under CCC 2.6×)");
+  SC.BBB.rv = 3.6; await A.adv(70000, 2000);
+  order = await syms(pR);
+  check(order.slice(0, 4).join() === "AAA,BBB,F,CCC", "a real change moves the row on the next one-minute ranking (" + order.slice(0, 4).join(", ") + ")");
+  // leaders and laggards against SPY
+  await pR.locator('#radar-body [data-rdv="rs"]').click(); await A.adv(600, 200);
+  const gh = await pR.locator("#radar-body .radar-gh").allInnerTexts(), rs = await syms(pR);
+  check(gh.length === 2 && /Leading the market/.test(gh[0]) && gh[0].includes("SPY " + E.fmtPct(pctOf("SPY"))) && /Lagging the market/.test(gh[1]), "Leaders / laggards splits the list around SPY (" + gh.join(" | ").replace(/\s+/g, " ") + ")");
+  check(rs[0] === "AAA" && rs[5] === "CCC" && rs.length === 10 && (await tagsOf(pR, "AAA"))[0] === rsTxt("AAA") && (await tagsOf(pR, "CCC"))[0] === rsTxt("CCC"), "the leader and the laggard lead their halves, with the gap to SPY in points (" + (await tagsOf(pR, "AAA"))[0] + ", " + (await tagsOf(pR, "CCC"))[0] + ")");
+  // mine
+  await shotR(pR, "radar-8-leaders");
+  await pR.locator('#radar-body [data-rdv="mine"]').click(); await A.adv(600, 200);
+  check((await syms(pR)).join() === "AAA,BBB,CCC" && await pR.locator("#radar-body .radar-add").count() === 0 && await pR.locator("#radar-body .radar-me").count() === 3 && await pR.locator("#radar-body .radar-dot").count() === 3, "Mine lists only your watchlist and holdings, in the list and on the scope");
+  // + adds to the watchlist; a click opens the chart
+  await pR.locator('#radar-body [data-rdv="inplay"]').click(); await A.adv(600, 200);
+  check(await pR.locator('#radar-body .radar-row[data-chart="F"] .radar-add').count() === 1 && await pR.locator('#radar-body .radar-row[data-chart="AAA"] .radar-add').count() === 0, "a ticker that is not on your watchlist offers +");
+  await pR.locator('#radar-body .radar-row[data-chart="F"] .radar-add').click(); await A.adv(1500, 250);
+  check(await pR.evaluate(() => cfg.watch.some(w => w.sym === "F") && document.getElementById("chart").classList.contains("hide")) && await pR.locator('#radar-body .radar-row[data-chart="F"] .radar-add').count() === 0 && await pR.locator('#radar-body .radar-row[data-chart="F"] .radar-me').count() === 1, "+ adds it to the watchlist, marks the row, and does not open the chart");
+  await pR.locator('#radar-body .radar-row[data-chart="CCC"] .radar-p').click(); await A.adv(800, 200);
+  check(await pR.locator("#chart:not(.hide)").count() === 1 && (await pR.locator("#chSym").innerText()).trim() === "CCC", "clicking a row opens that ticker's chart");
+  await pR.keyboard.press("Escape"); await A.adv(300, 100);
+  await pR.locator('#radar-body .radar-row[data-chart="AAA"]').focus(); await pR.keyboard.press("ArrowDown"); await pR.keyboard.press("Enter"); await A.adv(800, 200);
+  check(await pR.locator("#chart:not(.hide)").count() === 1 && (await pR.locator("#chSym").innerText()).trim() === "BBB", "the rows work from the keyboard (↓ then Enter)");
+  await pR.keyboard.press("Escape"); await A.adv(300, 100);
+  await pR.locator('#radar-body .radar-scope .radar-dot[data-chart="AAA"]').click({force:true}); await A.adv(800, 200);
+  check(await pR.locator("#chart:not(.hide)").count() === 1 && (await pR.locator("#chSym").innerText()).trim() === "AAA", "and so does a dot on the scope");
+  await pR.keyboard.press("Escape"); await A.adv(300, 100);
+  // filters
+  await pR.locator('#radar-body [data-rdact="filt"]').click(); await pR.locator('#radar-body [data-rdf="minPx"]').selectOption("20"); await A.adv(600, 200);
+  order = await syms(pR);
+  check(!order.includes("F") && order.length === 10 && await pR.locator('#radar-body [data-rdact="filt"].set').count() === 1 && await pR.locator('#radar-body .radar-dot[data-chart="F"]').count() === 0, "the price filter drops a $12 ticker from the list and the scope, and the filter button shows it is on");
+  await pR.locator('#radar-body [data-rdact="clear"]').first().click(); await A.adv(600, 200);
+  check((await syms(pR)).includes("F") && await pR.locator('#radar-body [data-rdact="filt"].set').count() === 0, "Clear brings it back");
+  await pR.locator('#radar-body [data-rdact="filt"]').click(); await A.adv(300, 100);
+  // wide, narrow, light
+  await pR.setViewportSize({width:1400, height:900}); await A.adv(1500, 500);
+  check(await pR.evaluate(() => document.body.classList.contains("wide") && !!document.querySelector("#cols #radar-sec") && document.querySelectorAll("#radar-body .radar-row").length === 10), "on a wide window it takes its place in the columns");
+  await shotR(pR, "radar-2-dark-1400");
+  for (const w of [440, 380]) {
+    await pR.setViewportSize({width:w, height:900}); await A.adv(1500, 500);
+    const cut = await pR.evaluate(() => { const bad = [], L = document.querySelector("#radar-body .radar-list"), R = document.querySelector("#radar-body .radar").getBoundingClientRect();
+      if (L.scrollWidth > L.clientWidth + 1) bad.push("list");
+      document.querySelectorAll("#radar-body .radar-row > span, #radar-body .radar-top, #radar-body .radar-st, #radar-body .radar-cap > span").forEach(e => { if (e.offsetParent && (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > R.right + 13)) bad.push(e.className + ":" + e.textContent.trim().slice(0, 16)); });
+      return bad; });
+    check(cut.length === 0, `at ${w} px nothing in the radar is cut or pushed off the side` + (cut.length ? ": " + cut.slice(0, 5).join(" | ") : ""));
+  }
+  check(await pR.evaluate(() => getComputedStyle(document.querySelector("#radar-body .radar-bar")).display === "none" && !!document.querySelector('#radar-body .radar-row .radar-rv b')), "at 380 px the volume bar steps aside and the number stays");
+  await shotR(pR, "radar-6-dark-380");
+  await pR.setViewportSize({width:440, height:900});
+  await pR.evaluate(() => { settings.theme = "light"; saveSettings(); document.documentElement.dataset.theme = "light"; renderAll(); }); await A.adv(800, 200);
+  await shotR(pR, "radar-3-light-440");
+  await pR.evaluate(() => { settings.theme = "dark"; saveSettings(); document.documentElement.dataset.theme = "dark"; renderAll(); });
+  // closed again: nothing more is fetched
+  await pR.locator('#radar-sec .sec-h').click(); await A.adv(1000, 500);
+  const n1 = A.rc.snap; await A.adv(70000, 5000);
+  check(A.rc.snap === n1 && (await pR.locator("#radar-sum").innerText()).trim() === "Open to scan", "closed again, it stops asking Alpaca (0 calls in 70 s)");
+  // without an Alpaca key: a friendly note, and your own tickers from the prices MW already has
+  await pR.evaluate(() => { settings.alpKey = ""; settings.alpSec = ""; settings.collapsed.radar = false; saveSettings(); renderAll(); }); await A.adv(40000, 5000);
+  const noKey = (await pR.locator("#radar-body .radar-note").innerText()).replace(/\s+/g, " ");
+  check(/Add your free Alpaca key to scan the market/.test(noKey) && /no volume/.test(noKey) && await pR.locator('#radar-body .radar-note [data-open="general"]').count() === 1, "without an Alpaca key it says what the key adds and offers Settings");
+  check((await syms(pR)).length === 4 && (await pR.locator("#radar-body .radar-rv").allInnerTexts()).every(x => x.trim() === "—") && await pR.locator("#radar-body .radar-scope.hide").count() === 1 && await pR.locator("#radar-body .seg.hide").count() === 1 && A.rc.snap === n1,
+    "and still lists your own tickers by today's move, with no volume column, no scope and no new calls");
+  check(/^[+−]\$\d/.test(await cell(pR, "AAA", ".radar-c")), "those rows keep MW's dollars-then-percent change (" + await cell(pR, "AAA", ".radar-c") + ")");
+  await shotR(pR, "radar-4-no-key");
+  await pR.evaluate(() => { cfg.watch = []; cfg.holdings = []; saveCfg(); renderAll(); }); await A.adv(800, 200);
+  check(/No tickers yet/.test(await pR.locator("#radar-body .radar-list").innerText()), "with no key and no tickers it points to the watchlist");
+  check(A.rc.er <= 1, `the earnings calendar for yesterday and today costs at most one Finnhub call, in MW's background lane (${A.rc.er})`);
+  check(A.errs.length === 0, "no page errors in the radar checks" + (A.errs.length ? ": " + [...new Set(A.errs)].slice(0, 4).join(" | ") : ""));
+  await A.ctx.close();
+
+  /* --- pre-market: volume has not started counting, so the move since the last close ranks --- */
+  SC.AAA.c = 1.06; SC.AAA.hi = 1.062; SC.BBB.rv = 2.4;
+  const B = await open(T_PRE, 440), pP = B.p;
+  await B.adv(6000); await pP.locator('#radar-sec .sec-h').click(); await B.adv(7000);
+  const po = await syms(pP);
+  check((await pP.locator("#radar-body .radar-ses").innerText()).trim() === "Pre-market" && /ranked by gap from the close/.test(await pP.locator("#radar-body .radar-stx").innerText()), "before the open the radar says Pre-market and what it ranks by");
+  check(po[0] === "AAA" && po[1] === "BBB" && (await tagsOf(pP, "AAA")).includes("Gapping up") && (await tagsOf(pP, "BBB")).includes("Gapping down") && (await tagsOf(pP, "AAA")).includes("Heavy volume last session"), "the biggest pre-market moves lead, tagged Gapping up / down (" + po.slice(0, 3).join(", ") + ": " + (await tagsOf(pP, "AAA")).join(" · ") + ")");
+  const lastC = r2(pcOf("AAA") * 1.06, "AAA"), preC = r2(lastC * 1.05, "AAA");
+  check(await cell(pP, "AAA", ".radar-p") === E.fmt$(preC) && /pre-market trade/.test(await pP.locator('#radar-body .radar-row[data-chart="AAA"] .radar-p span').getAttribute("data-tip")) && await cell(pP, "AAA", ".radar-c") === "+$" + (preC - lastC).toFixed(2) + " " + E.fmtPct((preC / lastC - 1) * 100), "the price is the pre-market trade, against the last close (" + await cell(pP, "AAA", ".radar-p") + " " + await cell(pP, "AAA", ".radar-c") + ")");
+  check(await pP.locator("#radar-body .radar-scope.hide").count() === 1 && /gapping/.test(await pP.locator("#radar-sum").innerText()) && /Since close/i.test(await pP.locator("#radar-body .radar-cap").innerText()), "the scope waits for the open, and the columns are relabelled");
+  await shotR(pP, "radar-7-premarket");
+  check(B.errs.length === 0, "no page errors before the open" + (B.errs.length ? ": " + [...new Set(B.errs)].slice(0, 4).join(" | ") : ""));
+  await B.ctx.close();
+
+  /* --- the weekend: the last session's list, read once --- */
+  const C = await open(T_SAT, 440), pC = C.p;
+  await C.adv(6000); await pC.locator('#radar-sec .sec-h').click(); await C.adv(8000);
+  check((await pC.locator("#radar-body .radar-ses").innerText()).trim() === "Last session · Fri, 11/13" && (await syms(pC))[0] === "AAA" && await cell(pC, "AAA", ".radar-rv") === "4.2×", "with the market closed it shows the last session's list, labelled (" + (await pC.locator("#radar-body .radar-ses").innerText()).trim() + ")");
+  check(/Traded 4\.2× its 20-day average volume in the last session/.test(await pC.locator('#radar-body .radar-row[data-chart="AAA"] .radar-tag[data-rdt="vol"]').getAttribute("data-tip")) && /Last session/.test(await pC.locator("#radar-sum").innerText()), "and its figures are the full day's, said in the past tense");
+  const c0 = C.rc.snap; await C.adv(150000, 5000);
+  check(c0 === 2 && C.rc.snap === 2, `closed, it reads the market once and then rests (${C.rc.snap} snapshot calls in 2.5 minutes)`);
+  check(C.errs.length === 0, "no page errors on the weekend" + (C.errs.length ? ": " + [...new Set(C.errs)].slice(0, 4).join(" | ") : ""));
+  await C.ctx.close();
+  delete pcFix.F;
+}
 /* ===== RADAR HARNESS END ===== */
 
 // (spacer)
