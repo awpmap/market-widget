@@ -317,8 +317,12 @@ function rdCss(){
 .radar-foot .rbtn{padding:0}
 .radar-foot p{margin:0;flex:1 1 220px}
 .radar-foot u{text-decoration:underline dotted;text-underline-offset:2px;cursor:help}
+.radar-cl,.radar-cs{font-style:normal}
+.radar-cs{display:none}
 @container radar (max-width: 372px){
   .radar-bar{display:none}
+  .radar-cl{display:none}
+  .radar-cs{display:inline}
   .radar-list{column-gap:6px;grid-template-columns:minmax(46px,auto) minmax(30px,1fr) auto auto 20px}
   .radar-rv{justify-content:flex-start}
   .radar-top .seg button{padding:3px 6px}
@@ -529,7 +533,7 @@ function radarPaint(force){
 
   // the list
   const items = [], cell = sym => { const r = rows[sym]; return {key:sym, sym, r, C:(x.cells[sym] = rdCells(r, x))}; };
-  const cap = `<span>Ticker</span><span data-tip="${ph.ph === "pre" ? "The last session's volume against the ticker's 20-day average. Today's volume starts counting at the open." : "Today's volume so far against what is normal for the ticker by this time of day (its 20-day average, IEX). 1× is a normal day; the mark on the bar is 1× and a full bar is 5×."}">${ph.ph === "pre" ? "Volume, last session" : on ? "Volume vs usual" : "Volume"}</span><span class="r">${ph.ph === "pre" ? "Pre-market" : "Price"}</span><span class="r">${ph.ph === "pre" ? "Since close" : ph.ph === "open" ? "Today" : "Day"}</span><span></span>`;
+  const cap = `<span>Ticker</span><span data-tip="${ph.ph === "pre" ? "The last session's volume against the ticker's 20-day average. Today's volume starts counting at the open." : "Today's volume so far against what is normal for the ticker by this time of day (its 20-day average, IEX). 1× is a normal day; the mark on the bar is 1× and a full bar is 5×."}"><i class="radar-cl">${ph.ph === "pre" ? "Volume, last session" : on ? "Volume vs usual" : "Volume"}</i><i class="radar-cs">${ph.ph === "pre" ? "Vol, last" : on ? "Vol ×" : "Vol"}</i></span><span class="r">${ph.ph === "pre" ? "Pre-market" : "Price"}</span><span class="r">${ph.ph === "pre" ? "Since close" : ph.ph === "open" ? "Today" : "Day"}</span><span></span>`;
   const msg = (key, html, slim) => items.push({key, cls:"radar-msg" + (slim ? " slim" : ""), html});
   const clearBtn = ` <button data-rdact="clear">Clear the filters</button>`;
   let more = "";
