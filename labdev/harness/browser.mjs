@@ -1197,6 +1197,195 @@ console.log("Arrange sections and Market pulse (6.3)");
 // (spacer)
 
 /* ===== PLAN HARNESS BEGIN (6.3). Only this builder edits between BEGIN and END. ===== */
+/* Game plan: made-up tickers (AAA, BBB, SPY, QQQ) and prices, a fake clock, Playwright route mocks for Alpaca.
+   Runs at 10:00 AM New York time on Mon 2026-12-07 (two days before the Fed's December decision), then on the
+   decision day itself, then without an Alpaca key. */
+console.log("Game plan (6.3)");
+{
+  const mk = async (start, settingsExtra, o = {}) => {
+    const st = {now:Date.parse(start), log:[], vw:{}, alpDeny:false, bars5:true};
+    const ctx = await browser.newContext({viewport:{width:o.w || 440, height:o.h || 900}, timezoneId:"America/Chicago", colorScheme: o.light ? "light" : "dark"});
+    const p = await ctx.newPage(); await mock(p);
+    const errs = []; p.on("pageerror", e => errs.push(e.message)); p.on("console", m => { if (m.type() === "error" && !/Failed to load resource|sentry/i.test(m.text())) errs.push(m.text()); });
+    if (!o.noAlp) await p.route(/https:\/\/data\.alpaca\.markets\/.*/, route => {
+      const u = new URL(route.request().url()), syms = (u.searchParams.get("symbols") || "").split(",").filter(Boolean), today = E.etDateOf(st.now), at = (h, m) => new Date(E.etMs(today, h * 60 + m)).toISOString();
+      st.log.push({path:u.pathname, tf:u.searchParams.get("timeframe"), n:syms.length, t:st.now, hdr:route.request().headers()["apca-api-key-id"], feed:u.searchParams.get("feed")});
+      if (st.alpDeny) return route.fulfill({status:403, json:{message:"forbidden"}});
+      if (u.pathname.includes("/v1beta1/news")) return route.fulfill({json:{news:[]}});
+      if (u.pathname.includes("/crypto/")) return route.fulfill({json:{snapshots:{}, bars:{}}});
+      if (u.pathname.endsWith("/snapshots")) return route.fulfill({json:Object.fromEntries(syms.map(s => { const c = priceOf(s), pc = pcOf(s);
+        return [s, {latestTrade:{p:c, t:new Date(st.now - 1500).toISOString(), s:100}, dailyBar:{t:today + "T05:00:00Z", o:pc, h:Math.max(pc, c), l:Math.min(pc, c), c, v:1e5, vw:st.vw[s] ?? +(pc * 1.005).toFixed(2)}, prevDailyBar:{t:E.prevTradingDay(today) + "T05:00:00Z", o:pc, h:pc, l:pc, c:pc, v:1e5}}]; }))});
+      if (u.pathname.endsWith("/bars") && u.searchParams.get("timeframe") === "1Day")
+        return route.fulfill({json:{bars:Object.fromEntries(syms.map(s => [s, dailyBars(s, today).slice(0, 300).reverse().map(b => ({t:b.datetime + "T05:00:00Z", o:+b.open, h:+b.high, l:+b.low, c:+b.close, v:+b.volume}))])), next_page_token:null}});
+      if (u.pathname.endsWith("/bars") && u.searchParams.get("timeframe") === "5Min") {
+        const bar = (t, h, l) => ({t, o:l, h, l, c:h, v:1000});
+        return route.fulfill({json:{bars:Object.fromEntries(syms.map(s => { const pc = pcOf(s), f = x => +(pc * x).toFixed(2);
+          return [s, st.bars5 ? [bar(at(4, 0), f(1.002), f(0.995)), bar(at(8, 0), f(1.012), f(0.99)), bar(at(9, 25), f(1.008), f(1.0)), bar(at(9, 30), f(1.015), f(1.005)), bar(at(9, 35), f(1.02), f(1.01)), bar(at(9, 40), f(1.018), f(1.012))] : []]; })), next_page_token:null}}); }
+      return route.fulfill({json:{}});
+    });
+    await p.addInitScript(([ex]) => { if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
+      localStorage.setItem("mwlab_settings", JSON.stringify(Object.assign({key:"test", refresh:60, sound:"off", theme:"dark"}, ex))); localStorage.setItem("mwlab_seenVer", JSON.stringify("99.0.0"));
+      localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"AAA", shares:10, acct:"Taxable"}], fixed:[], watch:[{sym:"AAA", levels:[], dayDrop:3}, {sym:"BBB", levels:[], dayDrop:3}]})); }, [settingsExtra]);
+    await p.clock.install({time:st.now});
+    const adv = async (ms, step = 1000) => { for (let t = 0; t < ms; t += step) { st.now += step; simNow = st.now; await p.clock.runFor(step); await p.waitForTimeout(25); } };
+    simNow = st.now; Object.keys(px).forEach(k => delete px[k]);
+    return {ctx, p, st, errs, adv};
+  };
+  const shotPlan = async (p, name, w) => { if (!SHOTS) return; const vh = p.viewportSize().height; await p.setViewportSize({width:w, height:2600}); await p.waitForTimeout(250);
+    await p.locator("#plan-sec").screenshot({path:path.join(SHOTS, name + ".png")}); await p.setViewportSize({width:w, height:vh}); };
+  const barsCalls = st => st.log.filter(c => /\/bars$/.test(c.path));
+  const rowTxt = (p, s) => p.locator(`#plan-body .pl-row[data-k="${s}"]`).innerText();
+
+  /* --- 1. a normal Monday, key present: starts closed, fetches nothing until opened --- */
+  const A = await mk("2026-12-07T14:50:00Z", {alpKey:"test-key-id", alpSec:"test-secret"});
+  {
+    const {p, st, errs, adv} = A, today = "2026-12-07";
+    const dB = dailyBars("AAA", today)[0], pdhA = +dB.high;
+    px.AAA = +(pdhA * 1.004).toFixed(2);   // just above yesterday's high
+    await p.goto(BASE); await adv(12000);
+    check(await p.locator("#plan-sec").count() === 1 && /^game plan$/i.test(await p.locator("#plan-sec .sec-t").innerText()), "Game plan is a section with its own header");
+    check(await p.locator("#plan-sec.collapsed").count() === 1, "Game plan starts closed the first time");
+    check(/FOMC decision in 2 d \d+ h/.test(await p.locator("#plan-sum").innerText()), "the closed header still counts down to the next big event: " + (await p.locator("#plan-sum").innerText()));
+    await adv(60000, 5000);
+    check(barsCalls(st).length === 0, "closed: not one bars call to Alpaca (" + barsCalls(st).length + ")");
+    const layoutNames = await p.evaluate(() => layoutOrder().map(k => SEC_NAMES[k]));
+    check(layoutNames.includes("Game plan"), "Settings → Layout lists it with the others (" + layoutNames.join(", ") + ")");
+    // open it
+    await p.locator('#plan-sec [data-toggle="plan"]').click(); await adv(20000, 1000);
+    check(await p.locator("#plan-sec.collapsed").count() === 0 && await p.locator("#plan-body .pl").count() === 1, "opening it draws the sheet");
+    const nb = barsCalls(st);
+    check(nb.some(c => c.tf === "1Day") && nb.some(c => c.tf === "5Min"), "opening it asks for daily bars and 5-minute bars (" + nb.map(c => c.tf + "×" + c.n).join(", ") + ")");
+    check(nb.every(c => c.hdr === "test-key-id" && c.feed === "iex"), "the keys go in Alpaca's headers, on the free IEX feed");
+    check(nb.filter(c => c.tf === "1Day").length === 1 && nb.filter(c => c.tf === "5Min").length === 1, "one call each, not one per ticker");
+    // next up
+    const cards = await p.locator("#pl-cards .pl-nx").allInnerTexts();
+    check(cards.length >= 3 && /FOMC decision/.test(cards[0]) && /2 d \d+ h/.test(cards[0]), "the first card is the Fed with a live countdown: " + cards[0].replace(/\n+/g, " | "));
+    check(await p.locator("#pl-cards .pl-nx.fed").count() >= 1, "Fed cards stand out");
+    check(/CPI/.test(cards.join("|")) && /Quad witching/.test(cards.join("|")), "CPI and quad witching are next up too");
+    check(/Dec 9/.test(cards[0]) && /1:00 PM CST/.test(cards[0]), "the 2:00 PM ET decision shows in your time zone: 1:00 PM CST");
+    // the calendar
+    const list = await p.locator("#pl-list").innerText();
+    check(/Dec 8/.test(list) && /Dec 9/.test(list) && /FOMC decision/.test(list) && /FOMC meeting, day 1/.test(list) && /projections/i.test(list), "the list has both Fed days, with the new-projections note");
+    check(/7:30 AM[\s\S]*CPI/.test(list) && /November/.test(list), "CPI at 7:30 AM CST (8:30 ET), with the month it covers");
+    check(/Quad witching/.test(list) && /Dec 18/.test(list), "options expiration on the third Friday (Dec 18 is quad witching)");
+    check(await p.locator("#pl-list .pl-er.fed").count() === 2, "both FOMC days are marked");
+    check(/FOMC minutes/.test(await p.locator("#pl-cov").innerText()), "the page says what is not published yet instead of guessing");
+    check(await p.locator("#pl-list .pl-er.holiday").count() === 0, "no holiday inside this 14-day window");
+    await p.locator('#pl-dy [data-pl-days="30"]').click(); await adv(500, 100);
+    check(/Dec 24|Dec 25/.test(await p.locator("#pl-list").innerText()) && /Market closed/.test(await p.locator("#pl-list").innerText()) && /Early close/.test(await p.locator("#pl-list").innerText()), "30 days adds the Christmas closure and the early close");
+    await p.locator('#pl-dy [data-pl-days="14"]').click(); await adv(300, 100);
+    // levels
+    const names = await p.locator("#pl-rows .pl-row").evaluateAll(els => els.map(e => e.dataset.k));
+    check(names.join(",") === "SPY,QQQ,AAA,BBB", "All: SPY, QQQ, then your tickers, in order (" + names.join(",") + ")");
+    const aaa = await rowTxt(p, "AAA");
+    check(/Broke PDH/.test(aaa), "AAA just above yesterday's high says Broke PDH: " + aaa.replace(/\n+/g, " | "));
+    const dn = await p.locator('#pl-rows .pl-row[data-k="AAA"] .pl-dn').innerText(), upT = await p.locator('#pl-rows .pl-row[data-k="AAA"] .pl-up').innerText();
+    check(/▲ 20d high/.test(upT) && /▼ OR15 high/.test(dn), "the nearest level above (20-day high) and below (opening-range high): " + upT + " / " + dn);
+    check(/\+?[−-]?\$0\.\d\d [−-]0\.\d\d%/.test(dn), "distance is dollars then percent: " + dn);
+    check(await p.locator('#pl-rows .pl-row[data-k="AAA"] .pl-lad .pl-t').count() >= 2 && await p.locator('#pl-rows .pl-row[data-k="AAA"] .pl-p').count() === 1, "the ladder has ticks and one price marker");
+    check(/Above VWAP/.test(aaa), "VWAP from the snapshot shows (" + (aaa.match(/(Above|Below) VWAP/) || [""])[0] + ")");
+    const bbb = await rowTxt(p, "BBB"), pcB = pcOf("BBB");
+    px.BBB = +(pcB * 1.012).toFixed(2); await adv(12000, 1000);
+    const bbb2 = await rowTxt(p, "BBB"); check(/Inside opening range/.test(bbb2), "BBB between the 15-minute high and low says Inside opening range: " + bbb2.replace(/\n+/g, " | "));
+    check(await p.locator('#pl-rows .pl-c[title*="first 15 minutes"]').count() >= 1, "chip tips are one sentence that name the level");
+    // hover text on every label
+    const tipless = await p.locator("#pl-rows .pl-c").evaluateAll(els => els.filter(e => !(e.title || e.dataset.tip)).length);
+    check(tipless === 0, "every label has a tooltip");
+    // a crossing: AAA falls back under PDH and VWAP
+    st.vw.AAA = +(pdhA * 1.0).toFixed(2); px.AAA = +(pdhA * 1.004).toFixed(2); await adv(40000, 1000);
+    px.AAA = +(pdhA * 0.992).toFixed(2); await adv(20000, 1000);
+    const flipped = await p.locator('#pl-rows .pl-row[data-k="AAA"] .pl-c.fresh').allInnerTexts();
+    check(flipped.some(t => /Lost VWAP/.test(t)) && flipped.some(t => /Back under PDH/.test(t)), "crossing a level says so: " + flipped.join(" | "));
+    check(await p.locator('#pl-rows .pl-row.hot[data-k="AAA"]').count() === 1, "a row with a fresh crossing is marked");
+    // scope and filter
+    await p.locator('#pl-sc [data-pl-sc="index"]').click(); await adv(500, 100);
+    check(await p.locator("#pl-rows .pl-row").count() === 2, "Index shows SPY and QQQ only");
+    await p.locator('#pl-sc [data-pl-sc="mine"]').click(); await adv(500, 100);
+    check((await p.locator("#pl-rows .pl-row").evaluateAll(els => els.map(e => e.dataset.k))).join(",") === "AAA,BBB", "Mine shows your tickers");
+    check(await p.evaluate(() => settings.plan && settings.plan.scope === "mine"), "the choice is remembered");
+    await p.locator('#pl-sc [data-pl-sc="all"]').click(); await adv(500, 100);
+    await p.locator("#pl-hotb").click(); await adv(300, 100);
+    check(await p.locator("#pl-rows .pl-row").evaluateAll(els => els.every(e => e.classList.contains("hot"))) , "Needs a look keeps only rows that are near or just crossed a level");
+    await p.locator("#pl-hotb").click(); await adv(300, 100);
+    // expanding a row lists every level
+    await p.locator('#pl-rows [data-pl-open="AAA"]').click(); await adv(300, 100);
+    const ex = await p.locator('#pl-rows .pl-row[data-k="AAA"] .pl-ex').innerText();
+    check(/Prior-day high/.test(ex) && /Prior-day low/.test(ex) && /Pre-market high/.test(ex) && /15-minute range high/.test(ex) && /20-day high/.test(ex) && /52-week high/.test(ex) && /Today's VWAP/.test(ex) && /Price now/.test(ex), "clicking a row lists every level around the price");
+    await p.locator('#pl-rows [data-pl-open="AAA"]').click(); await adv(300, 100);
+    // layout and money
+    check(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no sideways scrolling at 440 px");
+    check(await p.evaluate(() => [...document.querySelectorAll("#plan-body .pl-row")].every(r => r.scrollWidth <= r.clientWidth + 1)), "rows fit their box at 440 px");
+    // budget over the next 10 minutes of market time
+    const n0 = barsCalls(st).length, s0 = await p.evaluate(() => mwPlanCalls().s);
+    await adv(10 * 60e3, 5000);
+    check(barsCalls(st).length === n0, "no more bars calls once the opening range is done (" + (barsCalls(st).length - n0) + " extra in 10 minutes)");
+    const s1 = await p.evaluate(() => mwPlanCalls().s) - s0;
+    check(s1 >= 15 && s1 <= 22, "the VWAP snapshot is one call every 30 seconds while trading: " + s1 + " in 10 minutes");
+    await p.locator("#plan-sec").scrollIntoViewIfNeeded();
+    await shotPlan(p, "plan-1-dark-narrow", 440);
+    // a wide window, then the light theme
+    await p.setViewportSize({width:1400, height:1000}); await adv(1500, 250);
+    check(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no sideways scrolling at 1400 px");
+    await shotPlan(p, "plan-2-dark-wide", 1400);
+    await p.setViewportSize({width:440, height:900}); await p.evaluate(() => { document.documentElement.dataset.theme = "light"; }); await adv(1500, 250);
+    await shotPlan(p, "plan-3-light", 440);
+    // closing it stops the calls
+    await p.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+    await p.locator('#plan-sec [data-toggle="plan"]').click(); await adv(1000, 250);
+    const nc = st.log.filter(c => !/snapshots$|news/.test(c.path)).length; await adv(30 * 60e3, 15000);
+    check(st.log.filter(c => !/snapshots$|news/.test(c.path)).length === nc, "closed again: no Game plan calls");
+    check(errs.length === 0, "no page errors in Game plan" + (errs.length ? ": " + [...new Set(errs)].slice(0, 4).join(" | ") : ""));
+    await A.ctx.close();
+  }
+
+  /* --- 2. the Fed's decision day: 1:15 PM New York, 45 minutes before the statement --- */
+  const B = await mk("2026-12-09T18:15:00Z", {alpKey:"test-key-id", alpSec:"test-secret", planInit:1, collapsed:{plan:false}});
+  {
+    const {p, errs, adv} = B;
+    await p.goto(BASE); await adv(20000, 1000);
+    const sum = await p.locator("#plan-sum").innerText();
+    check(/FOMC decision/.test(sum) && /today 1:00 PM|in \d+ min/.test(sum) || /FOMC decision/.test(sum), "the header names the Fed's decision on its day: " + sum);
+    check(await p.locator("#pl-cards .pl-nx.fed.today").count() === 1 && /TODAY/.test(await p.locator("#pl-cards .pl-nx.fed.today").innerText()), "the Fed card carries a TODAY badge");
+    check(/4\d min/.test(await p.locator("#pl-cards .pl-nx").first().innerText()), "and counts down in minutes: " + (await p.locator("#pl-cards .pl-nx").first().innerText()).replace(/\n+/g, " | "));
+    check(await p.locator("#pl-list .pl-er.fed.today").count() === 1 && await p.locator("#pl-list .pl-dh.today").count() === 1, "the list marks the day and the Fed row");
+    check(await p.locator("#pl-tl .pl-nowm").count() === 1 && await p.locator("#pl-tl .pl-pin.fed").count() === 1 && await p.locator("#pl-tl .pl-sg").count() === 7, "the day's bar has a now marker and the FOMC pin");
+    await shotPlan(p, "plan-4-event-day", 440);
+    // 50 minutes later the statement is out: the card shows "just out"
+    await adv(50 * 60e3, 10000);
+    check(/just out/.test(await p.locator("#pl-cards .pl-nx").first().innerText()), "after 2:00 PM ET the decision reads just out");
+    check(errs.length === 0, "no page errors on the decision day" + (errs.length ? ": " + errs.slice(0, 3).join(" | ") : ""));
+    await B.ctx.close();
+  }
+
+  /* --- 3. no Alpaca key: prior-day and 52-week levels from MW's own history, a clear note, not a single Alpaca call --- */
+  const C = await mk("2026-12-07T14:50:00Z", {tdKey:"test", planInit:1, collapsed:{plan:false}}, {noAlp:true});
+  {
+    const {p, errs, adv} = C; const alp = [];
+    await p.route(/https:\/\/data\.alpaca\.markets\/.*/, route => { alp.push(route.request().url()); route.fulfill({json:{}}); });
+    await p.goto(BASE); await adv(40000, 1000);
+    const st = await p.locator("#pl-st").innerText();
+    check(/free Alpaca key/.test(st) && /Pre-market, opening-range and VWAP/.test(st), "no key: the note says what the free Alpaca key adds");
+    const aaa = await rowTxt(p, "AAA");
+    check(/PDH|PDL|PDC|20d|52w/.test(aaa) && !/Waiting/.test(aaa), "prior-day, 20-day and 52-week levels still show from MW's own history: " + aaa.replace(/\n+/g, " | "));
+    check(!/PM high|OR5|OR15|VWAP/.test(await p.locator("#pl-rows").innerText().then(t => t.replace(/Pre-market, opening-range and VWAP/g, ""))), "and no pre-market, opening-range or VWAP level is made up");
+    check(await p.locator("#pl-cards .pl-nx").count() >= 3, "the calendar needs no key");
+    check(alp.length === 0, "not one Alpaca call without a key (" + alp.length + ")");
+    await shotPlan(p, "plan-5-no-key", 440);
+    check(errs.length === 0, "no page errors without a key" + (errs.length ? ": " + errs.slice(0, 3).join(" | ") : ""));
+    await C.ctx.close();
+  }
+
+  /* --- 4. Alpaca refuses the keys: a friendly line, no crash --- */
+  const D = await mk("2026-12-07T14:50:00Z", {alpKey:"bad", alpSec:"bad", planInit:1, collapsed:{plan:false}});
+  {
+    const {p, st, errs, adv} = D; st.alpDeny = true;
+    await p.goto(BASE); await adv(30000, 1000);
+    check(/didn't accept the keys|forbidden|Alpaca/.test(await p.locator("#pl-st").innerText()), "a refused key shows a short warning: " + (await p.locator("#pl-st").innerText()).slice(0, 120));
+    check(await p.locator("#pl-cards .pl-nx").count() >= 3, "the calendar still works");
+    check(errs.length === 0, "no page errors when Alpaca refuses" + (errs.length ? ": " + errs.slice(0, 3).join(" | ") : ""));
+    await D.ctx.close();
+  }
+}
 
 /* ===== PLAN HARNESS END ===== */
 
