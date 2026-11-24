@@ -562,8 +562,13 @@ span.fx-dn,small.fx-dn{animation:fxDn 1.1s ease-out;border-radius:3px}
 .erw .sub .in > span::before{content:"·";position:absolute;left:3.5px}
 /* Monitor layout, watchlist sections and sort, headline strip (4.7) */
 body.wide main{padding:12px 14px 16px}
-body.wide #cols{display:grid;grid-template-columns:repeat(var(--n,2),minmax(0,1fr));gap:12px;align-items:start}
+body.wide #cols{display:grid;grid-template-columns:repeat(var(--nv,var(--n,2)),minmax(0,1fr));gap:12px;align-items:start}
 body.wide #cols > .col{display:flex;flex-direction:column;gap:12px;min-width:0}
+/* 6.3: a column with nothing showing gives its room to the others, except while you move sections (then it is a drop zone) */
+body.wide #cols > .col.empty{display:none}
+body.wide.secdrag #cols,body.wide.arranging #cols{grid-template-columns:repeat(var(--n,2),minmax(0,1fr))}
+body.wide.secdrag #cols > .col.empty,body.wide.arranging #cols > .col.empty{display:flex;min-height:84px;border:1.5px dashed var(--line-2);border-radius:var(--r);align-items:center;justify-content:center}
+body.wide.secdrag #cols > .col.empty::after,body.wide.arranging #cols > .col.empty::after{content:"Drop a section here";font-size:11.5px;color:var(--muted)}
 body.wide #cols .sec{margin:0}
 .wsort{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:10.5px}
 .wsort .seg button{font-size:10.5px}
@@ -846,6 +851,51 @@ body.sorting,body.sorting *{cursor:grabbing !important;user-select:none !importa
 .ly-row .grip{opacity:.8;margin:0}
 .ly-row.drop-b{box-shadow:inset 0 2px 0 var(--accent)}
 .ly-row.drop-a{box-shadow:inset 0 -2px 0 var(--accent)}
+/* 6.3: move sections on the main screen (drag the header, or the ⠿ grip on touch; Alt + arrows on a focused header) */
+.sec-h{user-select:none;-webkit-user-select:none}
+.sec-h:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:var(--r)}
+.sec-grip{position:absolute;left:0;top:0;bottom:0;width:12px;display:grid;place-items:center;font-size:11px;line-height:1;color:var(--muted);opacity:0;cursor:grab;touch-action:none;transition:opacity .12s}
+.sec-h:hover .sec-grip,.sec-h:focus-visible .sec-grip,body.arranging .sec-grip{opacity:.85}
+.sec-grip:hover{color:var(--fg)}
+@media (hover:none){ .sec-grip{opacity:.55;width:22px;left:-4px} }
+body.compact .sec-h{position:relative}
+body.arranging .sec-h,body.arranging .sec-h *{cursor:grab}
+body.arranging .sec-b,body.arranging #strip{display:none}
+body.arranging .sec .chev{transform:rotate(-90deg);opacity:.4}
+body.arranging .sec-h{position:relative;padding-left:18px}
+body.arranging .sec-grip{width:18px;font-size:13px}
+body.arranging .sec{border-style:dashed;border-color:var(--line-2)}
+.sec.bd-lift{opacity:.4;outline:2px dashed var(--accent);outline-offset:-2px}
+.bd-ghost{position:fixed;left:0;top:0;z-index:80;pointer-events:none;display:grid;grid-template-columns:auto 1fr;column-gap:8px;align-items:center;padding:8px 12px;background:var(--surface);border:1px solid var(--accent);border-radius:var(--r);box-shadow:var(--shadow)}
+.bd-ghost .sec-grip{position:static;opacity:1;width:auto;grid-row:1/3;color:var(--accent)}
+.bd-ghost b{font:600 12px var(--font-d);text-transform:uppercase;letter-spacing:.7px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bd-ghost small{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bd-line{position:fixed;left:0;top:0;z-index:79;height:3px;border-radius:3px;background:var(--accent);pointer-events:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent);will-change:transform;transition:transform .08s ease-out,width .08s ease-out}
+.bd-line::before,.bd-line::after{content:"";position:absolute;top:-3px;width:9px;height:9px;border-radius:50%;background:var(--accent)}
+.bd-line::before{left:-4px} .bd-line::after{right:-4px}
+#arrBar{position:sticky;top:-10px;z-index:9;margin:-10px -10px 10px;padding:10px 12px;background:color-mix(in srgb,var(--accent) 9%,var(--surface));border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));display:flex;flex-direction:column;gap:8px}
+body.wide #arrBar{margin:-12px -14px 12px;top:-12px}
+#arrBar .arr-t{display:flex;flex-direction:column;gap:2px;font-size:11.5px;color:var(--fg-2)}
+#arrBar .arr-t b{font:600 12px var(--font-d);text-transform:uppercase;letter-spacing:.7px;color:var(--fg)}
+#arrBar .arr-a,#arrBar .arr-h{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+#arrBar .arr-a .primary{margin-left:auto}
+#arrBar .btn{padding:4px 10px;font-size:11.5px}
+#arrBar .arr-l{font-size:10.5px;color:var(--muted);margin-right:2px}
+#arrBar .chip{cursor:pointer;border:1px dashed var(--line-2)}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.ly-cols{display:grid;grid-template-columns:repeat(var(--n,2),minmax(0,1fr));gap:10px;align-items:start}
+.ly-col{min-height:40px}
+.ly-cols .ly-col{background:color-mix(in srgb,var(--surface-2) 45%,transparent);border:1px dashed var(--line-2);border-radius:10px;padding:6px 6px 0}
+.ly-ch{font:600 10px var(--font);text-transform:uppercase;letter-spacing:.6px;color:var(--muted);padding:2px 4px 6px}
+.ly-empty{font-size:11px;color:var(--muted);text-align:center;padding:10px 0 14px}
+.ly-row .ly-k{font:10.5px var(--mono);color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+.ly-cols .ly-row{gap:4px;padding:7px 6px}
+.ly-cols .ly-row b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ly-cols .ly-row .x{width:22px}
+.ly-row.bd-lift{opacity:.4;outline:2px dashed var(--accent);outline-offset:-2px}
+.ly-pre{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px}
+.ly-pre .muted{font-size:11px;margin-right:2px}
+.ly-hint .lnk{color:var(--accent);font-weight:600;font-size:inherit;padding:0}
 .kvs{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px}
 .kvs span{color:var(--muted)}
 .x:disabled{opacity:.3;cursor:default}
@@ -1045,6 +1095,9 @@ table.sc tr.sub td{color:var(--muted);font-size:10.5px}
 <script src="engine.js"></script>
 <script src="app.js"></script>
 <script src="map.js"></script>
+<script src="pulse.js"></script>
+<script src="radar.js"></script>
+<script src="plan.js"></script>
 </body>
 </html>
 
