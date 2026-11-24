@@ -3648,7 +3648,35 @@ async function checkUpdates(force){
   } finally { upd.checking = false; renderVersion(); maybeAutoReload(); }
 }
 // fresh copy of the page: a new URL skips every cache (browser, service worker, GitHub's CDN)
-function reloadForUpdate(){ mwLog("info", "reloading for widget " + upd.widget); location.replace(location.pathname + "?v=" + encodeURIComponent(upd.widget || Date.now()) + location.hash); }
+/* The new index.html alone isn't enough: its scripts (engine.js carries the version) can still come from the browser's
+   10-minute cache or GitHub's CDN right after a release, which brought the old version back and asked again (6.3.0).
+   So: re-download every file past the caches first, clear the offline copy, then reload. If the reload still comes up
+   old, try at most twice more a minute apart, then stop asking and say GitHub is still publishing it. */
+const UPD_FILES = ["./", "index.html", "boot.js", "engine.js", "app.js", "map.js", "pulse.js", "radar.js", "plan.js", "sw.js"];
+async function freshFiles(){
+  await Promise.all(UPD_FILES.map(f => fetchT(f + (f.includes("?") ? "&" : "?") + "u=" + Date.now(), {cache:"no-store"}, 10000).catch(()=>{})));   // reach the newest copy on GitHub
+  await Promise.all(UPD_FILES.map(f => fetch(f, {cache:"reload"}).catch(()=>{})));   // and overwrite the cached copies the page will load
+  try{ const ks = await caches.keys(); await Promise.all(ks.filter(k => /^mw(lab)?-shell-/.test(k)).map(k => caches.delete(k))); }catch(e){}
+  try{ const r = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (r) await r.update(); }catch(e){}
+}
+function updTries(){ try{ const t = JSON.parse(sessionStorage.getItem(NS + "updTry") || "{}"); return t && t.v === upd.widget && Date.now() - (t.at || 0) < 20*60e3 ? t : {v:upd.widget, n:0, at:Date.now()}; }catch(e){ return {v:upd.widget, n:0, at:Date.now()}; } }
+async function reloadForUpdate(){
+  if (reloadForUpdate.busy) return; reloadForUpdate.busy = true;
+  const t = updTries();
+  if (t.n >= 3){ reloadForUpdate.busy = false; upd.publishing = true; renderVersion(); toast("GitHub is still publishing MW " + upd.widget + ". It installs by itself in a few minutes."); mwLog("warn", "update " + upd.widget + " still serves " + APP_VERSION + " after 3 reloads"); return; }
+  mwLog("info", "reloading for widget " + upd.widget + (t.n ? " (try " + (t.n + 1) + ")" : ""));
+  toast("Updating to MW " + upd.widget + "…");
+  try{ sessionStorage.setItem(NS + "updTry", JSON.stringify({v:upd.widget, n:t.n + 1, at:t.at || Date.now()})); }catch(e){}
+  await freshFiles();
+  location.replace(location.pathname + "?v=" + encodeURIComponent(upd.widget || Date.now()) + "&r=" + (t.n + 1) + location.hash);
+}
+/* came back from an update reload still on the old code (a cache answered first): retry after a minute, quietly */
+(function(){ const q = new URLSearchParams(location.search), want = q.get("v");
+  if (!want || !/^\d+\.\d+\.\d+$/.test(want)) return;
+  if (!newer(want, APP_VERSION)){ try{ sessionStorage.removeItem(NS + "updTry"); }catch(e){} history.replaceState(null, "", location.pathname + location.hash); return; }
+  upd.widget = want; upd.publishing = true;
+  setTimeout(() => { if (newer(upd.widget, APP_VERSION)) reloadForUpdate(); }, 60e3);
+})();
 // widget update while nobody is looking (hidden in the tray / tab in the background): take it, once per version,
 // but never between 9:25 and 4:05 on a trading day (R2): a new version waits for the close instead of swapping code mid-session
 function inMarketHours(){ const t = etNow(); return E.calendarValid(t.date) && isTradingDay(t.date) && t.mins >= 565 && t.mins < closeMins(t.date) + 5; }
@@ -3679,7 +3707,8 @@ function renderVersion(){
   $("bMore").title = st.any ? "Menu · update available" : "Menu";
   const el = $("update"), parts = [];
   if (st.appNew) parts.push(`<div><b>New desktop app: ${esc(upd.app.tag.replace(/^(lab-)?app-v/,""))}</b> ${nat.state ? `You have ${esc(nat.state.version)}.` : "Your app is too old to report its version."} Quit ${labShell() ? "MW Lab" : "MW"} from the tray, run the installer, your settings stay. <button class="lnk" data-upd="app">Download</button></div>`);
-  if (st.widgetNew) parts.push(`<div><b>MW ${esc(upd.widget)} is ready</b> You're on ${esc(APP_VERSION)}.${inMarketHours() ? " It installs by itself after the close, or now if you click:" : ""} <button class="lnk" data-upd="reload">Reload now</button></div>`);
+  if (st.widgetNew && upd.publishing) parts.push(`<div><b>Installing MW ${esc(upd.widget)}…</b> GitHub is still sending out the new files (this can take a few minutes after a release). MW finishes it by itself; nothing to click.</div>`);
+  else if (st.widgetNew) parts.push(`<div><b>MW ${esc(upd.widget)} is ready</b> You're on ${esc(APP_VERSION)}.${inMarketHours() ? " It installs by itself after the close, or now if you click:" : ""} <button class="lnk" data-upd="reload">Reload now</button></div>`);
   if (parts.length && store.get("updDismiss", "") !== (upd.widget || "") + "|" + (upd.app && upd.app.tag || "")){
     el.innerHTML = parts.join("") + `<button class="x" data-upd="dismiss" aria-label="Hide until the next version">×</button>`; el.classList.add("show");
   } else el.classList.remove("show");
@@ -3758,9 +3787,10 @@ if (NATIVE){
   const main = $("main"); if (!main) return; let raf = 0;
   const upd = () => { raf = 0; const top = main.getBoundingClientRect().top;
     document.querySelectorAll(".sec").forEach(sec => { const r = sec.getBoundingClientRect(); sec.classList.toggle("stuck", !sec.classList.contains("collapsed") && r.top < top - 1 && r.bottom > top + 34); }); };
-  // one pass per frame while scrolling, plus a last one after the scroll settles (a frame can land mid-scroll on a busy PC)
+  // straight from the scroll event (eight rectangles, cheap): a frame-timed update could be skipped on a busy or
+  // background window and leave the state stale; a last pass after the scroll settles covers smooth scrolling
   let last = 0;
-  main.addEventListener("scroll", () => { if (!raf) raf = requestAnimationFrame(upd); clearTimeout(last); last = setTimeout(upd, 150); }, {passive:true});
+  main.addEventListener("scroll", () => { upd(); clearTimeout(last); last = setTimeout(upd, 150); }, {passive:true});
 })();
 /* ---------- what's new (6.0): one card, once, after an update that changes how the screen reads ---------- */
 const WHATS_NEW = {ver:"6.4.0", url:"https://github.com/awpmap/market-widget/blob/main/lab/CHANGES-6.4.0.md", title:"New in MW 6.4: all news in English, plus the world press", items:[
