@@ -676,9 +676,9 @@ console.log("Per-share dollars and the 6.0 screen (6.0)");
   await p7.goto(BASE); await adv(30000);
   // what's new: once, after the update
   const wn = await p7.locator("#whatsnew").innerText();
-  check(await p7.locator("#whatsnew.show").count() === 1 && /New in MW Beta 6\.2/.test(wn) && /live news/.test(wn), "after the update, one card says what is new in 6.2");
+  check(await p7.locator("#whatsnew.show").count() === 1 && /New in MW Beta 6\.3/.test(wn) && /arrange your screen/.test(wn), "after the update, one card says what is new in 6.3");
   await p7.locator('#whatsnew .btn[data-wn="ok"]').click(); await adv(300, 100);
-  check(await p7.locator("#whatsnew.show").count() === 0 && await p7.evaluate(() => { renderWhatsNew(); return JSON.parse(localStorage.getItem("mwlab_seenVer")) === "6.2.0" && !document.getElementById("whatsnew").classList.contains("show"); }), "Got it puts the card away for good");
+  check(await p7.locator("#whatsnew.show").count() === 0 && await p7.evaluate(() => { renderWhatsNew(); return JSON.parse(localStorage.getItem("mwlab_seenVer")) === "6.3.0" && !document.getElementById("whatsnew").classList.contains("show"); }), "Got it puts the card away for good");
   await adv(9 * 60e3, 5000);   // price history loads at 8 a minute
   // dollars for one share, next to the percent
   check(await pill(hA + " .ps") === pair("AAA") && await p7.locator(hA + " .ps .dchg.up").count() === 1, "a holding shows the day's change for one share in dollars, then in percent (" + await pill(hA + " .ps") + ")");
