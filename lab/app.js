@@ -3661,12 +3661,12 @@ if (NATIVE){
   main.addEventListener("scroll", () => { if (!raf) raf = requestAnimationFrame(upd); }, {passive:true});
 })();
 /* ---------- what's new (6.0): one card, once, after an update that changes how the screen reads ---------- */
-const WHATS_NEW = {ver:"6.2.0", url:"https://github.com/awpmap/market-widget/blob/main/lab/CHANGES-6.2.0.md", title:"New in MW Beta 6.2: live news", items:[
-  "<b>A Live tab in News.</b> One tape, newest first: GlobeNewswire, PR Newswire, Business Wire, Newsfile, SEC 8-K filings, the Fed, BLS, Alpaca and Finnhub, the same story merged into one line.",
-  "<b>Straight from the source.</b> The desktop app (1.3) reads the press wires and SEC itself every 15 to 30 seconds, so a release lands seconds after it goes out. Each line shows how late it arrived.",
-  "<b>Your tickers first.</b> A release or filing about something you hold or watch pops up on Windows once, and stays marked at the top. Filters: Your tickers, Wires, Filings, Fed & data.",
-  "<b>Filings in plain words.</b> \"Filed 8-K: results\", \"exec/board change\", insider trades (Form 4) for your own tickers.",
-  "<b>Settings → News</b> shows every source's health and lets you switch any of them off."]};
+const WHATS_NEW = {ver:"6.3.0", url:"https://github.com/awpmap/market-widget/blob/main/lab/CHANGES-6.3.0.md", title:"New in MW Beta 6.3: arrange your screen, three trader sections", items:[
+  "<b>Move sections yourself.</b> Drag any section by its header, right on the main screen. On a wide window each one stays in the column you drop it in. Alt+arrows move a focused section. ⋯ → Arrange shrinks everything to headers, with Trading day and Long-term presets.",
+  "<b>Market pulse.</b> Risk-on or risk-off at a glance: chips, Nasdaq and small caps against the S&amp;P, credit, high beta, consumer appetite, the dollar, rates, gold, oil, bitcoin and sector breadth, rolled into one Risk appetite reading.",
+  "<b>In-play radar.</b> What is moving on unusual volume right now, across your tickers and about 150 liquid names, with gap, VWAP, range and new-high tags, plus a scope chart of change against volume.",
+  "<b>Game plan.</b> Today's key levels for your tickers (yesterday's high and low, pre-market, opening range, VWAP) and the calendar that moves markets: Fed, CPI, jobs, PCE, earnings and options expiration, with a countdown.",
+  "The three new sections start folded. Open one to switch it on; nothing is fetched while it is folded."]};
 function renderWhatsNew(){
   const el = $("whatsnew"); if (!el) return;
   const seen = store.get("seenVer", "");

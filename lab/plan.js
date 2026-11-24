@@ -179,7 +179,7 @@ function evLeft(ev, now){
 function plEvents(now){ const c = plCfg(); return E.planEvents(now, {days:c.days === 30 ? 30 : 14, earn:plEarn()}); }
 
 function sumText(now){
-  const L = E.planNextUp(E.planEvents(now, {days:14, earn:plEarn()}), now, 1), ev = L[0];
+  const L = E.planNextUp(E.planEvents(now, {days:30, earn:plEarn()}), now, 1), ev = L[0];
   if (!ev) return "";
   if (ev.k === "earn") return `${evName(ev)} ${ev.today ? "today" : E.planDayWord(ev.d, etNow().date)}`;
   if (ev.past) return `${ev.name} just out`;
