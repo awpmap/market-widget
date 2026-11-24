@@ -701,3 +701,25 @@ test("secName and SEC_FORMS", () => {
   assert.equal(E.secName("GAMMA TEST CORP /DE/"), "Gamma Test Corp"); assert.equal(E.secName("ABC HOLDINGS INC"), "ABC Holdings INC".replace("INC", "INC"));
   assert.equal(E.SEC_FORMS["4"], "insider trade");
 });
+
+/* ---------------- translation and world press (6.4) ---------------- */
+test("looksEnglish: other scripts and foreign function words are caught; short or unclear lines count as English", () => {
+  for (const t of ["Example Corp raises outlook as demand surges", "Example Q3", "Example Corp (NASDAQ: EXMP) to Present at Conference", "", "12.5%"]) assert.equal(E.looksEnglish(t), true, t);
+  for (const t of ["예시전자, 신제품 양산 돌입", "サンプル社、通期予想を上方修正", "示例公司第三季度利润增长", "Пример поднял прогноз", "Beispiel AG hebt die Prognose für das Jahr an",
+    "Exemple annonce un accord avec la société pour le gaz", "Ejemplo gana un 12% más en el trimestre", "Esempio alza le stime per il trimestre con la nuova linea"]) assert.equal(E.looksEnglish(t), false, t);
+});
+test("gtxParse joins the translated pieces and keeps the detected language", () => {
+  assert.deepEqual(E.gtxParse([[["Hello ", "Hallo ", null], ["world.", "Welt.", null]], null, "de"]), {text:"Hello world.", lang:"de"});
+  assert.equal(E.gtxParse(null), null); assert.equal(E.gtxParse({}), null); assert.equal(E.gtxParse([[["", ""]], null, "de"]), null);
+  assert.equal(E.langName("ko"), "Korean"); assert.equal(E.langName("zh-CN"), "Chinese"); assert.equal(E.langName("xx"), "XX");
+});
+test("gdeltParse: non-English articles only, tagged with the ticker, time from seendate", () => {
+  const L = E.gdeltParse({articles:[
+    {url:"https://news.example.kr/1", title:"예시전자  신제품", seendate:"20261124T151500Z", domain:"news.example.kr", language:"Korean", sourcecountry:"South Korea"},
+    {url:"https://news.example.com/2", title:"Example in English", seendate:"20261124T151500Z", domain:"news.example.com", language:"English"},
+    {url:"javascript:x", title:"bad", language:"German"}]}, "EXMP");
+  assert.equal(L.length, 1); assert.equal(L[0].h, "예시전자 신제품"); assert.deepEqual(L[0].syms, ["EXMP"]);
+  assert.equal(L[0].t, Date.UTC(2026, 10, 24, 15, 15)); assert.equal(L[0].lang, "Korean"); assert.equal(L[0].src, "news.example.kr · South Korea");
+  assert.deepEqual(E.gdeltParse(null, "X"), []);
+  assert.equal(E.searchName("Example Technology Inc."), "Example Technology"); assert.equal(E.searchName("ABC Corp"), "");
+});

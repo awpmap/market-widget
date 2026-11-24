@@ -676,9 +676,9 @@ console.log("Per-share dollars and the 6.0 screen (6.0)");
   await p7.goto(BASE); await adv(30000);
   // what's new: once, after the update
   const wn = await p7.locator("#whatsnew").innerText();
-  check(await p7.locator("#whatsnew.show").count() === 1 && /New in MW Beta 6\.3/.test(wn) && /arrange your screen/.test(wn), "after the update, one card says what is new in 6.3");
+  check(await p7.locator("#whatsnew.show").count() === 1 && /New in MW Beta 6\.4/.test(wn) && /English/.test(wn), "after the update, one card says what is new in 6.4");
   await p7.locator('#whatsnew .btn[data-wn="ok"]').click(); await adv(300, 100);
-  check(await p7.locator("#whatsnew.show").count() === 0 && await p7.evaluate(() => { renderWhatsNew(); return JSON.parse(localStorage.getItem("mwlab_seenVer")) === "6.3.0" && !document.getElementById("whatsnew").classList.contains("show"); }), "Got it puts the card away for good");
+  check(await p7.locator("#whatsnew.show").count() === 0 && await p7.evaluate(() => { renderWhatsNew(); return JSON.parse(localStorage.getItem("mwlab_seenVer")) === "6.4.0" && !document.getElementById("whatsnew").classList.contains("show"); }), "Got it puts the card away for good");
   await adv(9 * 60e3, 5000);   // price history loads at 8 a minute
   // dollars for one share, next to the percent
   check(await pill(hA + " .ps") === pair("AAA") && await p7.locator(hA + " .ps .dchg.up").count() === 1, "a holding shows the day's change for one share in dollars, then in percent (" + await pill(hA + " .ps") + ")");
@@ -1588,6 +1588,47 @@ console.log("Game plan (6.3)");
 /* ===== PLAN HARNESS END ===== */
 
 // (spacer)
+
+/* ---------- 6.4: headlines in English, and the world press on your stocks (made-up companies and texts) ---------- */
+console.log("Translation and world press (6.4)");
+{
+  const ctx10 = await browser.newContext({viewport:{width:420, height:900}, timezoneId:"America/Chicago"});
+  const p10 = await ctx10.newPage(); await mock(p10);
+  const errs10 = []; p10.on("pageerror", e => errs10.push(e.message)); p10.on("console", m => { if (m.type() === "error" && !/Failed to load resource|sentry/i.test(m.text())) errs10.push(m.text()); });
+  let t10 = Date.parse("2026-11-24T15:00:00Z");
+  const asked = {tr:[], gd:[]};
+  const DICT = {"Beispiel AG hebt die Prognose für das Jahr an":["Example AG raises its forecast for the year", "de"], "예시전자, 신제품 양산 돌입":["Example Electronics begins mass production of new product", "ko"]};
+  await p10.route(/https:\/\/translate\.googleapis\.com\/.*/, route => { const q = new URL(route.request().url()).searchParams.get("q"); asked.tr.push(q); const d = DICT[q] || [q, "en"]; route.fulfill({json:[[[d[0], q, null]], null, d[1]]}); });
+  await p10.route(/https:\/\/api\.gdeltproject\.org\/.*/, route => { asked.gd.push(new URL(route.request().url()).searchParams.get("query"));
+    route.fulfill({json:{articles:[{url:"https://news.example.kr/1", title:"예시전자, 신제품 양산 돌입", seendate:"20261124T144500Z", domain:"news.example.kr", language:"Korean", sourcecountry:"South Korea"}]}}); });
+  await p10.route(/https:\/\/finnhub\.io\/api\/v1\/(company-news|news|stock\/profile2).*/, route => { const u = new URL(route.request().url()), now = Math.floor(t10 / 1000);
+    if (u.pathname.endsWith("profile2")) return route.fulfill({json:{name:"Example Electronics Co Ltd", finnhubIndustry:"Semiconductors"}});
+    if (u.pathname.endsWith("/news")) return route.fulfill({json:[{id:1, headline:"Beispiel AG hebt die Prognose für das Jahr an", summary:"", source:"Testwire", url:"https://example.com/de/1", datetime:now - 600},
+      {id:2, headline:"Stocks edge higher in a made-up session", summary:"", source:"Testwire", url:"https://example.com/en/1", datetime:now - 900}]});
+    return route.fulfill({json:[]}); });
+  await p10.addInitScript(() => { if (sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); localStorage.clear();
+    localStorage.setItem("mwlab_settings", JSON.stringify({key:"test", refresh:60, sound:"off"})); localStorage.setItem("mwlab_seenVer", JSON.stringify("99.0.0"));
+    localStorage.setItem("mwlab_cfg", JSON.stringify({holdings:[{sym:"EXEL", shares:3, acct:"Taxable"}], fixed:[], watch:[{sym:"EXEL"}]})); });
+  await p10.clock.install({time:t10});
+  const adv = async (ms, step = 1000) => { for (let t = 0; t < ms; t += step) { t10 += step; simNow = t10; await p10.clock.runFor(step); await p10.waitForTimeout(25); } };
+  simNow = t10; Object.keys(px).forEach(k => delete px[k]);
+  await p10.goto(BASE); await adv(150000, 2000);
+  const txt = await p10.locator("#nw-body").innerText();
+  check(/Example AG raises its forecast for the year/.test(txt) && !/Beispiel AG hebt/.test(txt), "a German headline shows in English");
+  check(/Example Electronics begins mass production/.test(txt) && await p10.locator('#nw-body .nw-b.b-intl').count() >= 1, "Korean press on a held stock comes in through GDELT, in English, with a World badge");
+  check(await p10.locator('#nw-body .nw-tr', {hasText:"KO→EN"}).count() === 1 && await p10.locator('#nw-body .nw-tr', {hasText:"DE→EN"}).count() === 1, "translated lines carry a small DE→EN / KO→EN tag");
+  check(!asked.tr.includes("Stocks edge higher in a made-up session"), "English headlines are never sent to the translator");
+  check(asked.gd.length >= 1 && asked.gd.every(q => /"Example Electronics" -sourcelang:english/.test(q)), "the world press is searched by company name, other languages only (" + asked.gd[0] + ")");
+  if (await p10.locator("#nw-body .nw", {hasText:"mass production"}).count()) { await p10.locator("#nw-body .nw", {hasText:"mass production"}).locator(".nw-h").click(); await adv(300, 100); }
+  check(/Original \(Korean\): 예시전자/.test(await p10.locator("#nw-body .nw.open .nw-x").innerText()), "opening a translated line shows the original headline");
+  await p10.locator('#nw-body [data-livef="intl"]').click(); await adv(300, 100);
+  check((await p10.locator("#nw-body .nw.lv").count()) === 2, "World shows only translated and foreign-press lines");
+  if (SHOTS) await p10.screenshot({path:path.join(SHOTS, "17-translated-news.png"), fullPage:true});
+  await p10.evaluate(() => { settings.trOn = false; settings.liveF = "all"; saveSettings(); renderNews(); });
+  check(/Beispiel AG hebt/.test(await p10.locator("#nw-body").innerText()), "with translation off, the original shows");
+  check(errs10.length === 0, "no page errors in the translation checks" + (errs10.length ? ": " + [...new Set(errs10)].slice(0, 4).join(" | ") : ""));
+  await ctx10.close();
+}
 
 await browser.close(); server.close();
 console.log(fail.length ? `\n${fail.length} check(s) failed` : "\nAll browser checks passed");

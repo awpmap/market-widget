@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://finnhub.io https://api.twelvedata.com https://data.alpaca.markets https://ntfy.sh https://hc-ping.com https://api.github.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io ipc: http://ipc.localhost; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://finnhub.io https://translate.googleapis.com https://api.gdeltproject.org https://api.twelvedata.com https://data.alpaca.markets https://ntfy.sh https://hc-ping.com https://api.github.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io ipc: http://ipc.localhost; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
@@ -651,6 +651,12 @@ body.compact #nw-sec .sec-h{padding-top:8px;padding-bottom:8px}
 .nw.lv .nw-x{margin-left:40px}
 .nw.hot{box-shadow:inset 3px 0 0 var(--warn)}
 .nw.hot .nw-h{color:var(--fg);font-weight:700}
+.nw-b.b-intl{color:#3fc7b0;background:color-mix(in srgb,#2bb39b 16%,transparent)}
+:root[data-theme="light"] .nw-b.b-intl{color:#0b7a68}
+.nw-tr{display:inline-block;font:700 8.5px var(--font);letter-spacing:.3px;color:#3fc7b0;border:1px solid color-mix(in srgb,#2bb39b 45%,transparent);border-radius:4px;padding:0 3px;margin-right:5px;vertical-align:1px}
+.nw-tr.wait{color:var(--muted);border-color:var(--line)}
+:root[data-theme="light"] .nw-tr{color:#0b7a68}
+.nw-x p.nw-orig{font-size:11px;color:var(--muted);margin-bottom:6px;-webkit-line-clamp:3}
 .nw-lag{font-style:normal;color:var(--up);font-weight:600;margin-left:3px}
 .nw-lf{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0 4px}
 .nw-lf button{font:500 11px var(--font);color:var(--fg-2);background:transparent;border:1px solid var(--line);border-radius:999px;padding:2px 9px;cursor:pointer}

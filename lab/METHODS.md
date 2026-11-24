@@ -171,3 +171,10 @@ Every saved change keeps a copy (the last 30; edits of the same kind within 10 m
   = the last close on or before that date; YTD = last year's final close), from split-adjusted IEX daily bars.
 - Colors: intensity = (|change| / cap)^0.8, caps 3% (1D), 6% (5D), 10% (1M), 15% (3M), 25% (YTD), 35% (1Y), 2% (Since close).
 - Averages (`E.mapStats`): 1x funds only, weighted like the tiles.
+
+## Translation and world press (6.4)
+
+See CHANGES-6.4.0.md. `E.looksEnglish` (other scripts, foreign vs English function words), `E.gtxParse` (Google
+Translate web answer), `E.gdeltParse` (GDELT artlist JSON, non-English only, `seendate` YYYYMMDDTHHMMSSZ),
+`E.searchName` (company name without Inc/Corp/Ltd). Translation queue: one ask at a time, 1.2 s apart; on-device
+first, then the web translator; three failures in a row pause it 2 minutes.
