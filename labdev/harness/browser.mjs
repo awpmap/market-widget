@@ -739,9 +739,11 @@ console.log("Per-share dollars and the 6.0 screen (6.0)");
   check(await p7.locator("#pf-body .riskx.shut").count() === 0 && await p7.locator("#pf-body .riskx .rk").count() >= 1, "and opens again");
   // section headers stay in view
   await p7.evaluate(() => { const m = document.getElementById("main"), s = document.getElementById("pf-sec"); m.scrollTop += s.getBoundingClientRect().top - m.getBoundingClientRect().top + 140; }); await adv(400, 100);
+  const frames = () => p7.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));   // scroll events go out with the next frame
+  await frames();
   const st = await p7.evaluate(() => { const m = document.getElementById("main"), s = document.getElementById("pf-sec"), h = s.querySelector(".sec-h"); return {stuck: s.classList.contains("stuck"), gap: Math.round(h.getBoundingClientRect().top - m.getBoundingClientRect().top)}; });
   check(st.stuck && Math.abs(st.gap) <= 1, "a section's header stays at the top while you scroll through the section (" + JSON.stringify(st) + ")");
-  await p7.evaluate(() => { document.getElementById("main").scrollTop = 0; }); await adv(400, 100);
+  await p7.evaluate(() => { document.getElementById("main").scrollTop = 0; }); await adv(400, 100); await frames();
   check(await p7.evaluate(() => !document.getElementById("pf-sec").classList.contains("stuck")), "and lets go when you are back at the top");
   // a market tile opens a details bar
   await p7.locator('#mk-body .idx .c[data-tile="QQQ"]').click(); await adv(1500, 250);
