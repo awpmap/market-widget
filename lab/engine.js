@@ -1182,6 +1182,297 @@ E.lagShort = function (sec) { return sec == null ? "" : sec < 60 ? Math.round(se
    ===== PLAN BEGIN: Game plan (plan.js). Only this builder edits between BEGIN and END. =====
    ===================================================================== */
 
+/* ---- 1. The official calendar of what moves the market (read from the publishers' own pages, see PLAN_SOURCES).
+   Only dates found on those pages are listed. A schedule that is not published yet stays empty and the page says
+   so (E.planCoverage); nothing here is a guess. Times are New York time. ---- */
+E.PLAN_CHECKED = "2026-11-24";   // the day the pages below were read; dates before it are left out
+E.PLAN_SOURCES = {
+  fomc:   {name:"Federal Reserve", url:"https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm", note:"2026 meetings; 2027 and Jan 2028 as revised in the Fed's press release of 2026-11-12 (https://www.federalreserve.gov/newsevents/pressreleases/monetary20261112a.htm); 2027 dates stay tentative until the meeting before confirms them"},
+  cpi:    {name:"Bureau of Labor Statistics", url:"https://www.bls.gov/schedule/news_release/cpi.htm"},
+  ppi:    {name:"Bureau of Labor Statistics", url:"https://www.bls.gov/schedule/news_release/ppi.htm"},
+  jobs:   {name:"Bureau of Labor Statistics", url:"https://www.bls.gov/schedule/news_release/empsit.htm"},
+  gdp:    {name:"Bureau of Economic Analysis", url:"https://www.bea.gov/news/schedule/full", note:"2027: https://www.bea.gov/news/schedule/next-year"},
+  pce:    {name:"Bureau of Economic Analysis", url:"https://www.bea.gov/news/schedule/full", note:"Personal Income and Outlays; 2027: https://www.bea.gov/news/schedule/next-year"},
+  retail: {name:"Census Bureau", url:"https://www.census.gov/economic-indicators/calendar-listview-2026.html", note:"2027: https://census.gov/retail/release_schedule.html"},
+  opex:   {name:"computed", url:"", note:"third Friday of the month, the Thursday before when that Friday is an NYSE holiday (E.HOLIDAYS, NYSE Group calendar)"}
+};
+E.PLAN_KINDS = {
+  fomc:   {name:"FOMC decision", mins:840, big:3, tip:"The Fed's interest-rate decision and statement at 2:00 PM ET, followed by the chair's press conference. It moves rate-sensitive stocks, bonds and the dollar."},
+  fomc1:  {name:"FOMC meeting, day 1", mins:null, big:1, tip:"First day of the Fed's two-day meeting. No decision today: the statement comes tomorrow at 2:00 PM ET."},
+  fomcs:  {name:"FOMC strategy meeting", mins:null, big:1, tip:"A meeting set aside for the Fed's broad strategy. The Fed says no policy decision is announced after it."},
+  fomcmin:{name:"FOMC minutes", mins:840, big:2, tip:"The record of what the Fed's last meeting discussed, released 2:00 PM ET. It can shift rate expectations."},
+  cpi:    {name:"CPI", mins:510, big:3, tip:"Consumer prices (inflation) for last month, 8:30 AM ET. A surprise moves rate expectations and the whole market."},
+  ppi:    {name:"PPI", mins:510, big:1, tip:"Producer (wholesale) prices for last month, 8:30 AM ET."},
+  jobs:   {name:"Jobs report", mins:510, big:3, tip:"Payrolls and the unemployment rate for last month, 8:30 AM ET. One of the biggest scheduled movers."},
+  pce:    {name:"PCE inflation", mins:510, big:2, tip:"Personal Income and Outlays, with the PCE price index the Fed watches most, 8:30 AM ET."},
+  gdp:    {name:"GDP", mins:510, big:2, tip:"Growth in the economy for the quarter, 8:30 AM ET. The first (advance) estimate moves markets most."},
+  retail: {name:"Retail sales", mins:510, big:2, tip:"What shoppers spent last month, 8:30 AM ET. A read on consumer demand."},
+  opex:   {name:"Options expiration", mins:null, big:2, tip:"Monthly stock options expire at the close. Heavy open interest can pin prices near big strikes and lift volume."},
+  quad:   {name:"Quad witching", mins:null, big:3, tip:"Quarterly expiration: stock options, index options and index futures all expire at the close. Volume is often the heaviest of the quarter."},
+  holiday:{name:"Market closed", mins:null, big:0, tip:"The NYSE and Nasdaq are closed all day."},
+  early:  {name:"Early close", mins:null, big:1, tip:"Stocks stop trading early (1:00 PM ET), and volume is usually thin."},
+  night:  {name:"Overnight trading starts", mins:1260, big:1, tip:"Nasdaq's planned overnight session (Sunday to Friday, about 23 hours a day). Free price feeds carry no overnight prices."},
+  earn:   {name:"Earnings", mins:null, big:1, tip:"Companies report results; prices can gap at the open (before-open reports) or the next morning (after-close reports)."}
+};
+/* [date, what it covers, flags]. flags: "s" meeting with new projections, "t" tentative until the meeting before confirms it */
+E.PLAN_DATES = {
+  fomc:   [["2026-12-09", "Dec 8-9 meeting", "s"], ["2027-01-27", "Jan 26-27 meeting", "t"], ["2027-03-17", "Mar 16-17 meeting", "t"], ["2027-04-28", "Apr 27-28 meeting", "t"],
+           ["2027-06-09", "Jun 8-9 meeting", "t"], ["2027-07-28", "Jul 27-28 meeting", "t"], ["2027-09-15", "Sep 14-15 meeting", "t"], ["2027-11-17", "Nov 16-17 meeting", "t"], ["2028-01-26", "Jan 25-26 meeting", "t"]],
+  fomcs:  [["2027-10-26", "Oct 26-27 meeting", "t"]],
+  fomcmin:[],   // the Fed has not posted the minutes date for the Dec 8-9 meeting yet
+  cpi:    [["2026-12-10", "November"], ["2027-01-13", "December"], ["2027-02-11", "January"], ["2027-03-10", "February"], ["2027-04-13", "March"], ["2027-05-12", "April"], ["2027-06-10", "May"],
+           ["2027-07-14", "June"], ["2027-08-11", "July"], ["2027-09-14", "August"], ["2027-10-14", "September"], ["2027-11-10", "October"], ["2027-12-10", "November"]],
+  ppi:    [["2026-12-15", "November"], ["2027-01-14", "December"], ["2027-02-12", "January"], ["2027-03-12", "February"], ["2027-04-14", "March"], ["2027-05-13", "April"], ["2027-06-11", "May"],
+           ["2027-07-15", "June"], ["2027-08-10", "July"], ["2027-09-10", "August"], ["2027-10-15", "September"], ["2027-11-12", "October"], ["2027-12-15", "November"]],
+  jobs:   [["2026-12-04", "November"], ["2027-01-08", "December"], ["2027-02-05", "January"], ["2027-03-05", "February"], ["2027-04-02", "March"], ["2027-05-07", "April"], ["2027-06-04", "May"],
+           ["2027-07-02", "June"], ["2027-08-06", "July"], ["2027-09-03", "August"], ["2027-10-08", "September"], ["2027-11-05", "October"], ["2027-12-03", "November"]],
+  gdp:    [["2026-11-25", "Q3, second estimate"], ["2026-12-23", "Q3, third estimate"], ["2027-01-28", "Q4, first estimate"], ["2027-02-25", "Q4, second estimate"], ["2027-03-31", "Q4, third estimate"],
+           ["2027-04-29", "Q1, first estimate"], ["2027-05-27", "Q1, second estimate"], ["2027-06-25", "Q1, third estimate"], ["2027-07-29", "Q2, first estimate"], ["2027-08-25", "Q2, second estimate"],
+           ["2027-09-30", "Q2, third estimate"], ["2027-10-28", "Q3, first estimate"], ["2027-11-24", "Q3, second estimate"], ["2027-12-22", "Q3, third estimate"]],
+  pce:    [["2026-11-25", "October"], ["2026-12-23", "November"], ["2027-01-28", "December"], ["2027-02-25", "January"], ["2027-03-31", "February"], ["2027-04-29", "March"], ["2027-05-27", "April"],
+           ["2027-06-25", "May"], ["2027-07-29", "June"], ["2027-08-25", "July"], ["2027-09-30", "August"], ["2027-10-28", "September"], ["2027-11-24", "October"], ["2027-12-22", "November"]],
+  retail: [["2026-12-16", "November"], ["2027-01-15", "December"], ["2027-02-17", "January"], ["2027-03-16", "February"], ["2027-04-16", "March"], ["2027-05-14", "April"], ["2027-06-16", "May"],
+           ["2027-07-16", "June"], ["2027-08-16", "July"], ["2027-09-16", "August"], ["2027-10-15", "September"], ["2027-11-16", "October"], ["2027-12-15", "November"]]
+};
+/* schedules that end before the window does: the page says "not published yet" for these instead of guessing */
+E.planCoverage = function (now, days) {
+  const end = E.addDays(E.etDateOf(now), days), out = [];
+  Object.keys(E.PLAN_DATES).forEach(k => {
+    if (k === "fomcs") return;
+    const L = E.PLAN_DATES[k], last = L.length ? L[L.length - 1][0] : null;
+    if (!last || last < end) out.push({k, name:E.PLAN_KINDS[k].name, through:last});
+  });
+  return out;
+};
+E.thirdFriday = function (y, m) {
+  const p = n => String(n).padStart(2, "0"), first = E.weekday(`${y}-${p(m)}-01`), fri = 1 + ((5 - first + 7) % 7) + 14;
+  return `${y}-${p(m)}-${p(fri)}`;
+};
+/* monthly options expire on the third Friday; when that is a market holiday, the day before (Juneteenth 2026 and 2027) */
+E.optionsExpiry = function (y, m) { const d = E.thirdFriday(y, m); return E.isTradingDay(d) ? d : E.prevTradingDay(d); };
+E.isQuadMonth = m => m % 3 === 0;
+E.holidayName = function (d) {
+  const m = +d.slice(5, 7), day = +d.slice(8, 10);
+  if (m === 1) return day <= 2 ? "New Year's Day" : "Martin Luther King Jr. Day";
+  if (m === 2) return "Presidents Day";
+  if (m === 3 || m === 4) return "Good Friday";
+  if (m === 5) return "Memorial Day";
+  if (m === 6) return "Juneteenth";
+  if (m === 7) return "Independence Day";
+  if (m === 9) return "Labor Day";
+  if (m === 11) return "Thanksgiving";
+  if (m === 12) return day >= 20 ? "Christmas" : "New Year's Day";
+  return "Market holiday";
+};
+/* a published date as an event; t is the moment it happens (all-day items get a nominal moment that orders them) */
+E.planEvent = function (k, d, extra) {
+  const K = E.PLAN_KINDS[k], mins = K.mins;
+  return Object.assign({k, d, name:K.name, big:K.big, tip:K.tip, mins, timed:mins != null, t:E.etMs(d, mins != null ? mins : 0)}, extra || {});
+};
+E.PLAN_EVENTS = (function () {
+  const out = [];
+  Object.keys(E.PLAN_DATES).forEach(k => E.PLAN_DATES[k].forEach(r => {
+    const flags = r[2] || "", ex = {ref:r[1], tentative:flags.includes("t"), sep:flags.includes("s")};
+    if (k === "fomc") {
+      out.push(E.planEvent("fomc", r[0], Object.assign({}, ex, {tip:E.PLAN_KINDS.fomc.tip + (ex.sep ? " This meeting also brings new projections (the dot plot)." : "") + (ex.tentative ? " The date is tentative until the meeting before it confirms it." : "")})));
+      out.push(E.planEvent("fomc1", E.addDays(r[0], -1), {ref:r[1], tentative:ex.tentative, t:E.etMs(E.addDays(r[0], -1), 960)}));
+    } else if (k === "fomcs") {
+      out.push(E.planEvent("fomcs", r[0], Object.assign({}, ex, {t:E.etMs(r[0], 960)})));
+    } else out.push(E.planEvent(k, r[0], ex));
+  }));
+  return out;
+})();
+/* what is coming from today until `days` days out: published releases, computed options expirations, market
+   holidays and early closes, the overnight start, and grouped earnings. o.earn: [{sym, d, hour ("bmo"|"amc"|""), mine}] */
+E.planEvents = function (now, o) {
+  o = o || {};
+  const p = E.etParts(now), today = p.date, end = E.addDays(today, o.days || 14), out = [];
+  E.PLAN_EVENTS.forEach(ev => { if (ev.d >= today && ev.d <= end) out.push(Object.assign({}, ev)); });
+  for (let y = +today.slice(0, 4), m = +today.slice(5, 7), i = 0; i < 4; i++, m++) {
+    if (m > 12) { m = 1; y++; }
+    const d = E.optionsExpiry(y, m);
+    if (d >= today && d <= end && E.calendarValid(d)) out.push(E.planEvent(E.isQuadMonth(m) ? "quad" : "opex", d, {t:E.etMs(d, E.closeMins(d)), ref:E.isQuadMonth(m) ? "Index and stock options and futures expire at the close" : "Monthly options expire at the close", early:E.closeMins(d) < 960}));
+  }
+  for (let d = today; d <= end && E.calendarValid(d); d = E.addDays(d, 1)) {
+    if (E.HOLIDAYS.has(d) && E.weekday(d) !== 0 && E.weekday(d) !== 6) out.push(E.planEvent("holiday", d, {ref:E.holidayName(d), t:E.etMs(d, 570)}));
+    else if (E.EARLY_CLOSE[d]) out.push(E.planEvent("early", d, {ref:"Stocks stop at 1:00 PM ET", t:E.etMs(d, E.EARLY_CLOSE[d])}));
+  }
+  { const nd = E.etDateOf(E.OVERNIGHT_FROM); if (nd >= today && nd <= end) out.push(E.planEvent("night", nd, {t:E.OVERNIGHT_FROM, ref:"planned start, subject to SEC approval"})); }
+  const g = {};
+  (o.earn || []).forEach(e => { if (!e || !e.d || e.d < today || e.d > end) return;
+    const h = e.hour === "bmo" || e.hour === "amc" ? e.hour : "", key = e.d + "|" + h, G = g[key] || (g[key] = {d:e.d, hour:h, syms:[]});
+    if (!G.syms.some(s => s.sym === e.sym)) G.syms.push({sym:e.sym, mine:!!e.mine}); });
+  Object.keys(g).forEach(key => { const G = g[key], mine = G.syms.some(s => s.mine);
+    G.syms.sort((a, b) => (b.mine - a.mine) || a.sym.localeCompare(b.sym));
+    out.push(E.planEvent("earn", G.d, {hour:G.hour, syms:G.syms, mine, big: mine ? 2 : 1, ref:G.hour === "bmo" ? "before the open" : G.hour === "amc" ? "after the close" : "time not given", t:E.etMs(G.d, G.hour === "bmo" ? 420 : G.hour === "amc" ? 970 : 720)})); });
+  out.forEach(ev => { ev.today = ev.d === today; ev.past = ev.t <= now; ev.left = ev.t - now; });
+  return out.sort((a, b) => a.t - b.t || b.big - a.big || a.name.localeCompare(b.name));
+};
+/* the events worth a card at the top: not out yet (or released in the last 90 minutes), big enough to matter */
+E.planNextUp = function (events, now, n) {
+  return events.filter(ev => ev.big >= 2 && (!ev.past || (ev.timed && now - ev.t < 90 * 60e3))).slice(0, n || 4);
+};
+/* "1 d 3 h", "2 h 05 min", "45 min" */
+E.planLeft = function (ms) {
+  if (!(ms > 0)) return "now";
+  const mins = Math.ceil(ms / 60e3);
+  if (mins < 60) return mins + " min";
+  const h = Math.floor(mins / 60);
+  if (h < 24) return h + " h " + String(mins % 60).padStart(2, "0") + " min";
+  return Math.floor(h / 24) + " d " + (h % 24) + " h";
+};
+/* "today", "tomorrow", "in 5 days" for two ET dates */
+E.planDayWord = function (d, today) {
+  const n = Math.round((Date.parse(d + "T12:00:00Z") - Date.parse(today + "T12:00:00Z")) / 864e5);
+  return n <= 0 ? "today" : n === 1 ? "tomorrow" : "in " + n + " days";
+};
+
+/* ---- 2. Key levels ---- */
+E.PLAN_LV = {
+  pdh:  {s:"PDH",       n:"prior-day high",       side:"hi", g:"pd",  tip:"Yesterday's highest price: above it buyers have beaten yesterday's ceiling, and stalling under it shows it still caps price."},
+  pdl:  {s:"PDL",       n:"prior-day low",        side:"lo", g:"pd",  tip:"Yesterday's lowest price: below it sellers have broken yesterday's floor, and holding above it shows it still supports price."},
+  pdc:  {s:"PDC",       n:"prior-day close",      side:"mid",g:"pd",  tip:"Yesterday's closing price, the line the day's change is measured from."},
+  pmh:  {s:"PM high",   n:"pre-market high",      side:"hi", g:"pm",  tip:"The highest price before the open (4:00 to 9:30 AM ET, IEX trades): a move over it means the open is stronger than the pre-market."},
+  pml:  {s:"PM low",    n:"pre-market low",       side:"lo", g:"pm",  tip:"The lowest price before the open (4:00 to 9:30 AM ET, IEX trades): a move under it means the open is weaker than the pre-market."},
+  or5h: {s:"OR5 high",  n:"5-minute range high",  side:"hi", g:"or",  tip:"The highest price in the first 5 minutes after the 9:30 open, the first line many day traders watch."},
+  or5l: {s:"OR5 low",   n:"5-minute range low",   side:"lo", g:"or",  tip:"The lowest price in the first 5 minutes after the 9:30 open."},
+  or15h:{s:"OR15 high", n:"15-minute range high", side:"hi", g:"or",  tip:"The highest price in the first 15 minutes after the open: a break above it often sets the tone for the morning."},
+  or15l:{s:"OR15 low",  n:"15-minute range low",  side:"lo", g:"or",  tip:"The lowest price in the first 15 minutes after the open: a break below it often sets the tone for the morning."},
+  vwap: {s:"VWAP",      n:"today's VWAP",         side:"mid",g:"vw",  tip:"The day's average price weighted by volume (from IEX trades): above it buyers are ahead of the day's average, below it sellers are."},
+  hi20: {s:"20d high",  n:"20-day high",          side:"hi", g:"lng", tip:"The highest price in the last 20 trading days, through yesterday."},
+  lo20: {s:"20d low",   n:"20-day low",           side:"lo", g:"lng", tip:"The lowest price in the last 20 trading days, through yesterday."},
+  hi52: {s:"52w high",  n:"52-week high",         side:"hi", g:"lng", tip:"The highest price in the last 52 weeks."},
+  lo52: {s:"52w low",   n:"52-week low",          side:"lo", g:"lng", tip:"The lowest price in the last 52 weeks."}
+};
+E.PLAN_LV_ORDER = ["pdh", "pdl", "pdc", "vwap", "pmh", "pml", "or5h", "or5l", "or15h", "or15l", "hi20", "lo20", "hi52", "lo52"];
+/* the session a prior-day level belongs to: yesterday until 15 minutes after the close, then today's own */
+E.planPriorDay = function (now) {
+  const p = E.etParts(now);
+  return E.isTradingDay(p.date) && p.mins >= E.closeMins(p.date) + 15 ? p.date : E.prevTradingDay(p.date);
+};
+/* the day whose pre-market and opening range still matter: a trading day from 4:00 AM ET to 15 minutes after the close */
+E.planSessionDay = function (now) {
+  const p = E.etParts(now);
+  return E.isTradingDay(p.date) && p.mins >= 240 && p.mins < E.closeMins(p.date) + 15 ? p.date : null;
+};
+/* daily bars (newest first: [date, open, high, low, close, volume]) -> prior-day, 20-day and 52-week levels.
+   fresh: the newest bar at or before `prior` IS `prior` (otherwise the prior-day levels are left out, not guessed) */
+E.planDaily = function (bars, prior) {
+  if (!Array.isArray(bars) || !bars.length) return null;
+  let i = 0; while (i < bars.length && bars[i][0] > prior) i++;
+  if (i >= bars.length) return null;
+  const b = bars[i], ok = x => isFinite(x) && x > 0, o = {asOf:b[0], fresh:b[0] === prior};
+  if (o.fresh && ok(+b[2]) && ok(+b[3]) && ok(+b[4])) { o.pdh = +b[2]; o.pdl = +b[3]; o.pdc = +b[4]; }
+  const hl = list => { const hs = list.map(x => +x[2]).filter(ok), ls = list.map(x => +x[3]).filter(ok); return hs.length && ls.length ? {h:Math.max(...hs), l:Math.min(...ls), n:hs.length} : null; };
+  const w20 = hl(bars.slice(i, i + 20)); if (w20 && w20.n >= 15) { o.hi20 = w20.h; o.lo20 = w20.l; }
+  const cut = E.addDays(b[0], -365), w52 = []; for (let j = i; j < bars.length && bars[j][0] > cut; j++) w52.push(bars[j]);
+  const y = hl(w52); if (y && y.n >= 200) { o.hi52 = y.h; o.lo52 = y.l; }
+  return o;
+};
+/* 5-minute bars ([{t: ms, h, l}], any order) for one date -> pre-market and opening-range levels, each only once it is complete */
+E.planIntraday = function (bars, date, now) {
+  const p = E.etParts(now), mins = p.date === date ? p.mins : p.date > date ? 1440 : 0, o = {pmDone:mins >= 570, or5Done:mins >= 575, or15Done:mins >= 585};
+  const grab = (a, b) => { let h = null, l = null; (bars || []).forEach(x => { const q = E.etParts(x.t); if (q.date !== date || q.mins < a || q.mins >= b || !(x.h > 0) || !(x.l > 0)) return; h = h == null ? +x.h : Math.max(h, +x.h); l = l == null ? +x.l : Math.min(l, +x.l); }); return h == null ? null : {h, l}; };
+  const pm = grab(240, 570), r5 = o.or5Done ? grab(570, 575) : null, r15 = o.or15Done ? grab(570, 585) : null;
+  if (pm) { o.pmh = pm.h; o.pml = pm.l; }
+  if (r5) { o.or5h = r5.h; o.or5l = r5.l; }
+  if (r15) { o.or15h = r15.h; o.or15l = r15.l; }
+  return o;
+};
+/* which fetch the opening phases call for: "pre" (developing pre-market, again every 5 min), "pm" (pre-market done, 9:31), "or5" (9:36), "or15" (9:46) */
+E.PLAN_PH_RANK = {none:0, pre:1, pm:2, or5:3, or15:4};
+E.planPhase = function (now) {
+  const d = E.planSessionDay(now); if (!d) return {date:null, ph:"none"};
+  const m = E.etParts(now).mins;
+  return {date:d, ph: m >= 586 ? "or15" : m >= 576 ? "or5" : m >= 571 ? "pm" : "pre"};
+};
+E.planFetchDue = function (st, now) {
+  const P = E.planPhase(now); if (!P.date) return null;
+  if (!st || st.date !== P.date) return P.ph;
+  if (E.PLAN_PH_RANK[P.ph] > E.PLAN_PH_RANK[st.ph || "none"]) return P.ph;
+  if (P.ph === "pre" && now - (st.at || 0) >= 5 * 60e3) return "pre";
+  return null;
+};
+/* every level we have for one ticker: s = {daily, intra, vwap, m52:{hi, lo}, pc} (pc, the quote's previous close, is used only when the daily levels have none) */
+E.planLevels = function (s) {
+  const L = {}, put = (k, v) => { if (v != null && isFinite(+v) && +v > 0) L[k] = +v; }, d = s.daily || {}, it = s.intra || {};
+  put("pdh", d.pdh); put("pdl", d.pdl); put("pdc", d.pdc != null ? d.pdc : s.pc); put("hi20", d.hi20); put("lo20", d.lo20);
+  const m = s.m52 || {}; put("hi52", m.hi > 0 ? m.hi : d.hi52); put("lo52", m.lo > 0 ? m.lo : d.lo52);
+  put("pmh", it.pmh); put("pml", it.pml);
+  if (it.or5Done) { put("or5h", it.or5h); put("or5l", it.or5l); }
+  if (it.or15Done) { put("or15h", it.or15h); put("or15l", it.or15l); }
+  put("vwap", s.vwap);
+  return L;
+};
+/* the levels around a price: equal levels (within 0.01%) share one tick; up/dn are the nearest above and below; near are within `near` percent */
+E.planLadder = function (L, px, near) {
+  near = near == null ? 0.5 : near;
+  const ks = Object.keys(L).filter(k => E.PLAN_LV[k] && L[k] > 0).sort((a, b) => L[a] - L[b] || E.PLAN_LV_ORDER.indexOf(a) - E.PLAN_LV_ORDER.indexOf(b)), ticks = [];
+  ks.forEach(k => { const t = ticks[ticks.length - 1]; if (t && Math.abs(L[k] / t.v - 1) < 1e-4) t.ks.push(k); else ticks.push({v:L[k], ks:[k]}); });
+  ticks.forEach(t => { t.usd = t.v - px; t.pct = px > 0 ? (t.v / px - 1) * 100 : null; t.ks.sort((a, b) => E.PLAN_LV_ORDER.indexOf(a) - E.PLAN_LV_ORDER.indexOf(b)); });
+  let up = null, dn = null;
+  ticks.forEach(t => { if (t.v > px && !up) up = t; if (t.v < px) dn = t; });
+  const nr = ticks.filter(t => t.pct != null && Math.abs(t.pct) <= near).sort((a, b) => Math.abs(a.pct) - Math.abs(b.pct));
+  return {ticks, up, dn, near:nr};
+};
+/* which side of each level the price is on: 1 above, -1 below (0: exactly on it) */
+E.planSides = function (L, px) { const s = {}; Object.keys(L).forEach(k => { s[k] = px > L[k] ? 1 : px < L[k] ? -1 : 0; }); return s; };
+/* levels the price crossed between two looks (only when the looks are close together in time) */
+E.planFlips = function (prev, sides, now, maxGapMs) {
+  if (!prev || !prev.sides || now - prev.at > (maxGapMs || 10 * 60e3)) return [];
+  const out = []; Object.keys(sides).forEach(k => { const a = prev.sides[k], b = sides[k]; if (a && b && a !== b) out.push({k, dir:b, t:now}); });
+  return out;
+};
+E.planFlipText = function (k, dir) {
+  const lv = E.PLAN_LV[k]; if (!lv) return "";
+  if (k === "vwap") return dir > 0 ? "Reclaimed VWAP" : "Lost VWAP";
+  if (lv.side === "hi") return dir > 0 ? "Broke " + lv.s : "Back under " + lv.s;
+  if (lv.side === "lo") return dir < 0 ? "Broke " + lv.s : "Back over " + lv.s;
+  return dir > 0 ? "Reclaimed " + lv.s : "Lost " + lv.s;
+};
+/* the little labels on a row, most important first: {id, text, tone ("up"|"down"|"warn"|""), tip, rank, fresh}.
+   ctx: {open (regular session now), or5Done, or15Done, pmDone, flips:[{k, dir, t}], now, near (percent)} */
+E.planChips = function (L, px, ctx) {
+  ctx = ctx || {}; const out = [], used = {}, $ = (v, r) => E.fmt$(v, r > 0 && r < 1 ? 4 : 2), now = ctx.now || 0;
+  if (!(px > 0)) return out;
+  const add = (id, text, tone, tip, rank, key, fresh) => { if (used[id]) return; used[id] = 1; if (key) used["k:" + key] = 1; out.push({id, text, tone, tip, rank, fresh:!!fresh}); };
+  (ctx.flips || []).slice().sort((a, b) => E.PLAN_LV_ORDER.indexOf(a.k) - E.PLAN_LV_ORDER.indexOf(b.k)).slice(0, 2).forEach(f => { const lv = E.PLAN_LV[f.k]; if (!lv || !(L[f.k] > 0)) return;
+    const ago = Math.max(0, Math.round((now - f.t) / 60e3));
+    add("f:" + f.k, E.planFlipText(f.k, f.dir), f.dir > 0 ? "up" : "down", `Price just crossed the ${lv.n} (${$(L[f.k], px)}) ${f.dir > 0 ? "upward" : "downward"}${ago < 1 ? " a moment ago" : ", " + ago + " min ago"}.`, 0, f.k, true); });
+  const brk = (k, text, tone, tip, rank) => { if (!used["k:" + k]) add("b:" + k, text, tone, tip, rank, k); };
+  if (L.hi52 && px >= L.hi52) brk("hi52", "At 52-week high", "up", `Price is at or above the 52-week high (${$(L.hi52, px)}): there is no older price overhead.`, 1);
+  else if (L.lo52 && px <= L.lo52) brk("lo52", "At 52-week low", "down", `Price is at or below the 52-week low (${$(L.lo52, px)}): there is no older price below.`, 1);
+  if (L.pdh && px > L.pdh) brk("pdh", "Broke PDH", "up", `Price is above yesterday's high (${$(L.pdh, px)}), so it has pushed through yesterday's ceiling.`, 2);
+  else if (L.pdl && px < L.pdl) brk("pdl", "Broke PDL", "down", `Price is below yesterday's low (${$(L.pdl, px)}), so it has broken yesterday's floor.`, 2);
+  const orK = ctx.or15Done && L.or15h ? "or15" : ctx.or5Done && L.or5h ? "or5" : null;
+  if (orK) { const h = L[orK + "h"], l = L[orK + "l"], mins = orK === "or15" ? 15 : 5;
+    if (px > h) brk(orK + "h", "Broke OR high", "up", `Price is above the first ${mins} minutes' high (${$(h, px)}).`, 4);
+    else if (px < l) brk(orK + "l", "Broke OR low", "down", `Price is below the first ${mins} minutes' low (${$(l, px)}).`, 4);
+    else if (ctx.open) add("or:in", "Inside opening range", "", `Price is between the first ${mins} minutes' low (${$(l, px)}) and high (${$(h, px)}): no break either way yet.`, 4); }
+  if (ctx.pmDone && L.pmh && px > L.pmh) brk("pmh", "Over PM high", "up", `Price is above the pre-market high (${$(L.pmh, px)}).`, 5);
+  else if (ctx.pmDone && L.pml && px < L.pml) brk("pml", "Under PM low", "down", `Price is below the pre-market low (${$(L.pml, px)}).`, 5);
+  if (!orK && L.hi20 && px > L.hi20 && !(L.hi52 && px >= L.hi52)) brk("hi20", "Over 20-day high", "up", `Price is above the 20-day high (${$(L.hi20, px)}).`, 6);
+  else if (!orK && L.lo20 && px < L.lo20 && !(L.lo52 && px <= L.lo52)) brk("lo20", "Under 20-day low", "down", `Price is below the 20-day low (${$(L.lo20, px)}).`, 6);
+  if (ctx.open && L.vwap) {
+    if (px > L.vwap) brk("vwap", "Above VWAP", "up", `Price is above today's VWAP (${$(L.vwap, px)}): buyers are ahead of the day's average price.`, 3);
+    else if (px < L.vwap) brk("vwap", "Below VWAP", "down", `Price is below today's VWAP (${$(L.vwap, px)}): sellers are ahead of the day's average price.`, 3); }
+  const lad = E.planLadder(L, px, ctx.near);
+  lad.near.slice(0, 1).forEach(t => { if (t.ks.every(k => used["k:" + k])) return; const lv = E.PLAN_LV[t.ks[0]], a = Math.abs(t.pct);
+    add("n:" + t.ks[0], "Near " + lv.s, "warn", `Price is within ${a.toFixed(2)}% of the ${t.ks.map(k => E.PLAN_LV[k].n).join(" and ")} (${$(t.v, px)}), ${t.v > px ? "just under" : "just over"} it.`, 1); });
+  return out.sort((a, b) => a.rank - b.rank);
+};
+/* ---- 3. The trading day as a bar: pre-market, open, morning, lunch, afternoon, power hour, after hours ---- */
+E.planTimeline = function (date) {
+  const close = E.closeMins(date), end = close === 960 ? 1200 : close + 240;
+  const mid = [[570, "open", "Open", "The first hour: the widest ranges and the heaviest volume."], [630, "morn", "Morning", "Prices usually settle into a trend or a range."],
+    [690, "lunch", "Lunch", "Often the quietest stretch (11:30 AM to 1:30 PM ET)."], [810, "aft", "Afternoon", "Volume builds again toward the close."]].filter(x => x[0] < close - 60);
+  const segs = [{k:"pre", name:"Pre-market", from:240, to:570, tip:"4:00 to 9:30 AM ET: thin trading, where news and earnings first move prices."}];
+  mid.forEach((x, i) => segs.push({k:x[1], name:x[2], from:x[0], to: i + 1 < mid.length ? mid[i + 1][0] : close - 60, tip:x[3]}));
+  segs.push({k:"power", name:"Power hour", from:close - 60, to:close, tip:"The last hour before the close: heavier volume as funds trade, and the day's closing move."});
+  segs.push({k:"after", name:"After hours", from:close, to:end, tip:"Trading after the close, until " + (end === 1200 ? "8:00 PM" : "5:00 PM") + " ET: thin, and earnings reports often land here."});
+  return {close, start:240, end, segs};
+};
+
 /* ===== PLAN END ===== */
 
 /* (spacer so the three regions merge cleanly) */
