@@ -541,6 +541,95 @@ fn shell_notify(app: AppHandle, title: String, body: String) -> Result<(), Strin
         .map_err(|e| e.to_string())
 }
 
+
+// ---------- news feeds (app 1.3.0) ----------
+// Press wires, SEC EDGAR and the Fed/BLS publish RSS/Atom feeds but send no CORS headers, so the
+// hosted page can't read them in a browser. The shell fetches them for the page instead: GET only,
+// https only, a fixed list of public news hosts, no cookies, nothing personal sent.
+const FEED_HOSTS: &[&str] = &[
+    "www.globenewswire.com", "globenewswire.com",
+    "feed.businesswire.com", "www.businesswire.com",
+    "www.prnewswire.com", "prnewswire.com",
+    "www.accessnewswire.com", "www.accesswire.com",
+    "feeds.newsfilecorp.com", "www.newsfilecorp.com",
+    "www.newswire.ca", "www.newswire.com",
+    "www.sec.gov", "efts.sec.gov",
+    "www.federalreserve.gov", "www.bls.gov", "home.treasury.gov", "www.bea.gov",
+];
+const FEED_MAX_BYTES: u64 = 4 * 1024 * 1024;
+
+#[derive(Serialize)]
+struct Fetched {
+    status: u16,
+    body: String,
+    etag: String,
+    modified: String,
+    ms: u64,
+}
+
+fn feed_get(url: &str, etag: &str, modified: &str, contact: &str) -> Result<Fetched, String> {
+    let u = tauri::Url::parse(url).map_err(|e| e.to_string())?;
+    let host = u.host_str().unwrap_or("");
+    if u.scheme() != "https" || !FEED_HOSTS.contains(&host) {
+        return Err(format!("not a news feed host: {host}"));
+    }
+    // SEC asks automated readers to name themselves; the contact (if any) comes from MW Settings.
+    let c: String = contact.chars().filter(|c| c.is_ascii_graphic() || *c == ' ').take(80).collect();
+    let ua = if c.trim().is_empty() {
+        format!("MarketWidget/{} news reader (github.com/awpmap/market-widget)", env!("CARGO_PKG_VERSION"))
+    } else {
+        format!("MarketWidget/{} news reader {}", env!("CARGO_PKG_VERSION"), c.trim())
+    };
+    // Windows' own TLS (schannel): no extra crypto library, and it trusts the PC's certificate store.
+    let tls = native_tls::TlsConnector::new().map_err(|e| e.to_string())?;
+    let agent = ureq::AgentBuilder::new()
+        .tls_connector(std::sync::Arc::new(tls))
+        .timeout_connect(Duration::from_secs(6))
+        .timeout(Duration::from_secs(12))
+        .redirects(3)
+        .build();
+    let mut req = agent
+        .get(url)
+        .set("User-Agent", &ua)
+        .set("Accept", "application/rss+xml, application/atom+xml, application/xml, text/xml, application/json;q=0.9, */*;q=0.5")
+        .set("Accept-Encoding", "gzip");
+    if !etag.is_empty() {
+        req = req.set("If-None-Match", etag);
+    }
+    if !modified.is_empty() {
+        req = req.set("If-Modified-Since", modified);
+    }
+    let t0 = Instant::now();
+    let res = match req.call() {
+        Ok(r) => r,
+        Err(ureq::Error::Status(code, r)) => {
+            if code == 304 {
+                return Ok(Fetched { status: 304, body: String::new(), etag: etag.into(), modified: modified.into(), ms: t0.elapsed().as_millis() as u64 });
+            }
+            let _ = r;
+            return Ok(Fetched { status: code, body: String::new(), etag: String::new(), modified: String::new(), ms: t0.elapsed().as_millis() as u64 });
+        }
+        Err(e) => return Err(e.to_string()),
+    };
+    let status = res.status();
+    let et = res.header("ETag").unwrap_or("").to_string();
+    let lm = res.header("Last-Modified").unwrap_or("").to_string();
+    let mut buf = Vec::new();
+    use std::io::Read;
+    res.into_reader().take(FEED_MAX_BYTES).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    Ok(Fetched { status, body: String::from_utf8_lossy(&buf).into_owned(), etag: et, modified: lm, ms: t0.elapsed().as_millis() as u64 })
+}
+
+/// Fetch one public news feed for the page (see FEED_HOSTS). Runs off the main thread.
+#[tauri::command]
+async fn shell_fetch(url: String, etag: Option<String>, modified: Option<String>, contact: Option<String>) -> Result<Fetched, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        feed_get(&url, etag.as_deref().unwrap_or(""), modified.as_deref().unwrap_or(""), contact.as_deref().unwrap_or(""))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ---------- app ----------
 
 pub fn run() {
@@ -610,7 +699,8 @@ pub fn run() {
             shell_notify,
             shell_log,
             shell_logs,
-            shell_open_logs
+            shell_open_logs,
+            shell_fetch
         ])
         .on_page_load(|_webview, payload| {
             let url = payload.url();

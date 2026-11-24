@@ -7,7 +7,7 @@
 (function (root) {
 "use strict";
 const E = {};
-E.VERSION = "6.1.1";
+E.VERSION = "6.2.0";
 
 /* ====================================================================================
    1. Calendar (NYSE). Source: NYSE Group release of 2025-12-23, "2026, 2027 and 2028 Holiday
@@ -1054,6 +1054,114 @@ E.mapStats = function (rows) {
   });
   return {avg: sw ? s / sw : null, up, down, flat, best, worst};
 };
+
+/* ====================================================================================
+   20. Live wire (6.2). Press-wire RSS, SEC EDGAR Atom and agency feeds, read by the desktop app (browsers can't:
+   those sites send no CORS headers). A small regex reader, not a DOM: feeds are flat, and this also runs in tests.
+   E.feedParse(xml) -> [{h, url, t (ms), sum, cats:[...], who}] newest first.
+   ==================================================================================== */
+const XENT = {amp:"&", lt:"<", gt:">", quot:'"', apos:"'", nbsp:" ", rsquo:"’", lsquo:"‘", rdquo:"”", ldquo:"“", ndash:"–", mdash:"—", hellip:"…", reg:"®", trade:"™", copy:"©"};
+E.xmlText = function (s) {
+  s = String(s == null ? "" : s).trim();
+  s = s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
+  for (let i = 0; i < 2; i++) s = s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => e[0] === "#" ? (()=>{ const c = e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : +e.slice(1); return c > 0 && c < 0x110000 ? String.fromCodePoint(c) : ""; })() : (XENT[e.toLowerCase()] != null ? XENT[e.toLowerCase()] : m));
+  return s.replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+};
+function xTag(block, names) {
+  for (const n of names) {
+    const re = new RegExp("<" + n + "(?:\\s[^>]*)?>([\\s\\S]*?)</" + n + ">", "i"), m = block.match(re);
+    if (m && m[1].trim()) return m[1];
+  }
+  return "";
+}
+function xAll(block, name) {
+  const re = new RegExp("<" + name + "(\\s[^>]*)?>([\\s\\S]*?)</" + name + ">", "gi"), out = []; let m;
+  while ((m = re.exec(block))) out.push({attrs: m[1] || "", text: m[2]});
+  return out;
+}
+E.feedTime = function (s) {
+  s = E.xmlText(s); if (!s) return 0;
+  let t = Date.parse(s);
+  if (!isFinite(t)) t = Date.parse(s.replace(/\b(EST|EDT|CST|CDT|PST|PDT|ET)\b/, m => ({EST:"-0500", EDT:"-0400", CST:"-0600", CDT:"-0500", PST:"-0800", PDT:"-0700", ET:"-0500"})[m]));
+  return isFinite(t) ? t : 0;
+};
+E.feedParse = function (xml) {
+  xml = String(xml || "");
+  const atom = !/<item[\s>]/i.test(xml) && /<entry[\s>]/i.test(xml);
+  const blocks = xml.match(atom ? /<entry[\s>][\s\S]*?<\/entry>/gi : /<item[\s>][\s\S]*?<\/item>/gi) || [];
+  const out = [];
+  blocks.forEach(b => {
+    const h = E.xmlText(xTag(b, ["title"]));
+    let url = "";
+    if (atom) { const l = b.match(/<link\b[^>]*?href\s*=\s*["']([^"']+)["'][^>]*>/i); url = l ? l[1] : ""; }
+    else url = E.xmlText(xTag(b, ["link"])) || E.xmlText(xTag(b, ["guid"]));
+    url = url.replace(/&amp;/g, "&").trim();
+    const t = E.feedTime(xTag(b, atom ? ["published", "updated"] : ["pubDate", "dc:date", "published", "updated"]));
+    const sum = E.xmlText(xTag(b, atom ? ["summary", "content"] : ["description", "summary", "content:encoded"])).slice(0, 700);
+    const cats = xAll(b, "category").map(c => E.xmlText(c.text)).concat(atom ? (b.match(/<category\b[^>]*term\s*=\s*["']([^"']+)["']/gi) || []).map(x => x.replace(/.*term\s*=\s*["']([^"']+)["'].*/i, "$1")) : []).filter(Boolean);
+    const who = E.xmlText(xTag(b, ["dc:creator", "dc:contributor", "author", "dc:publisher"])).replace(/\s+name\s*$/i, "").slice(0, 80);
+    if (h && /^https?:\/\//.test(url)) out.push({h: h.slice(0, 300), url, t, sum, cats, who});
+  });
+  return out.sort((a, b) => b.t - a.t);
+};
+/* tickers a press release names: "(NASDAQ: ABCD)", "(NYSE:XYZ, TSX:XYZ)", "Nasdaq:ABCD" categories. US listings only by
+   default; "TSX: ABC" style Canadian/other venues are skipped so they don't collide with US symbols. */
+const VENUE = "NASDAQ|Nasdaq|NasdaqGS|NasdaqGM|NasdaqCM|NYSE|NYSE American|NYSE MKT|NYSE Arca|NYSEArca|AMEX|Cboe BZX|CBOE|OTCQX|OTCQB|OTC Pink|OTC|OTCMKTS";
+const TK_RE = new RegExp("\\b(?:" + VENUE + ")\\s*(?:Global Select Market|Global Market|Capital Market)?\\s*:\\s*([A-Z][A-Z0-9]{0,5}(?:[.\\-][A-Z])?)\\b", "g");
+E.wireTickers = function (...texts) {
+  const out = [];
+  texts.flat().forEach(s => { s = String(s || ""); let m; TK_RE.lastIndex = 0; while ((m = TK_RE.exec(s))) { const x = m[1].replace("-", "."); if (!out.includes(x) && out.length < 6) out.push(x); } });
+  return out;
+};
+/* SEC "getcurrent" Atom titles: "8-K - NVIDIA CORP (0001045810) (Filer)" */
+E.secTitle = function (h) {
+  const m = String(h || "").match(/^\s*([^\s].*?)\s+-\s+(.*?)\s+\((\d{4,10})\)\s*\(([^)]*)\)/);
+  return m ? {form: m[1], name: m[2], cik: String(+m[3]), role: m[4]} : null;
+};
+/* SEC 8-K items -> plain words (from the summary "Item 2.02: Results of Operations..." when the feed carries it) */
+E.SEC_ITEMS = {"1.01":"material deal", "1.02":"deal ended", "1.03":"bankruptcy", "2.01":"acquisition done", "2.02":"results", "2.03":"new debt", "2.05":"layoffs/exit costs", "2.06":"impairment", "3.01":"delisting notice", "3.02":"unregistered share sale", "4.01":"auditor change", "4.02":"restatement", "5.01":"control change", "5.02":"exec/board change", "5.03":"bylaws change", "5.07":"shareholder vote", "7.01":"Reg FD release", "8.01":"other event", "9.01":"exhibits"};
+/* "GAMMA TEST CORP /DE/" -> "Gamma Test Corp": SEC names are in capitals; short words (IBM, AMD) stay as they are */
+E.secName = n => String(n || "").replace(/\s*\/[A-Z]{2,3}\/?\s*$/, "").split(/\s+/).map(w => w.length > 3 && /^[A-Z&.\-']+$/.test(w) ? w[0] + w.slice(1).toLowerCase() : w).join(" ").trim();
+E.SEC_FORMS = {"4":"insider trade", "3":"new insider", "144":"planned insider sale", "8-K":"current report", "10-Q":"quarterly report", "10-K":"annual report", "SC 13D":"activist stake", "SC 13G":"5%+ stake", "SCHEDULE 13D":"activist stake", "SCHEDULE 13G":"5%+ stake", "S-3":"shelf registration (could sell shares)", "S-3ASR":"shelf registration (could sell shares)", "424B5":"share or note offering", "424B2":"note offering", "DEF 14A":"proxy statement", "6-K":"foreign issuer report", "SD":"conflict minerals report"};
+E.secItems = function (sum) {
+  const out = []; String(sum || "").replace(/Item\s+(\d\.\d\d)/gi, (m, k) => { if (E.SEC_ITEMS[k] && k !== "9.01" && !out.includes(E.SEC_ITEMS[k])) out.push(E.SEC_ITEMS[k]); return m; });
+  return out;
+};
+E.urlKey = function (u) {
+  try { const x = new URL(u); return (x.hostname.replace(/^www\./, "") + x.pathname.replace(/\/+$/, "")).toLowerCase(); } catch (e) { return String(u || "").toLowerCase(); }
+};
+/* merge new wire lines into the list: one line per story (same link or same headline), the earliest publish time and
+   the first time MW saw it are kept, sources and tickers are unioned. Newest first, capped by count and age. */
+E.wireMerge = function (list, incoming, now, opts) {
+  opts = Object.assign({max: 300, maxAgeMs: 2 * 864e5}, opts || {});
+  const out = (list || []).filter(n => n && n.h && now - (n.t || 0) <= opts.maxAgeMs).map(n => Object.assign({}, n));
+  const byU = new Map(), byH = new Map(), added = [];
+  out.forEach(n => { byU.set(E.urlKey(n.url), n); byH.set(E.newsKey(n.h), n); });
+  (incoming || []).forEach(n => {
+    if (!n || !n.h || !/^https?:\/\//.test(n.url || "")) return;
+    const t = n.t > 0 ? Math.min(n.t, now + 60e3) : now;
+    if (now - t > opts.maxAgeMs) return;
+    const uk = E.urlKey(n.url), hk = E.newsKey(n.h), cur = byU.get(uk) || byH.get(hk);
+    if (cur) {
+      (n.syms || []).forEach(x => { if (!cur.syms.includes(x)) cur.syms.push(x); });
+      if (n.src && !(cur.also || []).includes(n.src) && n.src !== cur.src) cur.also = (cur.also || []).concat(n.src).slice(0, 4);
+      if (!cur.sum && n.sum) cur.sum = n.sum;
+      if (t < cur.t) cur.t = t;
+      return;
+    }
+    const x = {id: n.id || (n.src || "w") + ":" + hk.slice(0, 60), h: String(n.h).slice(0, 300), url: n.url, t, seen: n.seen || now, src: n.src || "", sum: String(n.sum || "").slice(0, 700), syms: (n.syms || []).slice(0, 6), kind: n.kind || "wire", form: n.form || "", w: n.w || "", cat: n.cat || "", old: n.old ? 1 : 0};
+    out.push(x); byU.set(uk, x); byH.set(hk, x); added.push(x);
+  });
+  out.sort((a, b) => b.t - a.t);
+  return {list: out.slice(0, opts.max), added};
+};
+/* how late a source is: the median of (first seen - published) over its recent lines, in seconds; null without data */
+E.wireLag = function (lags) {
+  const L = (lags || []).filter(x => isFinite(x) && x >= 0).sort((a, b) => a - b);
+  return L.length ? L[Math.floor((L.length - 1) / 2)] : null;
+};
+/* "14s", "3m", "2h" */
+E.lagShort = function (sec) { return sec == null ? "" : sec < 60 ? Math.round(sec) + "s" : sec < 3600 ? Math.round(sec / 60) + "m" : Math.round(sec / 3600) + "h"; };
 
 if (typeof module !== "undefined" && module.exports) module.exports = E;
 else root.MWE = E;

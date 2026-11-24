@@ -12,6 +12,7 @@ fn main() {
             "shell_log",
             "shell_logs",
             "shell_open_logs",
+            "shell_fetch",
         ])),
     )
     .expect("failed to run tauri-build");

@@ -1,6 +1,6 @@
 [package]
 name = "mw-desktop"
-version = "1.2.0"
+version = "1.3.0"
 description = "Market Widget (MW) for Windows: tray app around the hosted widget. Info only, never trades."
 edition = "2021"
 publish = false
@@ -21,6 +21,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-log = "2"
 log = "0.4"
+ureq = { version = "2", default-features = false, features = ["native-tls", "gzip"] }
+native-tls = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
