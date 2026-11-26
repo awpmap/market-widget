@@ -968,6 +968,16 @@ for (const OLD of [false, true]) {
   await p9.locator('#shBody [data-wsrc="prn"]').uncheck(); await adv(300, 100);
   const nP = (await W()).calls.filter(u => /prnewswire/.test(u)).length; await adv(40000, 2000);
   check((await W()).calls.filter(u => /prnewswire/.test(u)).length === nP, "a source switched off is not read again");
+  // 6.4.1: no news pop-ups after hours, overnight, weekends or holidays; pre-market and regular hours only
+  const pingAt = async (iso, id) => { t9 = Date.parse(iso); simNow = t9; await p9.clock.setSystemTime(t9); await adv(1000, 500);
+    const n0 = (await W()).notes.length;
+    await p9.evaluate(id => { const now = Date.now(); wirePing([{id, h:"Example Corp news line " + id, url:"https://example.com/" + id, t:now, seen:now, src:"Example", syms:["AAA"], w:"gnw"}]); }, id);
+    await adv(500, 250); return (await W()).notes.length - n0; };
+  check(await pingAt("2026-11-23T21:30:00Z", "ah1") === 0, "no news pop-up after hours (4:30 pm ET)");
+  check(await pingAt("2026-11-24T03:00:00Z", "on1") === 0, "no news pop-up overnight (10 pm ET)");
+  check(await pingAt("2026-11-24T09:30:00Z", "pm1") === 1, "news pop-ups come back in pre-market (4:30 am ET)");
+  check(await pingAt("2026-11-26T15:00:00Z", "hd1") === 0, "no news pop-up on a market holiday (Thanksgiving)");
+  check(await pingAt("2026-11-28T15:00:00Z", "we1") === 0, "no news pop-up on a weekend");
   check(errs9.length === 0, "no page errors in the live wire checks" + (errs9.length ? ": " + [...new Set(errs9)].slice(0, 4).join(" | ") : ""));
   await ctx9.close();
 }

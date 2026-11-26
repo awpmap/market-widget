@@ -24,3 +24,9 @@
 - Live has a new **World** filter (foreign-press and translated lines).
 
 The page's Content-Security-Policy now allows translate.googleapis.com and api.gdeltproject.org.
+
+## 6.4.1
+
+- News pop-ups and their beep now come only in pre-market and regular hours on trading days: 4:00 AM ET to the close
+  (1:00 PM on early-close days). After hours, overnight, weekends and holidays stay quiet. Lines still arrive and are
+  highlighted in the list. Engine: `E.newsPingOk`.

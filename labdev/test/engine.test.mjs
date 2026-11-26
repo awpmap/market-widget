@@ -723,3 +723,18 @@ test("gdeltParse: non-English articles only, tagged with the ticker, time from s
   assert.deepEqual(E.gdeltParse(null, "X"), []);
   assert.equal(E.searchName("Example Technology Inc."), "Example Technology"); assert.equal(E.searchName("ABC Corp"), "");
 });
+test("newsPingOk: pop-ups only 4 am to the close ET on trading days (6.4.1)", () => {
+  const at = (d, h, m = 0) => E.etMs(d, h * 60 + m), ok = t => E.newsPingOk(t, null, {});
+  assert.equal(ok(at("2026-11-24", 3, 59)), false, "before pre-market");
+  assert.equal(ok(at("2026-11-24", 4, 0)), true, "pre-market start");
+  assert.equal(ok(at("2026-11-24", 9, 31)), true, "regular hours");
+  assert.equal(ok(at("2026-11-24", 15, 59)), true, "last minute");
+  assert.equal(ok(at("2026-11-24", 16, 0)), false, "after hours");
+  assert.equal(ok(at("2026-11-24", 22, 0)), false, "evening");
+  assert.equal(ok(at("2026-11-26", 10, 0)), false, "Thanksgiving");
+  assert.equal(ok(at("2026-11-27", 12, 30)), true, "early-close day, before 1 pm");
+  assert.equal(ok(at("2026-11-27", 13, 30)), false, "early-close day, after 1 pm");
+  assert.equal(ok(at("2026-11-28", 10, 0)), false, "Saturday");
+  assert.equal(E.newsPingOk(at("2026-12-08", 2, 0), null, {overnight:true}), false, "overnight session");
+  assert.equal(E.newsPingOk(at("2026-11-24", 10, 0), {at:at("2026-11-24", 9, 55), date:"2026-11-24", isOpen:false, holiday:"Surprise closure"}, {}), false, "surprise closure");
+});
