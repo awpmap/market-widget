@@ -2784,7 +2784,7 @@ function showTab(tab){
     B.innerHTML = `<p class="muted" style="margin-top:0;font-size:12px">The News section's <b>Live</b> tab is one tape of everything below, newest first, the same story merged into one line. ${NATIVE ? (wireNative === false ? "This desktop app is older than 1.3, so the press wires and SEC are off until you update it." : "This desktop app reads the press wires and SEC itself, straight from the source.") : "Press wires and SEC filings need the MW desktop app: browsers can't read those sites."}</p>
       <div class="field"><label for="nwPing">Pop-up for breaking news about</label><select id="nwPing"><option value="mine" ${settings.newsPing === "mine" ? "selected" : ""}>Holdings and watchlist</option><option value="hold" ${settings.newsPing === "hold" ? "selected" : ""}>Holdings only</option><option value="off" ${settings.newsPing === "off" ? "selected" : ""}>Off</option></select>
         <label style="display:flex;gap:7px;align-items:center;font-weight:400;margin-top:6px"><input type="checkbox" id="nwBeep" ${settings.newsBeep !== false ? "checked" : ""}> Soft beep with it (when sound is on)</label>
-        <p>A press release, filing or headline tagged with one of your tickers, less than 15 minutes old: one Windows pop-up per ticker per 5 minutes. Snoozed tickers and paused alerts stay quiet.</p></div>
+        <p>A press release, filing or headline tagged with one of your tickers, less than 15 minutes old: one Windows pop-up per ticker per 5 minutes. Snoozed tickers and paused alerts stay quiet. Pop-ups come only in pre-market and regular hours on trading days (4:00 AM ET to the close); after hours, overnight, weekends and holidays stay quiet, and the list keeps updating.</p></div>
       <div class="field"><label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="nwTr" ${trOn() ? "checked" : ""}> Show every headline in English</label>
         <p>Headlines and summaries in other languages are translated, with the original one click away (a small "DE→EN" tag marks them). ${"Translator" in self ? "This window has the on-device translator, so most of it never leaves this PC; " : ""}Otherwise MW uses Google Translate's free web translator: only the headline text is sent, never your tickers. ${trSt.ok ? trSt.ok + " lines translated this session" + (trSt.via ? " (" + esc(trSt.via) + ")" : "") + "." : ""}${trSt.err ? " ⚠ " + esc(trSt.err) : ""}</p></div>
       <div class="field"><label>Sources</label><div class="ws-list">${WIRE_SRC.map(row).join("")}</div>
@@ -3270,6 +3270,7 @@ function wirePing(added){
   const hits = added.filter(n => now - n.t < 15*60e3 && n.syms.some(x => mine.has(x) && !snoozed(x)));
   if (!hits.length) return;
   hits.forEach(n => n.hot = 1);
+  if (!E.newsPingOk(now, mstat, clockOpts())) return;   // outside 4 am to the close ET: highlight in the list, no pop-up or beep
   const fresh = hits.filter(n => { const x = n.syms.find(y => mine.has(y)); if (WIRE_PINGED[x] && now - WIRE_PINGED[x] < 5*60e3) return false; WIRE_PINGED[x] = now; return true; });
   if (!fresh.length) return;
   const n = fresh[0], x = n.syms.find(y => mine.has(y));

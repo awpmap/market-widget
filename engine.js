@@ -7,7 +7,7 @@
 (function (root) {
 "use strict";
 const E = {};
-E.VERSION = "6.4.0";
+E.VERSION = "6.4.1";
 
 /* ====================================================================================
    1. Calendar (NYSE). Source: NYSE Group release of 2025-12-23, "2026, 2027 and 2028 Holiday
@@ -90,6 +90,14 @@ E.session = function (now, mstat, opts) {
   }
   if (mc.ph === "pre" || mc.ph === "after" || mc.ph === "overnight") return {s:"ext", label:mc.label};
   return {s:"closed", label: mc.ph === "pause" ? "Nightly pause" : mc.label};
+};
+
+/* news pop-ups (6.4.1, MR K's rule): only in pre-market and regular hours on a trading day, 4:00 am to the close ET
+   (1:00 pm on an early-close day). Never after hours, overnight, on a weekend or a holiday. The list keeps updating. */
+E.newsPingOk = function (now, mstat, opts) {
+  const ss = E.session(now, mstat, opts);
+  if (ss.s === "open") return true;
+  return E.marketClock(now, opts).ph === "pre";
 };
 
 /* ====================================================================================
